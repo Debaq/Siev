@@ -6,6 +6,7 @@ Manejo básico de la ventana principal con sistema de plugins
 """
 
 import os
+from utils.path_manager import get_ui_file  # ← AGREGAR ESTA LÍNEA
 from PySide6.QtWidgets import QMainWindow, QPushButton
 from PySide6.QtCore import Qt
 from PySide6.QtUiTools import QUiLoader
@@ -28,14 +29,14 @@ class WindowHandler:
         """Configurar y cargar ventana principal desde .ui"""
         try:
             # Ruta al archivo .ui principal
-            ui_file_path = "src/ui/main_window.ui"
+            ui_file_path = get_ui_file("main_window.ui")
             
             # Verificar que el archivo existe
-            if not os.path.exists(ui_file_path):
+            if not ui_file_path.exists():
                 raise FileNotFoundError(f"Archivo UI no encontrado: {ui_file_path}")
             
             # Cargar archivo .ui
-            self.main_window = self.ui_loader.load(ui_file_path)
+            self.main_window = self.ui_loader.load(str(ui_file_path))
 
             
             # Configuraciones básicas de ventana

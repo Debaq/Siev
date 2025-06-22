@@ -9,6 +9,7 @@ import importlib
 import sys
 import os
 from pathlib import Path
+from utils.path_manager import get_plugin_dir, paths  # ← AGREGAR ESTA LÍNEA
 from typing import Dict, Optional, List, Any
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QStackedWidget, QLabel, QFrame, QPushButton
 from PySide6.QtCore import QObject, Signal, QTimer, Qt
@@ -39,7 +40,7 @@ class PluginLoader(QObject):
         super().__init__()
         
         self.main_window = main_window
-        self.plugins_path = "src/plugins"
+        self.plugins_path = paths.get_path('plugins')
         
         # Gestión de plugins
         self.loaded_plugins: Dict[str, BasePlugin] = {}
@@ -177,20 +178,18 @@ class PluginLoader(QObject):
         
     def _discover_plugins(self):
         """Descubrir plugins disponibles en el directorio"""
-        if not os.path.exists(self.plugins_path):
+        if not self.plugins_path.exists():
             print(f"⚠️  Directorio de plugins no encontrado: {self.plugins_path}")
             return
             
         discovered = []
         
-        for item in os.listdir(self.plugins_path):
-            plugin_dir = os.path.join(self.plugins_path, item)
-            
-            if os.path.isdir(plugin_dir) and not item.startswith('__'):
-                plugin_file = os.path.join(plugin_dir, f"{item}.py")
+        for item in self.plugins_path.iterdir():
+            if item.is_dir() and not item.name.startswith('__'):
+                plugin_file = item / f"{item.name}.py"
                 
-                if os.path.exists(plugin_file):
-                    discovered.append(item)
+                if plugin_file.exists():
+                    discovered.append(item.name)
                     
         print(f"🔍 Plugins descubiertos: {discovered}")
         

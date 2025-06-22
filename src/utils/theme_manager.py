@@ -6,7 +6,7 @@ Manejo básico de temas y estilos QSS
 """
 
 import os
-from pathlib import Path
+from .path_manager import paths, get_style_file
 
 
 class ThemeManager:
@@ -18,9 +18,10 @@ class ThemeManager:
     def __init__(self):
         """Inicializar manager de temas"""
         self.current_theme = None
-        self.themes_path = "src/resources/styles"
+        self.themes_path = paths.get_path('styles')  # ← CAMBIAR ESTA LÍNEA
         self.loaded_style = ""
-        
+
+
     def load_theme(self, theme_name):
         """
         Cargar tema específico desde archivo QSS
@@ -29,12 +30,12 @@ class ThemeManager:
             theme_name (str): Nombre del tema ('medical', 'dark', 'light')
         """
         try:
-            # Construir ruta del archivo de tema
+            # Construir ruta del archivo de tema usando PathManager
             theme_file = f"{theme_name}_theme.qss"
-            theme_path = os.path.join(self.themes_path, theme_file)
+            theme_path = get_style_file(theme_file)
             
             # Verificar que el archivo existe
-            if not os.path.exists(theme_path):
+            if not theme_path.exists():
                 print(f"⚠️  Archivo de tema no encontrado: {theme_path}")
                 self._load_fallback_style()
                 return
@@ -49,6 +50,7 @@ class ThemeManager:
         except Exception as e:
             print(f"❌ Error cargando tema '{theme_name}': {e}")
             self._load_fallback_style()
+
             
     def _load_fallback_style(self):
         """Cargar estilo básico como fallback"""
@@ -115,10 +117,11 @@ class ThemeManager:
         """Obtener lista de temas disponibles"""
         themes = []
         
-        if os.path.exists(self.themes_path):
-            for file in os.listdir(self.themes_path):
-                if file.endswith('_theme.qss'):
-                    theme_name = file.replace('_theme.qss', '')
+        themes_dir = paths.get_path('styles')
+        if themes_dir.exists():
+            for file in themes_dir.iterdir():
+                if file.name.endswith('_theme.qss'):
+                    theme_name = file.name.replace('_theme.qss', '')
                     themes.append(theme_name)
                     
         return themes if themes else ['fallback']

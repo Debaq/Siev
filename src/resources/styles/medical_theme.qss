@@ -18,7 +18,7 @@ QMainWindow {
 }
 
 QWidget {
-    background-color: transparent;
+    background-color: #f8f9fb;  /* ARREGLADO: Era transparent */
     color: #374151;
     font-family: "Inter", "Segoe UI", "Roboto", sans-serif;
     font-size: 14px;
@@ -54,7 +54,7 @@ QPushButton:disabled {
 
 /* Secondary Buttons */
 QPushButton[buttonStyle="secondary"] {
-    background-color: transparent;
+    background-color: white;  /* ARREGLADO: Era transparent */
     border: 1px solid #D1D5DB;
     color: #374151;
 }
@@ -67,7 +67,7 @@ QPushButton[buttonStyle="secondary"]:hover {
 
 /* Icon Buttons */
 QPushButton[buttonStyle="icon"] {
-    background-color: transparent;
+    background-color: #F9FAFB;  /* ARREGLADO: Era transparent */
     border: none;
     border-radius: 6px;
     color: #6B7280;
@@ -141,6 +141,7 @@ QComboBox QAbstractItemView {
 QLabel {
     color: #374151;
     font-size: 14px;
+    background-color: transparent;  /* OK: Los labels pueden ser transparentes */
 }
 
 QLabel[labelStyle="title"] {
@@ -176,7 +177,7 @@ QWidget#sidebar {
 
 /* Navigation Buttons */
 QPushButton[navButton="true"] {
-    background-color: transparent;
+    background-color: white;  /* ARREGLADO: Era transparent */
     border: none;
     border-radius: 0px 24px 24px 0px;
     color: #6B7280;
@@ -456,4 +457,73 @@ QToolTip {
     color: white;
     font-size: 12px;
     padding: 8px 12px;
+}
+
+/* ===== CONTENEDORES ESPECÍFICOS (ARREGLADO) ===== */
+/* Área central de plugins */
+QWidget#plugin_container, QWidget#central_area {
+    background-color: #f8f9fb;
+}
+
+/* Stack widget */
+QStackedWidget {
+    background-color: #f8f9fb;
+}
+
+/* Widgets de plugins específicos */
+QWidget#dashboard_widget, QWidget#patients_widget, QWidget#vng_widget,
+QWidget#reports_widget, QWidget#settings_widget {
+    background-color: #f8f9fb;
+}
+
+/* Group boxes */
+QGroupBox {
+    background-color: white;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+    font-weight: 500;
+    color: #374151;
+    margin-top: 12px;
+    padding-top: 16px;
+}
+
+QGroupBox::title {
+    color: #6B46C1;
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 5px 0 5px;
+    background-color: #f8f9fb;
+}
+
+/* Scroll areas */
+QScrollArea {
+    background-color: white;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+}
+
+QScrollArea > QWidget > QWidget {
+    background-color: white;
+}
+
+/* Frames generales */
+QFrame {
+    background-color: white;
+}
+
+/* Splitters */
+QSplitter::handle {
+    background-color: #E5E7EB;
+}
+
+QSplitter::handle:horizontal {
+    width: 1px;
+}
+
+QSplitter::handle:vertical {
+    height: 1px;
+}
+
+QSplitter::handle:hover {
+    background-color: #6B46C1;
 }

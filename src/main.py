@@ -9,16 +9,21 @@ Fase 1: Foundation Sólida
 """
 import sys
 import os
+from pathlib import Path
+
+# Agregar src/ al Python path
+src_dir = Path(__file__).parent
+sys.path.insert(0, str(src_dir))
+
 import traceback
 from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtCore import Qt, QDir
 from PySide6.QtGui import QIcon
 
-# AGREGAR ESTA LÍNEA:
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Importar componentes core
+from utils.path_manager import paths  # ← AGREGAR ESTA LÍNEA
 from core.window_handler import WindowHandler
 from utils.theme_manager import ThemeManager
 
@@ -37,18 +42,14 @@ class SIEVApplication:
         
     def setup_directories(self):
         """Crear directorios necesarios si no existen"""
-        directories = [
-            "data/patients",
-            "data/evaluations", 
-            "data/reports",
-            "data/config",
-            "data/backups",
-            "logs"
-        ]
-        
-        for directory in directories:
-            Path(directory).mkdir(parents=True, exist_ok=True)
-            
+        paths.ensure_directory('data')
+        paths.ensure_directory('patients')
+        paths.ensure_directory('evaluations') 
+        paths.ensure_directory('reports')
+        paths.ensure_directory('config')
+        paths.ensure_directory('backups')
+        paths.ensure_directory('logs')
+                
     def setup_application(self):
         """Configurar QApplication con propiedades básicas"""
         # Configurar atributos de aplicación
@@ -61,7 +62,7 @@ class SIEVApplication:
         self.app = QApplication(sys.argv)
         
         # Configurar icono de aplicación si existe
-        icon_path = "resources/icons/app_icon.png"
+        icon_path = paths.get_path('icons', 'app_icon.png')
         if os.path.exists(icon_path):
             self.app.setWindowIcon(QIcon(icon_path))
             
