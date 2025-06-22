@@ -7,7 +7,6 @@ Main Application Entry Point
 Arquitectura: PySide6 + Plugin System
 Fase 1: Foundation Sólida
 """
-
 import sys
 import os
 import traceback
@@ -15,6 +14,9 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtCore import Qt, QDir
 from PySide6.QtGui import QIcon
+
+# AGREGAR ESTA LÍNEA:
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Importar componentes core
 from core.window_handler import WindowHandler
