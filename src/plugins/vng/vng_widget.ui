@@ -1,0 +1,891 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>VNGWidget</class>
+ <widget class="QWidget" name="VNGWidget">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1160</width>
+    <height>800</height>
+   </rect>
+  </property>
+  <property name="objectName">
+   <string>vng_widget</string>
+  </property>
+  <layout class="QVBoxLayout" name="vng_layout">
+   <property name="spacing">
+    <number>16</number>
+   </property>
+   <property name="leftMargin">
+    <number>24</number>
+   </property>
+   <property name="topMargin">
+    <number>16</number>
+   </property>
+   <property name="rightMargin">
+    <number>24</number>
+   </property>
+   <property name="bottomMargin">
+    <number>24</number>
+   </property>
+   <item>
+    <!-- VNG Header -->
+    <widget class="QWidget" name="vng_header">
+     <property name="objectName">
+      <string>vng_header</string>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>80</height>
+      </size>
+     </property>
+     <layout class="QHBoxLayout" name="header_layout">
+      <property name="spacing">
+       <number>24</number>
+      </property>
+      <property name="leftMargin">
+       <number>16</number>
+      </property>
+      <property name="topMargin">
+       <number>16</number>
+      </property>
+      <property name="rightMargin">
+       <number>16</number>
+      </property>
+      <property name="bottomMargin">
+       <number>16</number>
+      </property>
+      <item>
+       <widget class="QWidget" name="session_info">
+        <property name="objectName">
+         <string>session_info</string>
+        </property>
+        <layout class="QVBoxLayout" name="session_layout">
+         <property name="spacing">
+          <number>4</number>
+         </property>
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="vng_title">
+           <property name="text">
+            <string>Evaluación Vestibular VNG</string>
+           </property>
+           <property name="objectName">
+            <string>vng_title</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="patient_name">
+           <property name="text">
+            <string>Paciente: Seleccionar paciente</string>
+           </property>
+           <property name="objectName">
+            <string>patient_name</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="session_date">
+           <property name="text">
+            <string>Fecha: 17 de Junio, 2025</string>
+           </property>
+           <property name="objectName">
+            <string>session_date</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <spacer name="header_spacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QWidget" name="session_status">
+        <property name="objectName">
+         <string>session_status</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>150</width>
+          <height>0</height>
+         </size>
+        </property>
+        <layout class="QVBoxLayout" name="status_layout">
+         <property name="spacing">
+          <number>4</number>
+         </property>
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="status_indicator">
+           <property name="text">
+            <string>🔴 Sin iniciar</string>
+           </property>
+           <property name="objectName">
+            <string>status_indicator</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="recording_time">
+           <property name="text">
+            <string>Tiempo: 00:00:00</string>
+           </property>
+           <property name="objectName">
+            <string>recording_time</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_select_patient">
+        <property name="text">
+         <string>👤 Seleccionar Paciente</string>
+        </property>
+        <property name="objectName">
+         <string>btn_select_patient</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>160</width>
+          <height>40</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_save_session">
+        <property name="text">
+         <string>💾 Guardar Sesión</string>
+        </property>
+        <property name="objectName">
+         <string>btn_save_session</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>140</width>
+          <height>40</height>
+         </size>
+        </property>
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <!-- Main Content Area -->
+    <widget class="QWidget" name="main_content">
+     <property name="objectName">
+      <string>main_content</string>
+     </property>
+     <layout class="QHBoxLayout" name="content_layout">
+      <property name="spacing">
+       <number>16</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <!-- Left Panel: Camera and Analysis -->
+       <widget class="QWidget" name="camera_panel">
+        <property name="objectName">
+         <string>camera_panel</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>750</width>
+          <height>0</height>
+         </size>
+        </property>
+        <layout class="QVBoxLayout" name="camera_layout">
+         <property name="spacing">
+          <number>16</number>
+         </property>
+         <property name="leftMargin">
+          <number>16</number>
+         </property>
+         <property name="topMargin">
+          <number>16</number>
+         </property>
+         <property name="rightMargin">
+          <number>16</number>
+         </property>
+         <property name="bottomMargin">
+          <number>16</number>
+         </property>
+         <item>
+          <!-- Camera View -->
+          <widget class="QWidget" name="camera_container">
+           <property name="objectName">
+            <string>camera_container</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>400</height>
+            </size>
+           </property>
+           <layout class="QVBoxLayout" name="camera_container_layout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="camera_title">
+              <property name="text">
+               <string>Vista de Cámara - Análisis Ocular</string>
+              </property>
+              <property name="objectName">
+               <string>camera_title</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="camera_display">
+              <property name="minimumSize">
+               <size>
+                <width>720</width>
+                <height>400</height>
+               </size>
+              </property>
+              <property name="text">
+               <string>📹 Cámara sin conectar
+
+Conecte la cámara para iniciar la evaluación vestibular</string>
+              </property>
+              <property name="objectName">
+               <string>camera_display</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <!-- Analysis Overlay -->
+          <widget class="QWidget" name="analysis_overlay">
+           <property name="objectName">
+            <string>analysis_overlay</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>80</height>
+            </size>
+           </property>
+           <layout class="QHBoxLayout" name="overlay_layout">
+            <property name="spacing">
+             <number>16</number>
+            </property>
+            <property name="leftMargin">
+             <number>16</number>
+            </property>
+            <property name="topMargin">
+             <number>16</number>
+            </property>
+            <property name="rightMargin">
+             <number>16</number>
+            </property>
+            <property name="bottomMargin">
+             <number>16</number>
+            </property>
+            <item>
+             <widget class="QWidget" name="eye_tracking_info">
+              <property name="objectName">
+               <string>eye_tracking_info</string>
+              </property>
+              <layout class="QVBoxLayout" name="tracking_layout">
+               <property name="spacing">
+                <number>4</number>
+               </property>
+               <item>
+                <widget class="QLabel" name="tracking_status">
+                 <property name="text">
+                  <string>👁️ Seguimiento Ocular: Inactivo</string>
+                 </property>
+                 <property name="objectName">
+                  <string>tracking_status</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QLabel" name="calibration_status">
+                 <property name="text">
+                  <string>📐 Calibración: Pendiente</string>
+                 </property>
+                 <property name="objectName">
+                  <string>calibration_status</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <widget class="QWidget" name="real_time_metrics">
+              <property name="objectName">
+               <string>real_time_metrics</string>
+              </property>
+              <layout class="QGridLayout" name="metrics_layout">
+               <property name="spacing">
+                <number>8</number>
+               </property>
+               <item row="0" column="0">
+                <widget class="QLabel" name="label_velocity">
+                 <property name="text">
+                  <string>Velocidad:</string>
+                 </property>
+                 <property name="objectName">
+                  <string>label_velocity</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="0" column="1">
+                <widget class="QLabel" name="value_velocity">
+                 <property name="text">
+                  <string>-- °/s</string>
+                 </property>
+                 <property name="objectName">
+                  <string>value_velocity</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="0" column="2">
+                <widget class="QLabel" name="label_amplitude">
+                 <property name="text">
+                  <string>Amplitud:</string>
+                 </property>
+                 <property name="objectName">
+                  <string>label_amplitude</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="0" column="3">
+                <widget class="QLabel" name="value_amplitude">
+                 <property name="text">
+                  <string>-- °</string>
+                 </property>
+                 <property name="objectName">
+                  <string>value_amplitude</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="1" column="0">
+                <widget class="QLabel" name="label_frequency">
+                 <property name="text">
+                  <string>Frecuencia:</string>
+                 </property>
+                 <property name="objectName">
+                  <string>label_frequency</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="1" column="1">
+                <widget class="QLabel" name="value_frequency">
+                 <property name="text">
+                  <string>-- Hz</string>
+                 </property>
+                 <property name="objectName">
+                  <string>value_frequency</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="1" column="2">
+                <widget class="QLabel" name="label_gain">
+                 <property name="text">
+                  <string>Ganancia:</string>
+                 </property>
+                 <property name="objectName">
+                  <string>label_gain</string>
+                 </property>
+                </widget>
+               </item>
+               <item row="1" column="3">
+                <widget class="QLabel" name="value_gain">
+                 <property name="text">
+                  <string>--</string>
+                 </property>
+                 <property name="objectName">
+                  <string>value_gain</string>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+            <item>
+             <spacer name="overlay_spacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <!-- Right Panel: Controls and Tests -->
+       <widget class="QWidget" name="controls_panel">
+        <property name="objectName">
+         <string>controls_panel</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>350</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>350</width>
+          <height>16777215</height>
+         </size>
+        </property>
+        <layout class="QVBoxLayout" name="controls_layout">
+         <property name="spacing">
+          <number>16</number>
+         </property>
+         <property name="leftMargin">
+          <number>16</number>
+         </property>
+         <property name="topMargin">
+          <number>16</number>
+         </property>
+         <property name="rightMargin">
+          <number>16</number>
+         </property>
+         <property name="bottomMargin">
+          <number>16</number>
+         </property>
+         <item>
+          <!-- Camera Controls -->
+          <widget class="QGroupBox" name="camera_controls_group">
+           <property name="title">
+            <string>Control de Cámara</string>
+           </property>
+           <property name="objectName">
+            <string>camera_controls_group</string>
+           </property>
+           <layout class="QVBoxLayout" name="camera_controls_layout">
+            <property name="spacing">
+             <number>12</number>
+            </property>
+            <property name="leftMargin">
+             <number>16</number>
+            </property>
+            <property name="topMargin">
+             <number>16</number>
+            </property>
+            <property name="rightMargin">
+             <number>16</number>
+            </property>
+            <property name="bottomMargin">
+             <number>16</number>
+            </property>
+            <item>
+             <widget class="QPushButton" name="btn_connect_camera">
+              <property name="text">
+               <string>🔌 Conectar Cámara</string>
+              </property>
+              <property name="objectName">
+               <string>btn_connect_camera</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>40</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_calibrate">
+              <property name="text">
+               <string>📐 Calibrar Sistema</string>
+              </property>
+              <property name="objectName">
+               <string>btn_calibrate</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <!-- Recording Controls -->
+          <widget class="QGroupBox" name="recording_controls_group">
+           <property name="title">
+            <string>Control de Grabación</string>
+           </property>
+           <property name="objectName">
+            <string>recording_controls_group</string>
+           </property>
+           <layout class="QVBoxLayout" name="recording_controls_layout">
+            <property name="spacing">
+             <number>12</number>
+            </property>
+            <property name="leftMargin">
+             <number>16</number>
+            </property>
+            <property name="topMargin">
+             <number>16</number>
+            </property>
+            <property name="rightMargin">
+             <number>16</number>
+            </property>
+            <property name="bottomMargin">
+             <number>16</number>
+            </property>
+            <item>
+             <widget class="QWidget" name="recording_buttons">
+              <property name="objectName">
+               <string>recording_buttons</string>
+              </property>
+              <layout class="QHBoxLayout" name="recording_buttons_layout">
+               <property name="spacing">
+                <number>8</number>
+               </property>
+               <item>
+                <widget class="QPushButton" name="btn_start_recording">
+                 <property name="text">
+                  <string>▶️ Iniciar</string>
+                 </property>
+                 <property name="objectName">
+                  <string>btn_start_recording</string>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>0</width>
+                   <height>40</height>
+                  </size>
+                 </property>
+                 <property name="enabled">
+                  <bool>false</bool>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="btn_pause_recording">
+                 <property name="text">
+                  <string>⏸️ Pausar</string>
+                 </property>
+                 <property name="objectName">
+                  <string>btn_pause_recording</string>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>0</width>
+                   <height>40</height>
+                  </size>
+                 </property>
+                 <property name="enabled">
+                  <bool>false</bool>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="btn_stop_recording">
+                 <property name="text">
+                  <string>⏹️ Detener</string>
+                 </property>
+                 <property name="objectName">
+                  <string>btn_stop_recording</string>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>0</width>
+                   <height>40</height>
+                  </size>
+                 </property>
+                 <property name="enabled">
+                  <bool>false</bool>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <!-- VNG Tests -->
+          <widget class="QGroupBox" name="vng_tests_group">
+           <property name="title">
+            <string>Pruebas VNG</string>
+           </property>
+           <property name="objectName">
+            <string>vng_tests_group</string>
+           </property>
+           <layout class="QVBoxLayout" name="tests_layout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <property name="leftMargin">
+             <number>16</number>
+            </property>
+            <property name="topMargin">
+             <number>16</number>
+            </property>
+            <property name="rightMargin">
+             <number>16</number>
+            </property>
+            <property name="bottomMargin">
+             <number>16</number>
+            </property>
+            <item>
+             <widget class="QPushButton" name="btn_test_saccades">
+              <property name="text">
+               <string>👁️ Prueba de Sacadas</string>
+              </property>
+              <property name="objectName">
+               <string>btn_test_saccades</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>36</height>
+               </size>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_test_smooth_pursuit">
+              <property name="text">
+               <string>🎯 Seguimiento Suave</string>
+              </property>
+              <property name="objectName">
+               <string>btn_test_smooth_pursuit</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>36</height>
+               </size>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_test_optokinetic">
+              <property name="text">
+               <string>🌀 Nistagmo Optocinético</string>
+              </property>
+              <property name="objectName">
+               <string>btn_test_optokinetic</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>36</height>
+               </size>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_test_caloric">
+              <property name="text">
+               <string>🌡️ Prueba Calórica</string>
+              </property>
+              <property name="objectName">
+               <string>btn_test_caloric</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>36</height>
+               </size>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_test_positional">
+              <property name="text">
+               <string>📐 Prueba Posicional</string>
+              </property>
+              <property name="objectName">
+               <string>btn_test_positional</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>36</height>
+               </size>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <!-- Session Notes -->
+          <widget class="QGroupBox" name="session_notes_group">
+           <property name="title">
+            <string>Notas de Sesión</string>
+           </property>
+           <property name="objectName">
+            <string>session_notes_group</string>
+           </property>
+           <layout class="QVBoxLayout" name="notes_layout">
+            <property name="spacing">
+             <number>12</number>
+            </property>
+            <property name="leftMargin">
+             <number>16</number>
+            </property>
+            <property name="topMargin">
+             <number>16</number>
+            </property>
+            <property name="rightMargin">
+             <number>16</number>
+            </property>
+            <property name="bottomMargin">
+             <number>16</number>
+            </property>
+            <item>
+             <widget class="QTextEdit" name="session_notes">
+              <property name="placeholderText">
+               <string>Escribe observaciones durante la evaluación...</string>
+              </property>
+              <property name="objectName">
+               <string>session_notes</string>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>16777215</width>
+                <height>100</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <spacer name="controls_spacer">
+           <property name="orientation">
+            <enum>Qt::Vertical</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>20</width>
+             <height>40</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

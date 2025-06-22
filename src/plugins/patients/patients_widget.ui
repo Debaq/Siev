@@ -1,0 +1,832 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PatientsWidget</class>
+ <widget class="QWidget" name="PatientsWidget">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1160</width>
+    <height>800</height>
+   </rect>
+  </property>
+  <property name="objectName">
+   <string>patients_widget</string>
+  </property>
+  <layout class="QVBoxLayout" name="patients_layout">
+   <property name="spacing">
+    <number>24</number>
+   </property>
+   <property name="leftMargin">
+    <number>32</number>
+   </property>
+   <property name="topMargin">
+    <number>24</number>
+   </property>
+   <property name="rightMargin">
+    <number>32</number>
+   </property>
+   <property name="bottomMargin">
+    <number>32</number>
+   </property>
+   <item>
+    <!-- Header Section -->
+    <widget class="QWidget" name="patients_header">
+     <property name="objectName">
+      <string>patients_header</string>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>60</height>
+      </size>
+     </property>
+     <layout class="QHBoxLayout" name="header_layout">
+      <property name="spacing">
+       <number>24</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QWidget" name="title_section">
+        <layout class="QVBoxLayout" name="title_layout">
+         <property name="spacing">
+          <number>4</number>
+         </property>
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="patients_title">
+           <property name="text">
+            <string>Gestión de Pacientes</string>
+           </property>
+           <property name="objectName">
+            <string>patients_title</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="patients_subtitle">
+           <property name="text">
+            <string>Administra la información de tus pacientes</string>
+           </property>
+           <property name="objectName">
+            <string>patients_subtitle</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <spacer name="header_spacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_new_patient">
+        <property name="text">
+         <string>+ Nuevo Paciente</string>
+        </property>
+        <property name="objectName">
+         <string>btn_new_patient</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>150</width>
+          <height>40</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_import_patients">
+        <property name="text">
+         <string>📥 Importar</string>
+        </property>
+        <property name="objectName">
+         <string>btn_import_patients</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>100</width>
+          <height>40</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_export_patients">
+        <property name="text">
+         <string>📤 Exportar</string>
+        </property>
+        <property name="objectName">
+         <string>btn_export_patients</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>100</width>
+          <height>40</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <!-- Search and Filter Section -->
+    <widget class="QWidget" name="search_section">
+     <property name="objectName">
+      <string>search_section</string>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>50</height>
+      </size>
+     </property>
+     <layout class="QHBoxLayout" name="search_layout">
+      <property name="spacing">
+       <number>16</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QLineEdit" name="search_input">
+        <property name="placeholderText">
+         <string>Buscar por nombre, cédula o teléfono...</string>
+        </property>
+        <property name="objectName">
+         <string>search_input</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>300</width>
+          <height>40</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QComboBox" name="filter_age">
+        <property name="objectName">
+         <string>filter_age</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>120</width>
+          <height>40</height>
+         </size>
+        </property>
+        <item>
+         <property name="text">
+          <string>Todas las edades</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>18-30 años</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>31-50 años</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>51-70 años</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>70+ años</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item>
+       <widget class="QComboBox" name="filter_status">
+        <property name="objectName">
+         <string>filter_status</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>120</width>
+          <height>40</height>
+         </size>
+        </property>
+        <item>
+         <property name="text">
+          <string>Todos los estados</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Activo</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>En tratamiento</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Seguimiento</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Inactivo</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_clear_filters">
+        <property name="text">
+         <string>🔄 Limpiar</string>
+        </property>
+        <property name="objectName">
+         <string>btn_clear_filters</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>80</width>
+          <height>40</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="search_spacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QLabel" name="patients_count">
+        <property name="text">
+         <string>Total: 1,247 pacientes</string>
+        </property>
+        <property name="objectName">
+         <string>patients_count</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <!-- Main Content Area -->
+    <widget class="QWidget" name="content_area">
+     <property name="objectName">
+      <string>content_area</string>
+     </property>
+     <layout class="QHBoxLayout" name="content_layout">
+      <property name="spacing">
+       <number>24</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <!-- Patients List (Left Panel) -->
+       <widget class="QWidget" name="patients_list_panel">
+        <property name="objectName">
+         <string>patients_list_panel</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>700</width>
+          <height>0</height>
+         </size>
+        </property>
+        <layout class="QVBoxLayout" name="list_panel_layout">
+         <property name="spacing">
+          <number>16</number>
+         </property>
+         <property name="leftMargin">
+          <number>24</number>
+         </property>
+         <property name="topMargin">
+          <number>24</number>
+         </property>
+         <property name="rightMargin">
+          <number>24</number>
+         </property>
+         <property name="bottomMargin">
+          <number>24</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="list_title">
+           <property name="text">
+            <string>Lista de Pacientes</string>
+           </property>
+           <property name="objectName">
+            <string>list_title</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QTableWidget" name="patients_table">
+           <property name="objectName">
+            <string>patients_table</string>
+           </property>
+           <property name="alternatingRowColors">
+            <bool>true</bool>
+           </property>
+           <property name="selectionBehavior">
+            <enum>QAbstractItemView::SelectRows</enum>
+           </property>
+           <property name="sortingEnabled">
+            <bool>true</bool>
+           </property>
+           <column>
+            <property name="text">
+             <string>ID</string>
+            </property>
+           </column>
+           <column>
+            <property name="text">
+             <string>Nombre Completo</string>
+            </property>
+           </column>
+           <column>
+            <property name="text">
+             <string>Cédula</string>
+            </property>
+           </column>
+           <column>
+            <property name="text">
+             <string>Edad</string>
+            </property>
+           </column>
+           <column>
+            <property name="text">
+             <string>Teléfono</string>
+            </property>
+           </column>
+           <column>
+            <property name="text">
+             <string>Estado</string>
+            </property>
+           </column>
+           <column>
+            <property name="text">
+             <string>Última Evaluación</string>
+            </property>
+           </column>
+           <column>
+            <property name="text">
+             <string>Acciones</string>
+            </property>
+           </column>
+          </widget>
+         </item>
+         <item>
+          <!-- Pagination -->
+          <widget class="QWidget" name="pagination_section">
+           <property name="objectName">
+            <string>pagination_section</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>40</height>
+            </size>
+           </property>
+           <layout class="QHBoxLayout" name="pagination_layout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QLabel" name="pagination_info">
+              <property name="text">
+               <string>Mostrando 1-50 de 1,247</string>
+              </property>
+              <property name="objectName">
+               <string>pagination_info</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="pagination_spacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_first_page">
+              <property name="text">
+               <string>⏮️</string>
+              </property>
+              <property name="objectName">
+               <string>btn_first_page</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>40</width>
+                <height>32</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>40</width>
+                <height>32</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_prev_page">
+              <property name="text">
+               <string>◀️</string>
+              </property>
+              <property name="objectName">
+               <string>btn_prev_page</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>40</width>
+                <height>32</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>40</width>
+                <height>32</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="current_page">
+              <property name="text">
+               <string>Página 1 de 25</string>
+              </property>
+              <property name="objectName">
+               <string>current_page</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>100</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_next_page">
+              <property name="text">
+               <string>▶️</string>
+              </property>
+              <property name="objectName">
+               <string>btn_next_page</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>40</width>
+                <height>32</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>40</width>
+                <height>32</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_last_page">
+              <property name="text">
+               <string>⏭️</string>
+              </property>
+              <property name="objectName">
+               <string>btn_last_page</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>40</width>
+                <height>32</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>40</width>
+                <height>32</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <!-- Patient Details (Right Panel) -->
+       <widget class="QWidget" name="patient_details_panel">
+        <property name="objectName">
+         <string>patient_details_panel</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>350</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>350</width>
+          <height>16777215</height>
+         </size>
+        </property>
+        <layout class="QVBoxLayout" name="details_panel_layout">
+         <property name="spacing">
+          <number>16</number>
+         </property>
+         <property name="leftMargin">
+          <number>24</number>
+         </property>
+         <property name="topMargin">
+          <number>24</number>
+         </property>
+         <property name="rightMargin">
+          <number>24</number>
+         </property>
+         <property name="bottomMargin">
+          <number>24</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="details_title">
+           <property name="text">
+            <string>Detalles del Paciente</string>
+           </property>
+           <property name="objectName">
+            <string>details_title</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <!-- Patient Info Display Area -->
+          <widget class="QScrollArea" name="patient_info_scroll">
+           <property name="objectName">
+            <string>patient_info_scroll</string>
+           </property>
+           <property name="widgetResizable">
+            <bool>true</bool>
+           </property>
+           <widget class="QWidget" name="patient_info_content">
+            <property name="geometry">
+             <rect>
+              <x>0</x>
+              <y>0</y>
+              <width>300</width>
+              <height>400</height>
+             </rect>
+            </property>
+            <property name="objectName">
+             <string>patient_info_content</string>
+            </property>
+            <layout class="QVBoxLayout" name="info_content_layout">
+             <property name="spacing">
+              <number>12</number>
+             </property>
+             <property name="leftMargin">
+              <number>16</number>
+             </property>
+             <property name="topMargin">
+              <number>16</number>
+             </property>
+             <property name="rightMargin">
+              <number>16</number>
+             </property>
+             <property name="bottomMargin">
+              <number>16</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="no_patient_selected">
+               <property name="text">
+                <string>Selecciona un paciente de la lista para ver sus detalles</string>
+               </property>
+               <property name="objectName">
+                <string>no_patient_selected</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignCenter</set>
+               </property>
+               <property name="wordWrap">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <spacer name="info_spacer">
+               <property name="orientation">
+                <enum>Qt::Vertical</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>20</width>
+                 <height>40</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+            </layout>
+           </widget>
+          </widget>
+         </item>
+         <item>
+          <!-- Action Buttons -->
+          <widget class="QWidget" name="details_actions">
+           <property name="objectName">
+            <string>details_actions</string>
+           </property>
+           <layout class="QVBoxLayout" name="details_actions_layout">
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <item>
+             <widget class="QPushButton" name="btn_edit_patient">
+              <property name="text">
+               <string>✏️ Editar Paciente</string>
+              </property>
+              <property name="objectName">
+               <string>btn_edit_patient</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_new_evaluation">
+              <property name="text">
+               <string>👁️ Nueva Evaluación</string>
+              </property>
+              <property name="objectName">
+               <string>btn_new_evaluation</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_view_history">
+              <property name="text">
+               <string>📄 Ver Historial</string>
+              </property>
+              <property name="objectName">
+               <string>btn_view_history</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btn_delete_patient">
+              <property name="text">
+               <string>🗑️ Eliminar Paciente</string>
+              </property>
+              <property name="objectName">
+               <string>btn_delete_patient</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>0</width>
+                <height>40</height>
+               </size>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

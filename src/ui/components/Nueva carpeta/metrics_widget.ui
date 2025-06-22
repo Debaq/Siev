@@ -1,0 +1,601 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MetricsWidget</class>
+ <widget class="QWidget" name="MetricsWidget">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>400</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="objectName">
+   <string>metrics_widget</string>
+  </property>
+  <layout class="QVBoxLayout" name="metrics_layout">
+   <property name="spacing">
+    <number>16</number>
+   </property>
+   <property name="leftMargin">
+    <number>20</number>
+   </property>
+   <property name="topMargin">
+    <number>16</number>
+   </property>
+   <property name="rightMargin">
+    <number>20</number>
+   </property>
+   <property name="bottomMargin">
+    <number>20</number>
+   </property>
+   <item>
+    <!-- Metrics Header -->
+    <widget class="QWidget" name="metrics_header">
+     <property name="objectName">
+      <string>metrics_header</string>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>40</height>
+      </size>
+     </property>
+     <layout class="QHBoxLayout" name="header_layout">
+      <property name="spacing">
+       <number>12</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QLabel" name="metrics_title">
+        <property name="text">
+         <string>📊 Métricas en Tiempo Real</string>
+        </property>
+        <property name="objectName">
+         <string>metrics_title</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="header_spacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_reset_metrics">
+        <property name="text">
+         <string>🔄</string>
+        </property>
+        <property name="objectName">
+         <string>btn_reset_metrics</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>32</width>
+          <height>32</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>32</width>
+          <height>32</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <!-- Current Values Section -->
+    <widget class="QGroupBox" name="current_values_group">
+     <property name="title">
+      <string>Valores Actuales</string>
+     </property>
+     <property name="objectName">
+      <string>current_values_group</string>
+     </property>
+     <layout class="QGridLayout" name="current_values_layout">
+      <property name="spacing">
+       <number>12</number>
+      </property>
+      <property name="leftMargin">
+       <number>16</number>
+      </property>
+      <property name="topMargin">
+       <number>16</number>
+      </property>
+      <property name="rightMargin">
+       <number>16</number>
+      </property>
+      <property name="bottomMargin">
+       <number>16</number>
+      </property>
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_current_velocity">
+        <property name="text">
+         <string>Velocidad:</string>
+        </property>
+        <property name="objectName">
+         <string>label_current_velocity</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLabel" name="value_current_velocity">
+        <property name="text">
+         <string>-- °/s</string>
+        </property>
+        <property name="objectName">
+         <string>value_current_velocity</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_current_amplitude">
+        <property name="text">
+         <string>Amplitud:</string>
+        </property>
+        <property name="objectName">
+         <string>label_current_amplitude</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLabel" name="value_current_amplitude">
+        <property name="text">
+         <string>-- °</string>
+        </property>
+        <property name="objectName">
+         <string>value_current_amplitude</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_current_frequency">
+        <property name="text">
+         <string>Frecuencia:</string>
+        </property>
+        <property name="objectName">
+         <string>label_current_frequency</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLabel" name="value_current_frequency">
+        <property name="text">
+         <string>-- Hz</string>
+        </property>
+        <property name="objectName">
+         <string>value_current_frequency</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_current_gain">
+        <property name="text">
+         <string>Ganancia VOR:</string>
+        </property>
+        <property name="objectName">
+         <string>label_current_gain</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QLabel" name="value_current_gain">
+        <property name="text">
+         <string>--</string>
+        </property>
+        <property name="objectName">
+         <string>value_current_gain</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <!-- Peak Values Section -->
+    <widget class="QGroupBox" name="peak_values_group">
+     <property name="title">
+      <string>Valores Máximos</string>
+     </property>
+     <property name="objectName">
+      <string>peak_values_group</string>
+     </property>
+     <layout class="QGridLayout" name="peak_values_layout">
+      <property name="spacing">
+       <number>12</number>
+      </property>
+      <property name="leftMargin">
+       <number>16</number>
+      </property>
+      <property name="topMargin">
+       <number>16</number>
+      </property>
+      <property name="rightMargin">
+       <number>16</number>
+      </property>
+      <property name="bottomMargin">
+       <number>16</number>
+      </property>
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_peak_velocity">
+        <property name="text">
+         <string>Vel. Máxima:</string>
+        </property>
+        <property name="objectName">
+         <string>label_peak_velocity</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLabel" name="value_peak_velocity">
+        <property name="text">
+         <string>-- °/s</string>
+        </property>
+        <property name="objectName">
+         <string>value_peak_velocity</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_peak_amplitude">
+        <property name="text">
+         <string>Amp. Máxima:</string>
+        </property>
+        <property name="objectName">
+         <string>label_peak_amplitude</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLabel" name="value_peak_amplitude">
+        <property name="text">
+         <string>-- °</string>
+        </property>
+        <property name="objectName">
+         <string>value_peak_amplitude</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_peak_frequency">
+        <property name="text">
+         <string>Freq. Máxima:</string>
+        </property>
+        <property name="objectName">
+         <string>label_peak_frequency</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLabel" name="value_peak_frequency">
+        <property name="text">
+         <string>-- Hz</string>
+        </property>
+        <property name="objectName">
+         <string>value_peak_frequency</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <!-- Statistical Values Section -->
+    <widget class="QGroupBox" name="statistical_values_group">
+     <property name="title">
+      <string>Análisis Estadístico</string>
+     </property>
+     <property name="objectName">
+      <string>statistical_values_group</string>
+     </property>
+     <layout class="QGridLayout" name="statistical_layout">
+      <property name="spacing">
+       <number>12</number>
+      </property>
+      <property name="leftMargin">
+       <number>16</number>
+      </property>
+      <property name="topMargin">
+       <number>16</number>
+      </property>
+      <property name="rightMargin">
+       <number>16</number>
+      </property>
+      <property name="bottomMargin">
+       <number>16</number>
+      </property>
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_mean_velocity">
+        <property name="text">
+         <string>Velocidad Media:</string>
+        </property>
+        <property name="objectName">
+         <string>label_mean_velocity</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLabel" name="value_mean_velocity">
+        <property name="text">
+         <string>-- °/s</string>
+        </property>
+        <property name="objectName">
+         <string>value_mean_velocity</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_std_deviation">
+        <property name="text">
+         <string>Desv. Estándar:</string>
+        </property>
+        <property name="objectName">
+         <string>label_std_deviation</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLabel" name="value_std_deviation">
+        <property name="text">
+         <string>-- °/s</string>
+        </property>
+        <property name="objectName">
+         <string>value_std_deviation</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_asymmetry">
+        <property name="text">
+         <string>Asimetría:</string>
+        </property>
+        <property name="objectName">
+         <string>label_asymmetry</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLabel" name="value_asymmetry">
+        <property name="text">
+         <string>--%</string>
+        </property>
+        <property name="objectName">
+         <string>value_asymmetry</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_directional_preponderance">
+        <property name="text">
+         <string>Prepond. Direccional:</string>
+        </property>
+        <property name="objectName">
+         <string>label_directional_preponderance</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QLabel" name="value_directional_preponderance">
+        <property name="text">
+         <string>--%</string>
+        </property>
+        <property name="objectName">
+         <string>value_directional_preponderance</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <!-- Quality Indicators Section -->
+    <widget class="QGroupBox" name="quality_indicators_group">
+     <property name="title">
+      <string>Indicadores de Calidad</string>
+     </property>
+     <property name="objectName">
+      <string>quality_indicators_group</string>
+     </property>
+     <layout class="QVBoxLayout" name="quality_layout">
+      <property name="spacing">
+       <number>12</number>
+      </property>
+      <property name="leftMargin">
+       <number>16</number>
+      </property>
+      <property name="topMargin">
+       <number>16</number>
+      </property>
+      <property name="rightMargin">
+       <number>16</number>
+      </property>
+      <property name="bottomMargin">
+       <number>16</number>
+      </property>
+      <item>
+       <widget class="QWidget" name="signal_quality">
+        <property name="objectName">
+         <string>signal_quality</string>
+        </property>
+        <layout class="QHBoxLayout" name="signal_quality_layout">
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="label_signal_quality">
+           <property name="text">
+            <string>Calidad de Señal:</string>
+           </property>
+           <property name="objectName">
+            <string>label_signal_quality</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QProgressBar" name="progress_signal_quality">
+           <property name="value">
+            <number>85</number>
+           </property>
+           <property name="objectName">
+            <string>progress_signal_quality</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>100</width>
+             <height>20</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="value_signal_quality">
+           <property name="text">
+            <string>85%</string>
+           </property>
+           <property name="objectName">
+            <string>value_signal_quality</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="tracking_accuracy">
+        <property name="objectName">
+         <string>tracking_accuracy</string>
+        </property>
+        <layout class="QHBoxLayout" name="tracking_accuracy_layout">
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="label_tracking_accuracy">
+           <property name="text">
+            <string>Precisión de Seguimiento:</string>
+           </property>
+           <property name="objectName">
+            <string>label_tracking_accuracy</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QProgressBar" name="progress_tracking_accuracy">
+           <property name="value">
+            <number>92</number>
+           </property>
+           <property name="objectName">
+            <string>progress_tracking_accuracy</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>100</width>
+             <height>20</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="value_tracking_accuracy">
+           <property name="text">
+            <string>92%</string>
+           </property>
+           <property name="objectName">
+            <string>value_tracking_accuracy</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="confidence_level">
+        <property name="objectName">
+         <string>confidence_level</string>
+        </property>
+        <layout class="QHBoxLayout" name="confidence_layout">
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="label_confidence">
+           <property name="text">
+            <string>Nivel de Confianza:</string>
+           </property>
+           <property name="objectName">
+            <string>label_confidence</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QProgressBar" name="progress_confidence">
+           <property name="value">
+            <number>78</number>
+           </property>
+           <property name="objectName">
+            <string>progress_confidence</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>100</width>
+             <height>20</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="value_confidence">
+           <property name="text">
+            <string>78%</string>
+           </property>
+           <property name="objectName">
+            <string>value_confidence</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <spacer name="metrics_spacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

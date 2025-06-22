@@ -1,0 +1,1134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PatientList</class>
+ <widget class="QWidget" name="PatientList">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>900</width>
+    <height>700</height>
+   </rect>
+  </property>
+  <property name="objectName">
+   <string>patient_list</string>
+  </property>
+  <layout class="QVBoxLayout" name="list_layout">
+   <property name="spacing">
+    <number>16</number>
+   </property>
+   <property name="leftMargin">
+    <number>24</number>
+   </property>
+   <property name="topMargin">
+    <number>24</number>
+   </property>
+   <property name="rightMargin">
+    <number>24</number>
+   </property>
+   <property name="bottomMargin">
+    <number>24</number>
+   </property>
+   <item>
+    <!-- List Header -->
+    <widget class="QWidget" name="list_header">
+     <property name="objectName">
+      <string>list_header</string>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>50</height>
+      </size>
+     </property>
+     <layout class="QHBoxLayout" name="header_layout">
+      <property name="spacing">
+       <number>16</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QLabel" name="list_title">
+        <property name="text">
+         <string>Lista de Pacientes</string>
+        </property>
+        <property name="objectName">
+         <string>list_title</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="header_spacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QComboBox" name="sort_options">
+        <property name="objectName">
+         <string>sort_options</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>150</width>
+          <height>32</height>
+         </size>
+        </property>
+        <item>
+         <property name="text">
+          <string>Ordenar por Nombre</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Ordenar por Fecha</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Ordenar por Edad</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Ordenar por Estado</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_refresh">
+        <property name="text">
+         <string>🔄</string>
+        </property>
+        <property name="objectName">
+         <string>btn_refresh</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>32</width>
+          <height>32</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>32</width>
+          <height>32</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_view_mode">
+        <property name="text">
+         <string>📋</string>
+        </property>
+        <property name="objectName">
+         <string>btn_view_mode</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>32</width>
+          <height>32</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>32</width>
+          <height>32</height>
+         </size>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <!-- Quick Stats -->
+    <widget class="QWidget" name="quick_stats">
+     <property name="objectName">
+      <string>quick_stats</string>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>60</height>
+      </size>
+     </property>
+     <layout class="QHBoxLayout" name="stats_layout">
+      <property name="spacing">
+       <number>24</number>
+      </property>
+      <property name="leftMargin">
+       <number>16</number>
+      </property>
+      <property name="topMargin">
+       <number>12</number>
+      </property>
+      <property name="rightMargin">
+       <number>16</number>
+      </property>
+      <property name="bottomMargin">
+       <number>12</number>
+      </property>
+      <item>
+       <widget class="QWidget" name="stat_total">
+        <property name="objectName">
+         <string>stat_total</string>
+        </property>
+        <layout class="QHBoxLayout" name="total_layout">
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="total_icon">
+           <property name="text">
+            <string>👥</string>
+           </property>
+           <property name="objectName">
+            <string>total_icon</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>20</width>
+             <height>20</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="total_label">
+           <property name="text">
+            <string>Total:</string>
+           </property>
+           <property name="objectName">
+            <string>total_label</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="total_count">
+           <property name="text">
+            <string>1,247</string>
+           </property>
+           <property name="objectName">
+            <string>total_count</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="stat_active">
+        <property name="objectName">
+         <string>stat_active</string>
+        </property>
+        <layout class="QHBoxLayout" name="active_layout">
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="active_icon">
+           <property name="text">
+            <string>🟢</string>
+           </property>
+           <property name="objectName">
+            <string>active_icon</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>20</width>
+             <height>20</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="active_label">
+           <property name="text">
+            <string>Activos:</string>
+           </property>
+           <property name="objectName">
+            <string>active_label</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="active_count">
+           <property name="text">
+            <string>1,089</string>
+           </property>
+           <property name="objectName">
+            <string>active_count</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="stat_treatment">
+        <property name="objectName">
+         <string>stat_treatment</string>
+        </property>
+        <layout class="QHBoxLayout" name="treatment_layout">
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="treatment_icon">
+           <property name="text">
+            <string>🔵</string>
+           </property>
+           <property name="objectName">
+            <string>treatment_icon</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>20</width>
+             <height>20</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="treatment_label">
+           <property name="text">
+            <string>En Tratamiento:</string>
+           </property>
+           <property name="objectName">
+            <string>treatment_label</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="treatment_count">
+           <property name="text">
+            <string>123</string>
+           </property>
+           <property name="objectName">
+            <string>treatment_count</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="stat_followup">
+        <property name="objectName">
+         <string>stat_followup</string>
+        </property>
+        <layout class="QHBoxLayout" name="followup_layout">
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="followup_icon">
+           <property name="text">
+            <string>🟡</string>
+           </property>
+           <property name="objectName">
+            <string>followup_icon</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>20</width>
+             <height>20</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="followup_label">
+           <property name="text">
+            <string>Seguimiento:</string>
+           </property>
+           <property name="objectName">
+            <string>followup_label</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="followup_count">
+           <property name="text">
+            <string>35</string>
+           </property>
+           <property name="objectName">
+            <string>followup_count</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <spacer name="stats_spacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <!-- Patient Cards Container -->
+    <widget class="QScrollArea" name="patients_scroll">
+     <property name="objectName">
+      <string>patients_scroll</string>
+     </property>
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <widget class="QWidget" name="patients_content">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>850</width>
+        <height>400</height>
+       </rect>
+      </property>
+      <property name="objectName">
+       <string>patients_content</string>
+      </property>
+      <layout class="QVBoxLayout" name="patients_layout">
+       <property name="spacing">
+        <number>12</number>
+       </property>
+       <property name="leftMargin">
+        <number>16</number>
+       </property>
+       <property name="topMargin">
+        <number>16</number>
+       </property>
+       <property name="rightMargin">
+        <number>16</number>
+       </property>
+       <property name="bottomMargin">
+        <number>16</number>
+       </property>
+       <item>
+        <!-- Sample Patient Card 1 -->
+        <widget class="QWidget" name="patient_card_1">
+         <property name="objectName">
+          <string>patient_card</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>80</height>
+          </size>
+         </property>
+         <layout class="QHBoxLayout" name="card_1_layout">
+          <property name="spacing">
+           <number>16</number>
+          </property>
+          <property name="leftMargin">
+           <number>20</number>
+          </property>
+          <property name="topMargin">
+           <number>16</number>
+          </property>
+          <property name="rightMargin">
+           <number>20</number>
+          </property>
+          <property name="bottomMargin">
+           <number>16</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="avatar_1">
+            <property name="minimumSize">
+             <size>
+              <width>48</width>
+              <height>48</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>48</width>
+              <height>48</height>
+             </size>
+            </property>
+            <property name="text">
+             <string>👩</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
+            </property>
+            <property name="objectName">
+             <string>patient_avatar</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QWidget" name="info_1">
+            <property name="objectName">
+             <string>patient_info</string>
+            </property>
+            <layout class="QVBoxLayout" name="info_1_layout">
+             <property name="spacing">
+              <number>4</number>
+             </property>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="name_1">
+               <property name="text">
+                <string>María Elena González López</string>
+               </property>
+               <property name="objectName">
+                <string>patient_name</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="details_1">
+               <property name="text">
+                <string>ID: 1234567890 • 45 años • Tel: +57 300 123 4567</string>
+               </property>
+               <property name="objectName">
+                <string>patient_details</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QWidget" name="status_1">
+            <property name="objectName">
+             <string>patient_status</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>120</width>
+              <height>0</height>
+             </size>
+            </property>
+            <layout class="QVBoxLayout" name="status_1_layout">
+             <property name="spacing">
+              <number>4</number>
+             </property>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="status_badge_1">
+               <property name="text">
+                <string>🟢 Activo</string>
+               </property>
+               <property name="objectName">
+                <string>status_badge</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignCenter</set>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="last_visit_1">
+               <property name="text">
+                <string>Última: 15/06/2025</string>
+               </property>
+               <property name="objectName">
+                <string>last_visit</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignCenter</set>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QWidget" name="actions_1">
+            <property name="objectName">
+             <string>patient_actions</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>120</width>
+              <height>0</height>
+             </size>
+            </property>
+            <layout class="QHBoxLayout" name="actions_1_layout">
+             <property name="spacing">
+              <number>8</number>
+             </property>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QPushButton" name="btn_view_1">
+               <property name="text">
+                <string>👁️</string>
+               </property>
+               <property name="objectName">
+                <string>btn_view_patient</string>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>32</width>
+                 <height>32</height>
+                </size>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>32</width>
+                 <height>32</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btn_edit_1">
+               <property name="text">
+                <string>✏️</string>
+               </property>
+               <property name="objectName">
+                <string>btn_edit_patient</string>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>32</width>
+                 <height>32</height>
+                </size>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>32</width>
+                 <height>32</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btn_vng_1">
+               <property name="text">
+                <string>🔬</string>
+               </property>
+               <property name="objectName">
+                <string>btn_start_vng</string>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>32</width>
+                 <height>32</height>
+                </size>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>32</width>
+                 <height>32</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <!-- Sample Patient Card 2 -->
+        <widget class="QWidget" name="patient_card_2">
+         <property name="objectName">
+          <string>patient_card</string>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>80</height>
+          </size>
+         </property>
+         <layout class="QHBoxLayout" name="card_2_layout">
+          <property name="spacing">
+           <number>16</number>
+          </property>
+          <property name="leftMargin">
+           <number>20</number>
+          </property>
+          <property name="topMargin">
+           <number>16</number>
+          </property>
+          <property name="rightMargin">
+           <number>20</number>
+          </property>
+          <property name="bottomMargin">
+           <number>16</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="avatar_2">
+            <property name="minimumSize">
+             <size>
+              <width>48</width>
+              <height>48</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>48</width>
+              <height>48</height>
+             </size>
+            </property>
+            <property name="text">
+             <string>👨</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
+            </property>
+            <property name="objectName">
+             <string>patient_avatar</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QWidget" name="info_2">
+            <property name="objectName">
+             <string>patient_info</string>
+            </property>
+            <layout class="QVBoxLayout" name="info_2_layout">
+             <property name="spacing">
+              <number>4</number>
+             </property>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="name_2">
+               <property name="text">
+                <string>Carlos Andrés Rodríguez Morales</string>
+               </property>
+               <property name="objectName">
+                <string>patient_name</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="details_2">
+               <property name="text">
+                <string>ID: 0987654321 • 52 años • Tel: +57 310 987 6543</string>
+               </property>
+               <property name="objectName">
+                <string>patient_details</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QWidget" name="status_2">
+            <property name="objectName">
+             <string>patient_status</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>120</width>
+              <height>0</height>
+             </size>
+            </property>
+            <layout class="QVBoxLayout" name="status_2_layout">
+             <property name="spacing">
+              <number>4</number>
+             </property>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="status_badge_2">
+               <property name="text">
+                <string>🔵 En Tratamiento</string>
+               </property>
+               <property name="objectName">
+                <string>status_badge</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignCenter</set>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLabel" name="last_visit_2">
+               <property name="text">
+                <string>Última: 10/06/2025</string>
+               </property>
+               <property name="objectName">
+                <string>last_visit</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignCenter</set>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+          <item>
+           <widget class="QWidget" name="actions_2">
+            <property name="objectName">
+             <string>patient_actions</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>120</width>
+              <height>0</height>
+             </size>
+            </property>
+            <layout class="QHBoxLayout" name="actions_2_layout">
+             <property name="spacing">
+              <number>8</number>
+             </property>
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QPushButton" name="btn_view_2">
+               <property name="text">
+                <string>👁️</string>
+               </property>
+               <property name="objectName">
+                <string>btn_view_patient</string>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>32</width>
+                 <height>32</height>
+                </size>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>32</width>
+                 <height>32</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btn_edit_2">
+               <property name="text">
+                <string>✏️</string>
+               </property>
+               <property name="objectName">
+                <string>btn_edit_patient</string>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>32</width>
+                 <height>32</height>
+                </size>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>32</width>
+                 <height>32</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="btn_vng_2">
+               <property name="text">
+                <string>🔬</string>
+               </property>
+               <property name="objectName">
+                <string>btn_start_vng</string>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>32</width>
+                 <height>32</height>
+                </size>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>32</width>
+                 <height>32</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <!-- Empty State -->
+        <widget class="QWidget" name="empty_state">
+         <property name="objectName">
+          <string>empty_state</string>
+         </property>
+         <property name="visible">
+          <bool>false</bool>
+         </property>
+         <layout class="QVBoxLayout" name="empty_layout">
+          <property name="spacing">
+           <number>16</number>
+          </property>
+          <item>
+           <spacer name="empty_top_spacer">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>20</width>
+              <height>40</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="empty_icon">
+            <property name="text">
+             <string>👥</string>
+            </property>
+            <property name="objectName">
+             <string>empty_icon</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="empty_title">
+            <property name="text">
+             <string>No se encontraron pacientes</string>
+            </property>
+            <property name="objectName">
+             <string>empty_title</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="empty_message">
+            <property name="text">
+             <string>Ajusta los filtros de búsqueda o agrega un nuevo paciente</string>
+            </property>
+            <property name="objectName">
+             <string>empty_message</string>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="empty_bottom_spacer">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>20</width>
+              <height>40</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="content_spacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <!-- List Footer with Load More -->
+    <widget class="QWidget" name="list_footer">
+     <property name="objectName">
+      <string>list_footer</string>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>50</height>
+      </size>
+     </property>
+     <layout class="QHBoxLayout" name="footer_layout">
+      <property name="spacing">
+       <number>16</number>
+      </property>
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>8</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>8</number>
+      </property>
+      <item>
+       <widget class="QLabel" name="showing_info">
+        <property name="text">
+         <string>Mostrando 2 de 1,247 pacientes</string>
+        </property>
+        <property name="objectName">
+         <string>showing_info</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="footer_spacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_load_more">
+        <property name="text">
+         <string>Cargar Más Pacientes</string>
+        </property>
+        <property name="objectName">
+         <string>btn_load_more</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>150</width>
+          <height>36</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btn_show_all">
+        <property name="text">
+         <string>Mostrar Todos</string>
+        </property>
+        <property name="objectName">
+         <string>btn_show_all</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>120</width>
+          <height>36</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
