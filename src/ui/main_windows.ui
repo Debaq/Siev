@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>VideoNistagmógrafo</string>
+  </property>
+  
+  <!-- Widget central para imagen OpenCV -->
+  <widget class="QWidget" name="wdg_central">
+   <layout class="QVBoxLayout" name="layouts_central">
+    <item>
+     <widget class="QLabel" name="lbl_imagen">
+      <property name="text">
+       <string>Vista de cámara</string>
+      </property>
+      <property name="alignment">
+       <set>Qt::AlignCenter</set>
+      </property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  
+  <!-- Barra lateral izquierda -->
+  <widget class="QDockWidget" name="dock_izquierdo">
+   <property name="windowTitle">
+    <string>Controles Izquierdos</string>
+   </property>
+   <widget class="QWidget" name="wdg_sidebar_izquierdo">
+    <layout class="QVBoxLayout" name="layouts_sidebar_izquierdo">
+     <item>
+      <widget class="QPushButton" name="btn_izquierdo">
+       <property name="text">
+        <string>Botón Izquierdo</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </widget>
+  </widget>
+  
+  <!-- Barra lateral derecha -->
+  <widget class="QDockWidget" name="dock_derecho">
+   <property name="windowTitle">
+    <string>Controles Derechos</string>
+   </property>
+   <widget class="QWidget" name="wdg_sidebar_derecho">
+    <layout class="QVBoxLayout" name="layouts_sidebar_derecho">
+     <item>
+      <widget class="QPushButton" name="btn_derecho">
+       <property name="text">
+        <string>Botón Derecho</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </widget>
+  </widget>
+  
+  <!-- Área inferior para gráfico -->
+  <widget class="QDockWidget" name="dock_inferior">
+   <property name="windowTitle">
+    <string>Gráfico</string>
+   </property>
+   <widget class="QWidget" name="wdg_grafico">
+    <layout class="QVBoxLayout" name="layouts_grafico">
+     <item>
+      <widget class="QLabel" name="lbl_grafico">
+       <property name="text">
+        <string>Gráfico PyQtGraph</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </widget>
+  </widget>
+  
+  <!-- Configuración de áreas de dock -->
+  <add dockwidget="dock_izquierdo" position="LeftDockWidgetArea"/>
+  <add dockwidget="dock_derecho" position="RightDockWidgetArea"/>
+  <add dockwidget="dock_inferior" position="BottomDockWidgetArea"/>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
