@@ -1,0 +1,85 @@
+{
+  "siev_hardware": {
+    "hub": {
+      "vendor_id": "1a40",
+      "product_id": "0101",
+      "name": "Terminus Technology Inc. Hub",
+      "description": "Hub USB principal donde se conectan todos los dispositivos SIEV"
+    },
+    "ch340": {
+      "vendor_id": "1a86",
+      "product_id": "7523", 
+      "baudrate": 115200,
+      "timeout": 1,
+      "names": [
+        "CH340",
+        "USB-SERIAL CH340",
+        "USB2.0-Serial",
+        "QinHeng Electronics USB2.0-Serial"
+      ],
+      "description": "Convertidor USB a Serie CH340 para comunicación con ESP8266"
+    },
+    "cameras": [
+      {
+        "vendor_id": "0bda",
+        "product_id": "2076",
+        "name": "Realtek Camera",
+        "description": "Cámara principal SIEV - Opción Realtek"
+      },
+      {
+        "vendor_id": "0edc",
+        "product_id": "2076", 
+        "name": "Alternative Camera",
+        "description": "Cámara principal SIEV - Opción alternativa"
+      }
+    ],
+    "esp8266": {
+      "description": "Microcontrolador ESP8266 conectado al CH340",
+      "communication": {
+        "baudrate": 115200,
+        "data_bits": 8,
+        "parity": "none",
+        "stop_bits": 1,
+        "timeout": 1
+      },
+      "commands": {
+        "ping": "PING",
+        "status": "STATUS", 
+        "reset": "RESET",
+        "calibrate": "CALIBRATE"
+      }
+    }
+  },
+  "detection_settings": {
+    "opencv_timeout": 5,
+    "usb_scan_timeout": 10,
+    "serial_scan_timeout": 5,
+    "camera_test_frames": 3,
+    "max_camera_index": 15,
+    "retry_attempts": 3,
+    "suppress_opencv_logs": true
+  },
+  "fallback_options": {
+    "use_any_camera_if_siev_not_found": false,
+    "use_first_available_serial": false,
+    "camera_search_by_name_keywords": [
+      "usb",
+      "camera", 
+      "webcam",
+      "video"
+    ],
+    "serial_search_by_name_keywords": [
+      "ch340",
+      "usb-serial",
+      "qinheng"
+    ]
+  },
+  "version": "1.0",
+  "last_updated": "2025-07-02",
+  "notes": [
+    "Este archivo define la configuración específica del hardware SIEV",
+    "Modificar vendor_id y product_id según cambios del proveedor",
+    "El ESP8266 se comunica a través del CH340 a 115200 baud",
+    "La detección busca primero por IDs específicos, luego por nombres"
+  ]
+}

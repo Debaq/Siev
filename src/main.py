@@ -7,188 +7,16 @@ Main Window usando archivo .ui externo
 
 import sys
 import os
-import cv2
 import numpy as np
+import time
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, 
                               QVBoxLayout, QHBoxLayout, QFrame, QPushButton,
-                              QTreeWidget, QTreeWidgetItem, QSizePolicy)
+                              QTreeWidget, QTreeWidgetItem, QSizePolicy, QGroupBox)
 from PySide6.QtCore import QTimer, Qt, QSize, Signal, QRect, QFile
 from PySide6.QtGui import QImage, QPixmap, QFont, QPainter, QPen, QColor
 from PySide6.QtUiTools import QUiLoader
-from collections import deque
-import time
 from utils.vcl_graph import VCLGraphWidget
-
-class OptimizedCameraWidget(QWidget):
-    """
-    Widget de cámara optimizado para OpenCV en tiempo real
-    """
-    
-    frame_ready = Signal(np.ndarray)
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        
-        # Configuración de cámara
-        self.camera = None
-        self.is_connected = False
-        self.is_recording = False
-        
-        # Frame data
-        self.cv_frame = None
-        self.frame_rgb = None
-        
-        # Configuración de análisis
-        self.show_crosshair = True
-        self.show_tracking = True
-        self.eye_position = (320, 240)
-        
-        # Configurar widget
-        self.setMinimumSize(640, 480)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        
-        # Timer para captura
-        self.capture_timer = QTimer()
-        self.capture_timer.timeout.connect(self.capture_frame)
-        
-    def init_camera(self, camera_id=2):
-        """Inicializar cámara"""
-        try:
-            self.camera = cv2.VideoCapture(camera_id)
-            
-            if not self.camera.isOpened():
-                return False
-                
-            # Configuración optimizada
-            self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, 800)
-            self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 600)
-            self.camera.set(cv2.CAP_PROP_FPS, 120)
-            self.camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            
-            self.is_connected = True
-            return True
-            
-        except Exception as e:
-            print(f"Error inicializando cámara: {e}")
-            return False
-    
-    def start_capture(self):
-        """Iniciar captura"""
-        if self.is_connected and not self.capture_timer.isActive():
-            self.capture_timer.start(33)  # ~30 FPS
-            return True
-        return False
-    
-    def stop_capture(self):
-        """Detener captura"""
-        if self.capture_timer.isActive():
-            self.capture_timer.stop()
-        
-    def release_camera(self):
-        """Liberar cámara"""
-        self.stop_capture()
-        if self.camera:
-            self.camera.release()
-            self.camera = None
-        self.is_connected = False
-        self.cv_frame = None
-        self.frame_rgb = None
-        self.update()
-    
-    def capture_frame(self):
-        """Capturar frame"""
-        if not self.camera or not self.camera.isOpened():
-            return
-            
-        ret, frame = self.camera.read()
-        if ret:
-            processed_frame = self.process_medical_frame(frame)
-            self.frame_rgb = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
-            self.frame_ready.emit(frame)
-            self.update()
-    
-    def process_medical_frame(self, frame):
-        """Procesar frame con overlays médicos"""
-        display_frame = frame.copy()
-        h, w = frame.shape[:2]
-        center_x, center_y = w // 2, h // 2
-        
-        # Cruz de referencia
-        if self.show_crosshair:
-            cv2.line(display_frame, 
-                    (center_x - 30, center_y), (center_x + 30, center_y),
-                    (0, 255, 0), 2)
-            cv2.line(display_frame, 
-                    (center_x, center_y - 30), (center_x, center_y + 30),
-                    (0, 255, 0), 2)
-        
-        # Círculos de calibración
-        for radius in [50, 100, 150]:
-            cv2.circle(display_frame, (center_x, center_y), radius, (100, 100, 255), 1)
-        
-        # Tracking del ojo
-        if self.show_tracking:
-            eye_x, eye_y = self.eye_position
-            cv2.circle(display_frame, (int(eye_x), int(eye_y)), 20, (255, 0, 0), 2)
-            cv2.circle(display_frame, (int(eye_x), int(eye_y)), 8, (0, 0, 255), -1)
-        
-        # Información
-        cv2.putText(display_frame, "SIEV - Análisis Vestibular", 
-                   (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        
-        status = "🔴 GRABANDO" if self.is_recording else "⏸️ EN VIVO"
-        cv2.putText(display_frame, status, 
-                   (10, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        
-        return display_frame
-    
-    def paintEvent(self, event):
-        """Renderizado optimizado"""
-        painter = QPainter(self)
-        
-        try:
-            if self.frame_rgb is not None:
-                h, w, ch = self.frame_rgb.shape
-                bytes_per_line = ch * w
-                
-                qt_image = QImage(self.frame_rgb.data, w, h, bytes_per_line, QImage.Format_RGB888)
-                
-                # Calcular escalado
-                widget_rect = self.rect()
-                image_size = qt_image.size()
-                widget_size = widget_rect.size()
-                
-                scale_x = widget_size.width() / image_size.width()
-                scale_y = widget_size.height() / image_size.height()
-                scale = min(scale_x, scale_y)
-                
-                new_width = int(image_size.width() * scale)
-                new_height = int(image_size.height() * scale)
-                
-                x = (widget_rect.width() - new_width) // 2
-                y = (widget_rect.height() - new_height) // 2
-                
-                target_rect = QRect(x, y, new_width, new_height)
-                painter.drawImage(target_rect, qt_image)
-                
-            else:
-                # Estado sin cámara
-                painter.fillRect(self.rect(), QColor(40, 40, 40))
-                painter.setPen(QPen(QColor(150, 150, 150), 2))
-                painter.drawRect(self.rect())
-                
-                painter.setPen(QPen(QColor(200, 200, 200)))
-                painter.drawText(self.rect(), Qt.AlignCenter, 
-                               "📹 Cámara Desconectada\nPresione 'Conectar' para iniciar")
-                
-        except Exception as e:
-            print(f"Error en paintEvent: {e}")
-            painter.fillRect(self.rect(), QColor(60, 20, 20))
-            painter.setPen(QPen(QColor(255, 100, 100)))
-            painter.drawText(self.rect(), Qt.AlignCenter, f"Error: {str(e)}")
-            
-        finally:
-            painter.end()
+from camera.camera_widget import OptimizedCameraWidget
 
 class SIEVMainWindow(QMainWindow):
     """
@@ -212,10 +40,7 @@ class SIEVMainWindow(QMainWindow):
         self.setWindowTitle(self.ui.windowTitle())
         self.setGeometry(self.ui.geometry())
         
-        # Datos de análisis
-        self.time_data = deque(maxlen=1000)
-        self.velocity_x_data = deque(maxlen=1000)
-        self.velocity_y_data = deque(maxlen=1000)
+        # Variables de estado
         self.start_time = time.time()
         self.current_test = "Ninguno"
         
@@ -224,10 +49,6 @@ class SIEVMainWindow(QMainWindow):
         
         # Configurar conexiones
         self.setup_connections()
-        
-        # Timer para gráficos
-        self.plot_timer = QTimer()
-        self.plot_timer.timeout.connect(self.update_plots)
         
     def load_ui(self, ui_file_path):
         """Cargar archivo .ui"""
@@ -294,7 +115,7 @@ class SIEVMainWindow(QMainWindow):
         else:
             print("⚠️ No se encontró placeholder de cámara")
         
-        # === REEMPLAZAR WIDGET DE GRÁFICO ===
+        # === REEMPLAZAR WIDGET DE GRÁFICO CON VCLGraphWidget ===
         plot_placeholder = self.ui.widget_plot_placeholder
         plot_parent = plot_placeholder.parent()
         plot_layout = plot_parent.layout()
@@ -306,23 +127,185 @@ class SIEVMainWindow(QMainWindow):
                 plot_index = i
                 break
         
-        # Remover placeholder y agregar PyQtGraph
+        # Remover placeholder y agregar VCLGraphWidget
         if plot_index >= 0:
             plot_placeholder.setParent(None)
-            self.plot_widget = pg.PlotWidget(title="Análisis Vestibular en Tiempo Real")
-            self.plot_widget.setLabel('left', 'Velocidad Angular (deg/s)')
-            self.plot_widget.setLabel('bottom', 'Tiempo (s)')
-            self.plot_widget.addLegend()
-            
-            # Curvas de datos
-            self.curve_x = self.plot_widget.plot(pen='r', name='Velocidad X')
-            self.curve_y = self.plot_widget.plot(pen='b', name='Velocidad Y')
-            
-            plot_layout.insertWidget(plot_index, self.plot_widget)
-            print("✅ Widget de gráfico integrado")
+            self.vcl_graph_widget = VCLGraphWidget()
+            plot_layout.insertWidget(plot_index, self.vcl_graph_widget)
+            print("✅ VCLGraphWidget integrado")
         else:
             print("⚠️ No se encontró placeholder de gráfico")
+        
+        # === AGREGAR CONTROLES DE GRÁFICO AL PANEL DERECHO ===
+        self.setup_graph_controls()
     
+    def setup_graph_controls(self):
+        """Agregar controles de gráfico al panel derecho"""
+        if not hasattr(self.ui, 'layout_right_vertical'):
+            print("⚠️ No se encontró layout del panel derecho")
+            return
+        
+        # Crear grupo de herramientas de gráfico
+        self.graph_tools_group = QGroupBox("Herramientas de Gráfico")
+        self.graph_tools_group.setFont(self.ui.group_controles_analisis.font())
+        
+        # Layout del grupo
+        graph_tools_layout = QVBoxLayout(self.graph_tools_group)
+        graph_tools_layout.setSpacing(8)
+        
+        # Botón Toggle Torok
+        self.btn_torok = QPushButton("Activar Torok")
+        self.btn_torok.setCheckable(True)
+        self.btn_torok.clicked.connect(self.toggle_torok)
+        graph_tools_layout.addWidget(self.btn_torok)
+        
+        # Botón Toggle Peak Edit
+        self.btn_peak_edit = QPushButton("Activar Edición Picos")
+        self.btn_peak_edit.setCheckable(True)
+        self.btn_peak_edit.clicked.connect(self.toggle_peak_edit)
+        graph_tools_layout.addWidget(self.btn_peak_edit)
+        
+        # Botón Add Tiempo Fijación
+        self.btn_tiempo_fijacion = QPushButton("Agregar Tiempo Fijación")
+        self.btn_tiempo_fijacion.clicked.connect(self.add_tiempo_fijacion)
+        graph_tools_layout.addWidget(self.btn_tiempo_fijacion)
+        
+        # Botón Toggle Zoom
+        self.btn_zoom = QPushButton("Activar Zoom")
+        self.btn_zoom.setCheckable(True)
+        self.btn_zoom.clicked.connect(self.toggle_zoom)
+        graph_tools_layout.addWidget(self.btn_zoom)
+        
+        # Botón Toggle Crosshair
+        self.btn_crosshair_graph = QPushButton("Activar Cursor Cruz")
+        self.btn_crosshair_graph.setCheckable(True)
+        self.btn_crosshair_graph.clicked.connect(self.toggle_crosshair_graph)
+        graph_tools_layout.addWidget(self.btn_crosshair_graph)
+        
+        # Botón Peak Detection
+        self.btn_peak_detection = QPushButton("Detección Automática")
+        self.btn_peak_detection.setCheckable(True)
+        self.btn_peak_detection.clicked.connect(self.toggle_peak_detection)
+        graph_tools_layout.addWidget(self.btn_peak_detection)
+        
+        # Insertar el grupo después de los controles de análisis
+        right_layout = self.ui.layout_right_vertical
+        # Buscar posición después del grupo de controles
+        insert_position = 1  # Después del grupo_controles_analisis
+        for i in range(right_layout.count()):
+            item = right_layout.itemAt(i)
+            if item.widget() == self.ui.group_controles_analisis:
+                insert_position = i + 1
+                break
+        
+        right_layout.insertWidget(insert_position, self.graph_tools_group)
+        print("✅ Controles de gráfico agregados")
+    
+    def setup_graph_connections(self):
+        """Conectar señales del VCLGraphWidget"""
+        if hasattr(self, 'vcl_graph_widget'):
+            self.vcl_graph_widget.point_added.connect(self.on_point_added)
+            self.vcl_graph_widget.point_removed.connect(self.on_point_removed)
+            self.vcl_graph_widget.torok_region_changed.connect(self.on_torok_changed)
+            print("✅ Señales de VCLGraphWidget conectadas")
+    
+    def toggle_torok(self):
+        """Alternar herramienta Torok"""
+        if not hasattr(self, 'vcl_graph_widget'):
+            return
+        
+        if self.btn_torok.isChecked():
+            self.vcl_graph_widget.activate_torok_tool()
+            self.btn_torok.setText("Desactivar Torok")
+            self.ui.statusbar.showMessage("Herramienta Torok activada - ROI amarillo móvil")
+        else:
+            self.vcl_graph_widget.deactivate_torok_tool()
+            self.btn_torok.setText("Activar Torok")
+            self.ui.statusbar.showMessage("Herramienta Torok desactivada")
+    
+    def toggle_peak_edit(self):
+        """Alternar edición de picos"""
+        if not hasattr(self, 'vcl_graph_widget'):
+            return
+        
+        if self.btn_peak_edit.isChecked():
+            self.vcl_graph_widget.activate_peak_editing()
+            self.btn_peak_edit.setText("Desactivar Edición")
+            self.ui.statusbar.showMessage("Edición de picos activada - Click para crear/eliminar puntos")
+        else:
+            self.vcl_graph_widget.deactivate_peak_editing()
+            self.btn_peak_edit.setText("Activar Edición Picos")
+            self.ui.statusbar.showMessage("Edición de picos desactivada")
+    
+    def add_tiempo_fijacion(self):
+        """Agregar tiempo de fijación"""
+        if not hasattr(self, 'vcl_graph_widget'):
+            return
+        
+        import random
+        inicio = random.uniform(5, 45)
+        fin = inicio + random.uniform(3, 10)
+        self.vcl_graph_widget.create_tiempo_fijacion(inicio, fin)
+        self.ui.statusbar.showMessage(f"Tiempo de fijación creado: {inicio:.1f} - {fin:.1f}s")
+    
+    def toggle_zoom(self):
+        """Alternar zoom"""
+        if not hasattr(self, 'vcl_graph_widget'):
+            return
+        
+        if self.btn_zoom.isChecked():
+            self.vcl_graph_widget.activate_zoom()
+            self.btn_zoom.setText("Desactivar Zoom")
+            self.ui.statusbar.showMessage("Zoom activado")
+        else:
+            self.vcl_graph_widget.deactivate_zoom()
+            self.btn_zoom.setText("Activar Zoom")
+            self.ui.statusbar.showMessage("Zoom desactivado")
+    
+    def toggle_crosshair_graph(self):
+        """Alternar cursor cruzado en gráfico"""
+        if not hasattr(self, 'vcl_graph_widget'):
+            return
+        
+        if self.btn_crosshair_graph.isChecked():
+            self.vcl_graph_widget.activate_crosshair()
+            self.btn_crosshair_graph.setText("Desactivar Cruz")
+            self.ui.statusbar.showMessage("Cursor cruzado activado")
+        else:
+            self.vcl_graph_widget.deactivate_crosshair()
+            self.btn_crosshair_graph.setText("Activar Cursor Cruz")
+            self.ui.statusbar.showMessage("Cursor cruzado desactivado")
+    
+    def toggle_peak_detection(self):
+        """Alternar detección automática de picos"""
+        if not hasattr(self, 'vcl_graph_widget'):
+            return
+        
+        if self.btn_peak_detection.isChecked():
+            self.vcl_graph_widget.activate_peak_detection()
+            self.btn_peak_detection.setText("Desactivar Detección")
+            self.ui.statusbar.showMessage("Detección automática de picos activada")
+        else:
+            self.vcl_graph_widget.deactivate_peak_detection()
+            self.btn_peak_detection.setText("Detección Automática")
+            self.ui.statusbar.showMessage("Detección automática desactivada")
+    
+    def on_point_added(self, tiempo, amplitud, tipo):
+        """Manejar punto agregado"""
+        self.ui.statusbar.showMessage(f"Punto agregado: t={tiempo:.2f}s, amp={amplitud:.2f}°, tipo={tipo}")
+    
+    def on_point_removed(self, tiempo, amplitud, tipo):
+        """Manejar punto eliminado"""
+        self.ui.statusbar.showMessage(f"Punto eliminado: t={tiempo:.2f}s, amp={amplitud:.2f}°, tipo={tipo}")
+    
+    def on_torok_changed(self, inicio, fin):
+        """Manejar cambio de región Torok"""
+        self.ui.statusbar.showMessage(f"Región Torok: {inicio:.1f} - {fin:.1f}s")
+        datos_torok = self.vcl_graph_widget.get_torok()
+        if datos_torok:
+            puntos_count = len(datos_torok.get('tiempo', []))
+            print(f"Datos en región Torok: {puntos_count} puntos")
+
     def setup_connections(self):
         """Configurar conexiones de señales"""
         
@@ -347,6 +330,9 @@ class SIEVMainWindow(QMainWindow):
         # Conectar señal de cámara
         if hasattr(self, 'camera_widget'):
             self.camera_widget.frame_ready.connect(self.process_frame_data)
+        
+        # Conectar señales del gráfico
+        self.setup_graph_connections()
         
         print("✅ Conexiones configuradas")
     
@@ -384,13 +370,11 @@ class SIEVMainWindow(QMainWindow):
         if not self.camera_widget.is_recording:
             self.camera_widget.is_recording = True
             self.ui.btn_grabar.setText("⏹️ Detener")
-            self.plot_timer.start(50)
             self.start_time = time.time()
             self.ui.statusbar.showMessage("🔴 GRABANDO - Evaluación en curso")
         else:
             self.camera_widget.is_recording = False
             self.ui.btn_grabar.setText("⏺️ Grabar")
-            self.plot_timer.stop()
             self.ui.statusbar.showMessage("Grabación detenida - Datos guardados")
     
     def update_camera_options(self):
@@ -404,26 +388,15 @@ class SIEVMainWindow(QMainWindow):
         if hasattr(self, 'camera_widget') and self.camera_widget.is_recording:
             current_time = time.time() - self.start_time
             
-            # Simular datos vestibulares
-            vel_x = 20 * np.sin(2 * np.pi * 1.5 * current_time) + 5 * np.random.random()
-            vel_y = 15 * np.cos(2 * np.pi * 0.8 * current_time) + 3 * np.random.random()
-            
-            self.time_data.append(current_time)
-            self.velocity_x_data.append(vel_x)
-            self.velocity_y_data.append(vel_y)
-            
-            # Actualizar posición de tracking
+            # Simular movimiento del ojo para demostración
             center_x, center_y = 320, 240
+            vel_x = 20 * np.sin(2 * np.pi * 1.5 * current_time)
+            vel_y = 15 * np.cos(2 * np.pi * 0.8 * current_time)
+            
             self.camera_widget.eye_position = (
                 center_x + vel_x * 3,
                 center_y + vel_y * 3
             )
-    
-    def update_plots(self):
-        """Actualizar gráficos"""
-        if hasattr(self, 'plot_widget') and len(self.time_data) > 1:
-            self.curve_x.setData(list(self.time_data), list(self.velocity_x_data))
-            self.curve_y.setData(list(self.time_data), list(self.velocity_y_data))
     
     def on_prueba_selected(self, item, column):
         """Manejar selección de prueba"""
