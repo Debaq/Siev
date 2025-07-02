@@ -61,6 +61,14 @@ class SIEVHardwareConfig:
                         "product_id": "2076", 
                         "name": "Alternative Camera"
                     }
+                ],
+                "excluded_cameras": [
+                    "integrated camera",
+                    "built-in camera", 
+                    "facetime hd camera",
+                    "webcam",
+                    "laptop camera",
+                    "internal camera"
                 ]
             }
         }
@@ -543,21 +551,89 @@ class SievFinder:
         return None
     
     def _find_siev_camera(self) -> Optional[Dict[str, Any]]:
-        """Buscar cámara SIEV específica."""
+        """Buscar cámara SIEV específica - CORREGIDO"""
         cameras_config = self.config.config["siev_hardware"]["cameras"]
+        
+        # Obtener lista de exclusión (con fallback para compatibilidad)
+        excluded_cameras = self.config.config["siev_hardware"].get("excluded_cameras", [
+            "integrated camera", "built-in camera", "facetime hd camera",
+            "webcam", "laptop camera", "internal camera"
+        ])
+        
         all_cameras = self.camera_detector.get_system_cameras()
         mapped_cameras = self.camera_detector.map_opencv_indices(all_cameras)
         
-        # Buscar por nombre coincidente
-        for camera_cfg in cameras_config:
-            target_name = camera_cfg['name'].lower()
-            
-            for camera in mapped_cameras:
-                camera_name = camera.get('name', '').lower()
-                if any(word in camera_name for word in ['usb', 'camera']) and camera.get('opencv_working'):
-                    camera['matched_config'] = camera_cfg
-                    return camera
+        print("📹 Cámaras detectadas:")
+        for i, camera in enumerate(mapped_cameras):
+            opencv_idx = camera.get('opencv_index', 'N/A')
+            working = camera.get('opencv_working', False)
+            print(f"  {i}: {camera.get('name', 'Sin nombre')} - OpenCV:{opencv_idx} - Funciona:{working}")
         
+        # 1. EXCLUIR cámaras integradas conocidas
+        candidate_cameras = []
+        for camera in mapped_cameras:
+            if not camera.get('opencv_working'):
+                continue
+                
+            camera_name = camera.get('name', '').lower()
+            
+            # Verificar si es cámara excluida
+            is_excluded = False
+            for excluded in excluded_cameras:
+                if excluded.lower() in camera_name:
+                    print(f"  ❌ Excluyendo cámara integrada: {camera['name']}")
+                    is_excluded = True
+                    break
+            
+            if not is_excluded:
+                candidate_cameras.append(camera)
+                print(f"  ✅ Candidata: {camera['name']}")
+        
+        if not candidate_cameras:
+            print("❌ No se encontraron cámaras candidatas")
+            return None
+        
+        # 2. BUSCAR por vendor_id/product_id específicos de SIEV
+        for camera_cfg in cameras_config:
+            target_vid = camera_cfg.get('vendor_id', '').lower()
+            target_pid = camera_cfg.get('product_id', '').lower()
+            
+            # Buscar en dispositivos USB para obtener vendor/product ID
+            usb_devices = self.usb_detector.get_usb_devices()
+            for camera in candidate_cameras:
+                # Intentar correlacionar con dispositivos USB
+                for usb_device in usb_devices:
+                    if (usb_device.get('vendor_id') == target_vid and 
+                        usb_device.get('product_id') == target_pid):
+                        
+                        # Verificar si el nombre coincide parcialmente
+                        usb_name = usb_device.get('name', '').lower()
+                        camera_name = camera.get('name', '').lower()
+                        
+                        if any(word in camera_name for word in ['usb', 'camera', 'realtek']):
+                            print(f"✅ Cámara SIEV encontrada por USB ID: {camera['name']}")
+                            camera['matched_config'] = camera_cfg
+                            camera['usb_device'] = usb_device
+                            return camera
+        
+        # 3. FALLBACK: Buscar por palabras clave específicas SIEV (excluyendo integradas)
+        siev_keywords = ['usb', 'realtek', 'external', 'hub']
+        
+        for camera in candidate_cameras:
+            camera_name = camera.get('name', '').lower()
+            
+            # Debe contener palabras clave SIEV
+            if any(keyword in camera_name for keyword in siev_keywords):
+                print(f"✅ Cámara SIEV encontrada por palabras clave: {camera['name']}")
+                return camera
+        
+        # 4. ÚLTIMO RECURSO: Usar la primera cámara candidata (no integrada)
+        if candidate_cameras:
+            camera = candidate_cameras[0]
+            print(f"⚠️ Usando primera cámara candidata: {camera['name']}")
+            return camera
+        
+        print("❌ No se pudo identificar cámara SIEV específica")
         return None
     
     def get_siev_camera_index(self) -> Optional[int]:
