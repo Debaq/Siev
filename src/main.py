@@ -16,7 +16,7 @@ from PySide6.QtUiTools import QUiLoader
 from utils.vcl_graph import VCLGraphWidget
 from camera.camera_widget import OptimizedCameraWidget
 from utils.siev_detection_modal import SievDetectionModal
-from utils.icon_utils import get_icon, set_qt_ready
+from utils.icon_utils import get_icon, IconColors
 
 class SIEVMainWindow(QMainWindow):
     """
@@ -53,8 +53,7 @@ class SIEVMainWindow(QMainWindow):
         # Configurar conexiones
         self.setup_connections()
         
-        # ACTIVAR iconos después de que Qt esté completamente listo
-        QTimer.singleShot(1000, lambda: set_qt_ready(True))
+
         
         # Detectar SIEV al iniciar (más tarde)
         QTimer.singleShot(2000, self.detect_siev_on_startup)
@@ -204,7 +203,7 @@ class SIEVMainWindow(QMainWindow):
             return
         
         # Configurar botón principal SIN iconos por ahora
-        self.ui.btn_conectar_camara.setText("🔍 Buscar SIEV")
+        self.ui.btn_conectar_camara.setText("Buscar SIEV")
         self.ui.btn_conectar_camara.clicked.connect(self.handle_main_button)
         
         # Otros botones
@@ -226,22 +225,25 @@ class SIEVMainWindow(QMainWindow):
         print("✅ Conexiones configuradas")
         
         # CARGAR ICONOS DESPUÉS de que todo esté configurado
-        QTimer.singleShot(500, self.load_icons)
+        self.load_icons()
+
     
     def load_icons(self):
-        """Cargar iconos de Lucide después de inicialización completa"""
+        """Cargar iconos inmediatamente"""
         try:
-            # Cargar icono del botón principal
-            search_icon = get_icon("search", 16)
-            self.ui.btn_conectar_camara.setIcon(QIcon(search_icon))
+            # Icono del botón principal con color
+            search_icon = get_icon("search", 16, IconColors.BLUE)
+            self.ui.btn_conectar_camara.setIcon(search_icon)
+            
+            # Otros iconos con colores apropiados
+            if hasattr(self.ui, 'btn_grabar'):
+                record_icon = get_icon("circle", 16, IconColors.RED)
+                self.ui.btn_grabar.setIcon(record_icon)
+            
             print("✅ Iconos cargados correctamente")
         except Exception as e:
             print(f"⚠️ Error cargando iconos: {e}")
-            # Continuar sin iconos si hay problemas
         
-        # CARGAR ICONOS DESPUÉS de que todo esté configurado
-        QTimer.singleShot(100, self.load_icons)
-    
     # ===== MÉTODOS SIEV =====
     
     def detect_siev_on_startup(self):
@@ -281,21 +283,15 @@ class SIEVMainWindow(QMainWindow):
     
     def switch_to_camera_mode(self):
         """Cambiar botón a modo cámara"""
-        self.ui.btn_conectar_camara.setText("📹 Conectar Cámara")
-        try:
-            camera_icon = get_icon("camera", 16)
-            self.ui.btn_conectar_camara.setIcon(QIcon(camera_icon))
-        except:
-            pass  # Si falla el icono, continuar sin él
+        self.ui.btn_conectar_camara.setText("Conectar Cámara")
+        camera_icon = get_icon("camera", 16, IconColors.GREEN)
+        self.ui.btn_conectar_camara.setIcon(camera_icon)
     
     def switch_to_siev_mode(self):
         """Cambiar botón a modo SIEV"""
-        self.ui.btn_conectar_camara.setText("🔍 Buscar SIEV")
-        try:
-            search_icon = get_icon("search", 16)
-            self.ui.btn_conectar_camara.setIcon(QIcon(search_icon))
-        except:
-            pass  # Si falla el icono, continuar sin él
+        self.ui.btn_conectar_camara.setText("Buscar SIEV")
+        search_icon = get_icon("search", 16, IconColors.BLUE)
+        self.ui.btn_conectar_camara.setIcon(search_icon)
     
     def update_siev_status(self):
         """Actualizar estado SIEV en interfaz"""
@@ -367,9 +363,9 @@ class SIEVMainWindow(QMainWindow):
         else:
             # Desconectar
             self.camera_widget.release_camera()
-            self.ui.btn_conectar_camara.setText("📹 Conectar Cámara")
+            self.ui.btn_conectar_camara.setText("Conectar Cámara")
             self.ui.btn_grabar.setEnabled(False)
-            self.ui.btn_grabar.setText("⏺️ Grabar")
+            self.ui.btn_grabar.setText("Grabar")
             self.ui.lbl_estado_camara.setText("Estado: Desconectado")
             self.ui.lbl_estado_camara.setStyleSheet("color: gray;")
     
@@ -384,7 +380,7 @@ class SIEVMainWindow(QMainWindow):
             self.ui.statusbar.showMessage("🔴 GRABANDO - Evaluación en curso")
         else:
             self.camera_widget.stop_recording()
-            self.ui.btn_grabar.setText("⏺️ Grabar")
+            self.ui.btn_grabar.setText("Grabar")
             self.ui.statusbar.showMessage("Grabación detenida")
     
     def update_camera_options(self):

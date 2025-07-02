@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Modal para detección de hardware SIEV - Versión simple y robusta
+Modal para detección de hardware SIEV - Versión con iconos SVG exclusivamente
 """
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                              QPushButton, QProgressBar, QApplication)
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QFont
+                              QPushButton, QProgressBar, QApplication, QWidget)
+from PySide6.QtCore import Qt, QTimer, QSize
+from PySide6.QtGui import QFont, QPixmap
 from utils.siev_detection_thread import SievDetectionThread
+from utils.icon_utils import get_icon, IconColors
 
 class SievDetectionModal(QDialog):
-    """Modal simple para detección SIEV sin dependencias complejas."""
+    """Modal para detección SIEV usando exclusivamente iconos SVG."""
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Detectando Hardware SIEV")
-        self.setFixedSize(450, 250)
+        self.setFixedSize(500, 300)
         self.setModal(True)
         
         # Variables
@@ -38,16 +39,11 @@ class SievDetectionModal(QDialog):
         # === HEADER ===
         header_layout = QHBoxLayout()
         
-        # Icono simple con emoji
-        self.icon_label = QLabel("🔍")
-        self.icon_label.setStyleSheet("""
-            QLabel {
-                font-size: 32px;
-                color: #3498db;
-                padding: 10px;
-            }
-        """)
+        # Icono principal usando SVG
+        self.icon_label = QLabel()
+        self.icon_label.setFixedSize(48, 48)
         self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.set_main_icon("search", IconColors.BLUE)
         header_layout.addWidget(self.icon_label)
         
         # Texto principal
@@ -84,25 +80,23 @@ class SievDetectionModal(QDialog):
         """)
         layout.addWidget(self.progress_bar)
         
-        # === INFORMATION ===
-        self.info_label = QLabel("Conecte el dispositivo SIEV si no está enchufado")
-        self.info_label.setStyleSheet("""
-            QLabel {
-                background-color: #ecf0f1;
-                padding: 10px;
-                border-radius: 5px;
-                color: #34495e;
-                font-size: 10px;
-            }
-        """)
-        self.info_label.setWordWrap(True)
-        layout.addWidget(self.info_label)
+        # === INFORMATION AREA ===
+        self.info_widget = QWidget()
+        self.info_layout = QVBoxLayout(self.info_widget)
+        self.info_layout.setContentsMargins(0, 0, 0, 0)
+        self.info_layout.setSpacing(5)
+        
+        # Widget de información inicial
+        self.create_info_line("info", "Conecte el dispositivo SIEV si no está enchufado", IconColors.BLUE)
+        
+        layout.addWidget(self.info_widget)
         
         # === BUTTONS ===
         self.button_layout = QHBoxLayout()
         
         # Botón Reintentar
-        self.btn_retry = QPushButton("🔄 Reintentar")
+        self.btn_retry = QPushButton("Reintentar")
+        self.btn_retry.setIcon(get_icon("rotate-cw", 16, IconColors.WHITE))
         self.btn_retry.setStyleSheet("""
             QPushButton {
                 background-color: #f39c12;
@@ -121,6 +115,7 @@ class SievDetectionModal(QDialog):
         
         # Botón Continuar sin SIEV
         self.btn_continue = QPushButton("Continuar sin SIEV")
+        self.btn_continue.setIcon(get_icon("x", 16, IconColors.WHITE))
         self.btn_continue.setStyleSheet("""
             QPushButton {
                 background-color: #95a5a6;
@@ -138,7 +133,8 @@ class SievDetectionModal(QDialog):
         self.btn_continue.hide()
         
         # Botón Continuar (éxito)
-        self.btn_close = QPushButton("✅ Continuar")
+        self.btn_close = QPushButton("Continuar")
+        self.btn_close.setIcon(get_icon("circle-check", 16, IconColors.WHITE))
         self.btn_close.setStyleSheet("""
             QPushButton {
                 background-color: #27ae60;
@@ -161,23 +157,69 @@ class SievDetectionModal(QDialog):
         
         layout.addLayout(self.button_layout)
     
-    def start_detection(self):
-        """Iniciar proceso de detección"""
-        print("🔍 Iniciando detección SIEV desde modal...")
+    def set_main_icon(self, icon_name, color):
+        """Establecer icono principal"""
+        icon = get_icon(icon_name, 48, color)
+        pixmap = icon.pixmap(QSize(48, 48))
+        self.icon_label.setPixmap(pixmap)
+    
+    def create_info_line(self, icon_name, text, color):
+        """Crear línea de información con icono SVG"""
+        line_widget = QWidget()
+        line_layout = QHBoxLayout(line_widget)
+        line_layout.setContentsMargins(10, 5, 10, 5)
+        line_layout.setSpacing(10)
         
-        # Reset UI al estado inicial
-        self.icon_label.setText("🔍")
-        self.icon_label.setStyleSheet("""
-            QLabel {
-                font-size: 32px;
-                color: #3498db;
-                padding: 10px;
+        # Icono pequeño
+        icon_label = QLabel()
+        icon_label.setFixedSize(16, 16)
+        icon = get_icon(icon_name, 16, color)
+        pixmap = icon.pixmap(QSize(16, 16))
+        icon_label.setPixmap(pixmap)
+        line_layout.addWidget(icon_label)
+        
+        # Texto
+        text_label = QLabel(text)
+        text_label.setStyleSheet(f"color: {color}; font-size: 11px;")
+        text_label.setWordWrap(True)
+        line_layout.addWidget(text_label, 1)
+        
+        # Estilo del contenedor
+        line_widget.setStyleSheet("""
+            QWidget {
+                background-color: #ecf0f1;
+                border-radius: 5px;
+                border: 1px solid #bdc3c7;
             }
         """)
         
+        return line_widget
+    
+    def clear_info_area(self):
+        """Limpiar área de información"""
+        while self.info_layout.count():
+            child = self.info_layout.takeAt(0)
+            if child.widget():
+                child.widget().setParent(None)
+    
+    def add_info_line(self, icon_name, text, color):
+        """Agregar línea de información"""
+        line_widget = self.create_info_line(icon_name, text, color)
+        self.info_layout.addWidget(line_widget)
+    
+    def start_detection(self):
+        """Iniciar proceso de detección"""
+        print("Iniciando detección SIEV desde modal...")
+        
+        # Reset UI al estado inicial
+        self.set_main_icon("search", IconColors.BLUE)
+        
         self.status_label.setText("Detectando hardware SIEV...")
         self.detail_label.setText("Verificando conexión del dispositivo...")
-        self.info_label.setText("Conecte el dispositivo SIEV si no está enchufado")
+        
+        # Limpiar y mostrar info inicial
+        self.clear_info_area()
+        self.add_info_line("info", "Conecte el dispositivo SIEV si no está enchufado", IconColors.BLUE)
         
         self.progress_bar.setRange(0, 0)
         self.progress_bar.show()
@@ -201,12 +243,12 @@ class SievDetectionModal(QDialog):
     
     def retry_detection(self):
         """Reintentar detección"""
-        print("🔄 Reintentando detección SIEV...")
+        print("Reintentando detección SIEV...")
         self.start_detection()
     
     def on_detection_finished(self, result):
         """Manejar resultado de detección"""
-        print(f"📡 Resultado detección recibido: {result['success']}")
+        print(f"Resultado detección recibido: {result['success']}")
         
         self.detection_result = result
         self.progress_bar.hide()
@@ -218,43 +260,34 @@ class SievDetectionModal(QDialog):
     
     def show_success_state(self, setup):
         """Mostrar estado de éxito"""
-        # Cambiar icono y colores
-        self.icon_label.setText("✅")
-        self.icon_label.setStyleSheet("""
-            QLabel {
-                font-size: 32px;
-                color: #27ae60;
-                padding: 10px;
-            }
-        """)
+        # Cambiar icono principal
+        self.set_main_icon("circle-check", IconColors.GREEN)
         
         # Actualizar textos
-        self.status_label.setText("¡SIEV detectado correctamente!")
+        self.status_label.setText("SIEV detectado correctamente!")
         self.status_label.setStyleSheet("color: #27ae60; font-weight: bold;")
         
         self.detail_label.setText("Hardware conectado y funcionando")
         
-        # Información detallada
+        # Limpiar y mostrar información detallada
+        self.clear_info_area()
+        
         hub_name = setup['hub']['name']
         esp_port = setup['esp8266']['port']
         camera_index = setup['camera'].get('opencv_index', 'N/A')
         camera_name = setup['camera']['name']
         
-        info_text = (
-            f"✅ Hub: {hub_name}\n"
-            f"✅ ESP8266: {esp_port}\n"
-            f"✅ Cámara: {camera_name} (OpenCV: {camera_index})"
-        )
+        self.add_info_line("circle-check", f"Hub: {hub_name}", IconColors.GREEN)
+        self.add_info_line("circle-check", f"ESP8266: {esp_port}", IconColors.GREEN)
+        self.add_info_line("circle-check", f"Cámara: {camera_name} (OpenCV: {camera_index})", IconColors.GREEN)
         
-        self.info_label.setText(info_text)
-        self.info_label.setStyleSheet("""
-            QLabel {
+        # Cambiar estilo del área de información
+        self.info_widget.setStyleSheet("""
+            QWidget {
                 background-color: #d5ead4;
-                padding: 10px;
                 border-radius: 5px;
-                color: #27ae60;
-                font-size: 10px;
                 border: 1px solid #27ae60;
+                padding: 5px;
             }
         """)
         
@@ -263,15 +296,8 @@ class SievDetectionModal(QDialog):
     
     def show_error_state(self, error_message):
         """Mostrar estado de error"""
-        # Cambiar icono y colores
-        self.icon_label.setText("❌")
-        self.icon_label.setStyleSheet("""
-            QLabel {
-                font-size: 32px;
-                color: #e74c3c;
-                padding: 10px;
-            }
-        """)
+        # Cambiar icono principal
+        self.set_main_icon("circle-x", IconColors.RED)
         
         # Actualizar textos
         self.status_label.setText("SIEV no encontrado")
@@ -279,25 +305,23 @@ class SievDetectionModal(QDialog):
         
         self.detail_label.setText("No se pudo conectar con el hardware")
         
-        # Información de error
-        error_text = (
-            f"❌ Error: {error_message}\n\n"
-            "Verifique que:\n"
-            "• El dispositivo esté conectado correctamente\n"
-            "• Los drivers USB estén instalados\n"
-            "• El ESP8266 esté funcionando (LED parpadeando)\n"
-            "• No haya otros programas usando el puerto serie"
-        )
+        # Limpiar y mostrar información de error
+        self.clear_info_area()
         
-        self.info_label.setText(error_text)
-        self.info_label.setStyleSheet("""
-            QLabel {
+        self.add_info_line("circle-x", f"Error: {error_message}", IconColors.RED)
+        self.add_info_line("alert-triangle", "Verifique que:", IconColors.ORANGE)
+        self.add_info_line("circle", "El dispositivo esté conectado correctamente", IconColors.GRAY)
+        self.add_info_line("circle", "Los drivers USB estén instalados", IconColors.GRAY)
+        self.add_info_line("circle", "El ESP8266 esté funcionando (LED parpadeando)", IconColors.GRAY)
+        self.add_info_line("circle", "No haya otros programas usando el puerto serie", IconColors.GRAY)
+        
+        # Cambiar estilo del área de información
+        self.info_widget.setStyleSheet("""
+            QWidget {
                 background-color: #fdeaea;
-                padding: 10px;
                 border-radius: 5px;
-                color: #e74c3c;
-                font-size: 10px;
                 border: 1px solid #e74c3c;
+                padding: 5px;
             }
         """)
         
@@ -311,16 +335,16 @@ class SievDetectionModal(QDialog):
     
     def closeEvent(self, event):
         """Manejar cierre del modal"""
-        print("🚪 Cerrando modal de detección SIEV...")
+        print("Cerrando modal de detección SIEV...")
         if self.detection_thread and self.detection_thread.isRunning():
-            print("🛑 Terminando hilo de detección...")
+            print("Terminando hilo de detección...")
             self.detection_thread.stop_detection()
         
         event.accept()
     
     def reject(self):
         """Override reject para cleanup"""
-        print("❌ Modal rechazado, limpiando...")
+        print("Modal rechazado, limpiando...")
         if self.detection_thread and self.detection_thread.isRunning():
             self.detection_thread.stop_detection()
         
@@ -328,7 +352,7 @@ class SievDetectionModal(QDialog):
     
     def accept(self):
         """Override accept para cleanup"""
-        print("✅ Modal aceptado, limpiando...")
+        print("Modal aceptado, limpiando...")
         if self.detection_thread and self.detection_thread.isRunning():
             self.detection_thread.stop_detection()
         
