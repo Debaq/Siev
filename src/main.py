@@ -124,6 +124,7 @@ class SIEVMainWindow(QMainWindow):
             possible_paths = [
                 ui_file_path,
                 os.path.join("src", ui_file_path),
+                os.path.join("src", "ui", "main_window.ui"),  # Agregar esta ruta
                 os.path.join("ui", "main_window.ui"),
                 "main_window.ui"
             ]
@@ -140,6 +141,8 @@ class SIEVMainWindow(QMainWindow):
             
             # Cargar UI
             loader = QUiLoader()
+            self.ui = loader.load(ui_path, self)  # Cambiar esta línea
+
             with open(ui_path, 'r') as ui_file:
                 self.ui = loader.load(ui_file, self)
             
