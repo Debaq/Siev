@@ -1,7 +1,7 @@
 /*
-  SIEV ESP8266 Firmware v1.1.0
+  SIEV ESP8266 Firmware v1.2.0
   
-  Firmware con soporte modular para sensores IMU
+  Firmware con soporte modular para sensores IMU y comunicación ESP-NOW
   Actualmente soporta BNO055, fácilmente intercambiable
   
   Hardware:
@@ -14,12 +14,17 @@
   - PING, STATUS, VERSION, RESET
   - LED_ON:LEFT/RIGHT/BOTH, LED_OFF:LEFT/RIGHT/BOTH
   - IMU_READ_ONE, IMU_READ_LIVE_ON, IMU_READ_LIVE_OFF, IMU_CALIBRATE
+  - ESPNOW_ON, ESPNOW_OFF, ESPNOW_PAIR:MAC, ESPNOW_STATUS
+  - GADGET_SEND:DATA, OTA_START, OTA_STOP
   
   Autor: Sistema SIEV
   Fecha: 2025-07-03
 */
 
 #include <Wire.h>
+#include <ESP8266WiFi.h>
+#include <espnow.h>
+#include <ArduinoOTA.h>
 
 // ===== CONFIGURACIÓN DE SENSOR IMU =====
 #define USE_BNO055  // Cambiar aquí para usar otro sensor
@@ -33,7 +38,7 @@
 #endif
 
 // ===== CONFIGURACIÓN GENERAL =====
-#define FIRMWARE_VERSION "1.1.0"
+#define FIRMWARE_VERSION "1.2.0"
 #define DEVICE_NAME "SIEV_ESP8266"
 #define SERIAL_BAUD 115200
 #define COMMAND_TIMEOUT 5000
@@ -49,7 +54,37 @@
 #define IMU_SAMPLE_RATE_HZ 50
 #define IMU_SAMPLE_INTERVAL_MS (1000 / IMU_SAMPLE_RATE_HZ)
 
-// ===== CLASE ABSTRACTA IMU =====
+// Configuración ESP-NOW
+#define ESPNOW_CHANNEL 1
+#define MAX_GADGETS 3
+#define ESPNOW_MAX_DATA_LEN 250
+
+// Configuración OTA
+#define OTA_PASSWORD "siev2025"
+#define OTA_HOSTNAME "siev-esp8266"
+
+// ===== ESTRUCTURA DE DATOS ESP-NOW =====
+typedef struct {
+  uint8_t command;      // Tipo de comando
+  uint8_t dataLen;      // Longitud de datos
+  char data[248];       // Datos del comando
+} ESPNowMessage;
+
+typedef struct {
+  uint8_t mac[6];
+  bool active;
+  unsigned long lastSeen;
+  String name;
+} GadgetInfo;
+
+// ===== COMANDOS ESP-NOW =====
+enum ESPNowCommands {
+  CMD_PING = 0x01,
+  CMD_DATA = 0x02,
+  CMD_STATUS = 0x03,
+  CMD_FORWARD_TO_PYTHON = 0x10,
+  CMD_FORWARD_TO_GADGET = 0x11
+};
 class IMUSensor {
 public:
   virtual bool init() = 0;
@@ -177,6 +212,14 @@ bool imuInitialized = false;
 bool imuLiveMode = false;
 unsigned long lastIMURead = 0;
 
+// ESP-NOW
+bool espnowEnabled = false;
+bool otaEnabled = false;
+GadgetInfo gadgets[MAX_GADGETS];
+int gadgetCount = 0;
+ESPNowMessage incomingMessage;
+ESPNowMessage outgoingMessage;
+
 // ===== SETUP =====
 void setup() {
   // Inicializar comunicación serie
@@ -191,12 +234,19 @@ void setup() {
   digitalWrite(LEFT_LED_PIN, HIGH);   // HIGH = apagado
   digitalWrite(RIGHT_LED_PIN, HIGH);  // HIGH = apagado
   
+  // Inicializar WiFi en modo STA (desactivado)
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  
   // Inicializar I2C
   Wire.begin(SDA_PIN, SCL_PIN);
   Wire.setClock(400000); // 400kHz
   
   // Inicializar IMU
   initIMU();
+  
+  // Inicializar ESP-NOW (desactivado por defecto)
+  initESPNowStructures();
   
   // Guardar tiempo de inicio
   bootTime = millis();
@@ -213,9 +263,100 @@ void setup() {
   blinkLED(3, 200);
   
   Serial.println("DEBUG:IMU_STATUS:" + String(imuInitialized ? "OK" : "FAILED"));
+  Serial.println("DEBUG:ESPNOW_STATUS:DISABLED");
+  Serial.println("DEBUG:OTA_STATUS:DISABLED");
 }
 
-// ===== INICIALIZACIÓN IMU =====
+// ===== INICIALIZACIÓN ESP-NOW =====
+void initESPNowStructures() {
+  // Limpiar array de gadgets
+  for (int i = 0; i < MAX_GADGETS; i++) {
+    memset(gadgets[i].mac, 0, 6);
+    gadgets[i].active = false;
+    gadgets[i].lastSeen = 0;
+    gadgets[i].name = "";
+  }
+  gadgetCount = 0;
+}
+
+bool startESPNow() {
+  if (espnowEnabled) {
+    return true; // Ya está activado
+  }
+  
+  // Inicializar ESP-NOW
+  if (esp_now_init() != 0) {
+    Serial.println("ERROR:ESPNOW_INIT_FAILED");
+    return false;
+  }
+  
+  // Configurar canal
+  esp_now_set_self_role(ESP_NOW_ROLE_COMBO);
+  
+  // Registrar callbacks
+  esp_now_register_recv_cb(onESPNowDataReceived);
+  esp_now_register_send_cb(onESPNowDataSent);
+  
+  espnowEnabled = true;
+  Serial.println("DEBUG:ESPNOW_STARTED");
+  return true;
+}
+
+void stopESPNow() {
+  if (!espnowEnabled) {
+    return;
+  }
+  
+  esp_now_deinit();
+  espnowEnabled = false;
+  
+  // Limpiar gadgets
+  initESPNowStructures();
+  
+  Serial.println("DEBUG:ESPNOW_STOPPED");
+}
+
+// ===== CALLBACKS ESP-NOW =====
+void onESPNowDataReceived(uint8_t *mac_addr, uint8_t *data, uint8_t data_len) {
+  if (data_len < sizeof(ESPNowMessage)) {
+    return;
+  }
+  
+  memcpy(&incomingMessage, data, sizeof(ESPNowMessage));
+  
+  // Actualizar información del gadget
+  updateGadgetInfo(mac_addr);
+  
+  // Procesar mensaje según comando
+  switch (incomingMessage.command) {
+    case CMD_PING:
+      handleESPNowPing(mac_addr);
+      break;
+      
+    case CMD_FORWARD_TO_PYTHON:
+      // Reenviar al Python vía Serial
+      Serial.print("GADGET_DATA:");
+      Serial.print(macToString(mac_addr));
+      Serial.print(":");
+      Serial.println(incomingMessage.data);
+      break;
+      
+    case CMD_DATA:
+      // Datos generales del gadget
+      Serial.print("GADGET_MSG:");
+      Serial.print(macToString(mac_addr));
+      Serial.print(":");
+      Serial.println(incomingMessage.data);
+      break;
+  }
+}
+
+void onESPNowDataSent(uint8_t *mac_addr, uint8_t status) {
+  // Opcional: reportar estado de envío
+  if (status != 0) {
+    Serial.println("ERROR:ESPNOW_SEND_FAILED:" + macToString(mac_addr));
+  }
+}
 void initIMU() {
 #ifdef USE_BNO055
   imuSensor = new BNO055Sensor();
@@ -241,6 +382,11 @@ void loop() {
   // Procesar stream IMU si está activo
   if (imuLiveMode && imuInitialized) {
     processIMULiveStream();
+  }
+  
+  // Procesar OTA si está habilitado
+  if (otaEnabled) {
+    ArduinoOTA.handle();
   }
   
   delay(1);
@@ -303,6 +449,29 @@ void processCommand(String command) {
   else if (command == "IMU_CALIBRATE") {
     handleIMUCalibrate();
   }
+  // Comandos ESP-NOW
+  else if (command == "ESPNOW_ON") {
+    handleESPNowOn();
+  }
+  else if (command == "ESPNOW_OFF") {
+    handleESPNowOff();
+  }
+  else if (command.startsWith("ESPNOW_PAIR:")) {
+    handleESPNowPair(command);
+  }
+  else if (command == "ESPNOW_STATUS") {
+    handleESPNowStatus();
+  }
+  else if (command.startsWith("GADGET_SEND:")) {
+    handleGadgetSend(command);
+  }
+  // Comandos OTA
+  else if (command.startsWith("OTA_START:")) {
+    handleOTAStart(command);
+  }
+  else if (command == "OTA_STOP") {
+    handleOTAStop();
+  }
   else if (command.length() > 0) {
     Serial.println("ERROR:UNKNOWN_COMMAND:" + command);
   }
@@ -328,6 +497,12 @@ void handleStatusCommand() {
   Serial.print(ESP.getChipId(), HEX);
   Serial.print(",IMU:");
   Serial.print(imuInitialized ? "OK" : "FAILED");
+  Serial.print(",ESPNOW:");
+  Serial.print(espnowEnabled ? "ON" : "OFF");
+  Serial.print(",OTA:");
+  Serial.print(otaEnabled ? "ON" : "OFF");
+  Serial.print(",GADGETS:");
+  Serial.print(gadgetCount);
   Serial.println();
 }
 
@@ -347,6 +522,11 @@ void handleVersionCommand() {
   if (imuInitialized) {
     Serial.print(",IMU:");
     Serial.print(imuSensor->getSensorName());
+  }
+  
+  if (espnowEnabled) {
+    Serial.print(",MAC:");
+    Serial.print(WiFi.macAddress());
   }
 #endif
   
@@ -490,6 +670,142 @@ void handleIMUCalibrate() {
 }
 
 // ===== STREAM IMU EN VIVO =====
+  for (int i = 0; i < gadgetCount; i++) {
+    if (gadgets[i].active) {
+      Serial.print("GADGET:");
+      Serial.print(macToString(gadgets[i].mac));
+      Serial.print(",LAST_SEEN:");
+      Serial.print((millis() - gadgets[i].lastSeen) / 1000);
+      Serial.println("s");
+    }
+  }
+}
+
+void handleGadgetSend(String command) {
+  if (!espnowEnabled) {
+    Serial.println("ERROR:ESPNOW_NOT_ENABLED");
+    return;
+  }
+  
+  // Formato: GADGET_SEND:AA:BB:CC:DD:EE:FF:DATA
+  int firstColon = command.indexOf(':');
+  int secondColon = command.indexOf(':', firstColon + 1);
+  
+  if (firstColon == -1 || secondColon == -1) {
+    Serial.println("ERROR:INVALID_GADGET_SEND_FORMAT");
+    return;
+  }
+  
+  String macStr = command.substring(firstColon + 1, secondColon);
+  String data = command.substring(secondColon + 1);
+  
+  uint8_t mac[6];
+  if (!parseMAC(macStr, mac)) {
+    Serial.println("ERROR:INVALID_MAC_ADDRESS");
+    return;
+  }
+  
+  // Preparar mensaje
+  outgoingMessage.command = CMD_FORWARD_TO_GADGET;
+  outgoingMessage.dataLen = data.length();
+  strncpy(outgoingMessage.data, data.c_str(), sizeof(outgoingMessage.data) - 1);
+  outgoingMessage.data[sizeof(outgoingMessage.data) - 1] = '\0';
+  
+  // Enviar
+  if (esp_now_send(mac, (uint8_t*)&outgoingMessage, sizeof(outgoingMessage)) == 0) {
+    Serial.println("GADGET_SENT:" + macStr);
+  } else {
+    Serial.println("ERROR:GADGET_SEND_FAILED:" + macStr);
+  }
+}
+
+// ===== COMANDOS OTA =====
+void handleOTAStart(String command) {
+  // Formato: OTA_START:SSID:PASSWORD
+  int firstColon = command.indexOf(':');
+  int secondColon = command.indexOf(':', firstColon + 1);
+  
+  if (firstColon == -1 || secondColon == -1) {
+    Serial.println("ERROR:INVALID_OTA_FORMAT");
+    return;
+  }
+  
+  String ssid = command.substring(firstColon + 1, secondColon);
+  String password = command.substring(secondColon + 1);
+  
+  startOTA(ssid, password);
+}
+
+void handleOTAStop() {
+  stopOTA();
+}
+
+void startOTA(String ssid, String password) {
+  if (otaEnabled) {
+    Serial.println("ERROR:OTA_ALREADY_ENABLED");
+    return;
+  }
+  
+  // Conectar a WiFi
+  WiFi.begin(ssid.c_str(), password.c_str());
+  Serial.println("OTA:CONNECTING_WIFI");
+  
+  unsigned long startTime = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startTime < 10000) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("ERROR:OTA_WIFI_CONNECTION_FAILED");
+    return;
+  }
+  
+  Serial.println();
+  Serial.println("OTA:WIFI_CONNECTED:" + WiFi.localIP().toString());
+  
+  // Configurar OTA
+  ArduinoOTA.setHostname(OTA_HOSTNAME);
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  
+  ArduinoOTA.onStart([]() {
+    Serial.println("OTA:UPDATE_START");
+  });
+  
+  ArduinoOTA.onEnd([]() {
+    Serial.println("OTA:UPDATE_END");
+  });
+  
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("OTA:PROGRESS:%u%%\n", (progress * 100) / total);
+  });
+  
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("OTA:ERROR[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  });
+  
+  ArduinoOTA.begin();
+  otaEnabled = true;
+  
+  Serial.println("OTA:ENABLED");
+}
+
+void stopOTA() {
+  if (!otaEnabled) {
+    return;
+  }
+  
+  ArduinoOTA.end();
+  WiFi.disconnect();
+  otaEnabled = false;
+  
+  Serial.println("OTA:DISABLED");
+}
 void processIMULiveStream() {
   unsigned long currentTime = millis();
   
@@ -549,6 +865,314 @@ void processIMULiveStream() {
 }
 
 // ===== FUNCIONES AUXILIARES =====
+
+// ===== ESTRUCTURA DE DATOS ESP-NOW =====
+typedef struct {
+  uint8_t command;      // Tipo de comando
+  uint8_t dataLen;      // Longitud de datos
+  char data[248];       // Datos del comando
+} ESPNowMessage;
+
+typedef struct {
+  uint8_t mac[6];
+  bool active;
+  unsigned long lastSeen;
+  String name;
+} GadgetInfo;
+
+// ===== COMANDOS ESP-NOW =====
+enum ESPNowCommands {
+  CMD_PING = 0x01,
+  CMD_DATA = 0x02,
+  CMD_STATUS = 0x03,
+  CMD_FORWARD_TO_PYTHON = 0x10,
+  CMD_FORWARD_TO_GADGET = 0x11
+};
+
+// ===== INICIALIZACIÓN ESP-NOW =====
+void initESPNowStructures() {
+  // Limpiar array de gadgets
+  for (int i = 0; i < MAX_GADGETS; i++) {
+    memset(gadgets[i].mac, 0, 6);
+    gadgets[i].active = false;
+    gadgets[i].lastSeen = 0;
+    gadgets[i].name = "";
+  }
+  gadgetCount = 0;
+}
+
+bool startESPNow() {
+  if (espnowEnabled) {
+    return true; // Ya está activado
+  }
+  
+  // Inicializar ESP-NOW
+  if (esp_now_init() != 0) {
+    Serial.println("ERROR:ESPNOW_INIT_FAILED");
+    return false;
+  }
+  
+  // Configurar canal
+  esp_now_set_self_role(ESP_NOW_ROLE_COMBO);
+  
+  // Registrar callbacks
+  esp_now_register_recv_cb(onESPNowDataReceived);
+  esp_now_register_send_cb(onESPNowDataSent);
+  
+  espnowEnabled = true;
+  Serial.println("DEBUG:ESPNOW_STARTED");
+  return true;
+}
+
+void stopESPNow() {
+  if (!espnowEnabled) {
+    return;
+  }
+  
+  esp_now_deinit();
+  espnowEnabled = false;
+  
+  // Limpiar gadgets
+  initESPNowStructures();
+  
+  Serial.println("DEBUG:ESPNOW_STOPPED");
+}
+
+// ===== CALLBACKS ESP-NOW =====
+void onESPNowDataReceived(uint8_t *mac_addr, uint8_t *data, uint8_t data_len) {
+  if (data_len < sizeof(ESPNowMessage)) {
+    return;
+  }
+  
+  memcpy(&incomingMessage, data, sizeof(ESPNowMessage));
+  
+  // Actualizar información del gadget
+  updateGadgetInfo(mac_addr);
+  
+  // Procesar mensaje según comando
+  switch (incomingMessage.command) {
+    case CMD_PING:
+      handleESPNowPing(mac_addr);
+      break;
+      
+    case CMD_FORWARD_TO_PYTHON:
+      // Reenviar al Python vía Serial
+      Serial.print("GADGET_DATA:");
+      Serial.print(macToString(mac_addr));
+      Serial.print(":");
+      Serial.println(incomingMessage.data);
+      break;
+      
+    case CMD_DATA:
+      // Datos generales del gadget
+      Serial.print("GADGET_MSG:");
+      Serial.print(macToString(mac_addr));
+      Serial.print(":");
+      Serial.println(incomingMessage.data);
+      break;
+  }
+}
+
+void onESPNowDataSent(uint8_t *mac_addr, uint8_t status) {
+  // Opcional: reportar estado de envío
+  if (status != 0) {
+    Serial.println("ERROR:ESPNOW_SEND_FAILED:" + macToString(mac_addr));
+  }
+}
+
+void handleESPNowOn() {
+  if (startESPNow()) {
+    Serial.println("ESPNOW:ON");
+  } else {
+    Serial.println("ERROR:ESPNOW_START_FAILED");
+  }
+}
+
+void handleESPNowOff() {
+  stopESPNow();
+  Serial.println("ESPNOW:OFF");
+}
+
+void handleESPNowPair(String command) {
+  if (!espnowEnabled) {
+    Serial.println("ERROR:ESPNOW_NOT_ENABLED");
+    return;
+  }
+  
+  // Extraer MAC address: ESPNOW_PAIR:AA:BB:CC:DD:EE:FF
+  int colonPos = command.indexOf(':');
+  if (colonPos == -1) {
+    Serial.println("ERROR:INVALID_MAC_FORMAT");
+    return;
+  }
+  
+  String macStr = command.substring(colonPos + 1);
+  uint8_t mac[6];
+  
+  if (!parseMAC(macStr, mac)) {
+    Serial.println("ERROR:INVALID_MAC_ADDRESS");
+    return;
+  }
+  
+  // Agregar peer
+  if (esp_now_add_peer(mac, ESP_NOW_ROLE_COMBO, ESPNOW_CHANNEL, NULL, 0) != 0) {
+    Serial.println("ERROR:ESPNOW_ADD_PEER_FAILED");
+    return;
+  }
+  
+  // Agregar a lista de gadgets
+  if (addGadget(mac)) {
+    Serial.println("ESPNOW_PAIRED:" + macStr);
+  } else {
+    Serial.println("ERROR:GADGET_LIST_FULL");
+  }
+}
+
+void handleESPNowStatus() {
+  Serial.print("ESPNOW_STATUS:");
+  Serial.print(espnowEnabled ? "ON" : "OFF");
+  Serial.print(",GADGETS:");
+  Serial.print(gadgetCount);
+  Serial.print(",MAC:");
+  Serial.println(WiFi.macAddress());
+  
+  // Listar gadgets conectados
+  for (int i = 0; i < gadgetCount; i++) {
+    if (gadgets[i].active) {
+      Serial.print("GADGET:");
+      Serial.print(macToString(gadgets[i].mac));
+      Serial.print(",LAST_SEEN:");
+      Serial.print((millis() - gadgets[i].lastSeen) / 1000);
+      Serial.println("s");
+    }
+  }
+}
+
+void handleGadgetSend(String command) {
+  if (!espnowEnabled) {
+    Serial.println("ERROR:ESPNOW_NOT_ENABLED");
+    return;
+  }
+  
+  // Formato: GADGET_SEND:AA:BB:CC:DD:EE:FF:DATA
+  int firstColon = command.indexOf(':');
+  int secondColon = command.indexOf(':', firstColon + 1);
+  
+  if (firstColon == -1 || secondColon == -1) {
+    Serial.println("ERROR:INVALID_GADGET_SEND_FORMAT");
+    return;
+  }
+  
+  String macStr = command.substring(firstColon + 1, secondColon);
+  String data = command.substring(secondColon + 1);
+  
+  uint8_t mac[6];
+  if (!parseMAC(macStr, mac)) {
+    Serial.println("ERROR:INVALID_MAC_ADDRESS");
+    return;
+  }
+  
+  // Preparar mensaje
+  outgoingMessage.command = CMD_FORWARD_TO_GADGET;
+  outgoingMessage.dataLen = data.length();
+  strncpy(outgoingMessage.data, data.c_str(), sizeof(outgoingMessage.data) - 1);
+  outgoingMessage.data[sizeof(outgoingMessage.data) - 1] = '\0';
+  
+  // Enviar
+  if (esp_now_send(mac, (uint8_t*)&outgoingMessage, sizeof(outgoingMessage)) == 0) {
+    Serial.println("GADGET_SENT:" + macStr);
+  } else {
+    Serial.println("ERROR:GADGET_SEND_FAILED:" + macStr);
+  }
+}
+
+// ===== COMANDOS OTA =====
+void handleOTAStart(String command) {
+  // Formato: OTA_START:SSID:PASSWORD
+  int firstColon = command.indexOf(':');
+  int secondColon = command.indexOf(':', firstColon + 1);
+  
+  if (firstColon == -1 || secondColon == -1) {
+    Serial.println("ERROR:INVALID_OTA_FORMAT");
+    return;
+  }
+  
+  String ssid = command.substring(firstColon + 1, secondColon);
+  String password = command.substring(secondColon + 1);
+  
+  startOTA(ssid, password);
+}
+
+void handleOTAStop() {
+  stopOTA();
+}
+
+void startOTA(String ssid, String password) {
+  if (otaEnabled) {
+    Serial.println("ERROR:OTA_ALREADY_ENABLED");
+    return;
+  }
+  
+  // Conectar a WiFi
+  WiFi.begin(ssid.c_str(), password.c_str());
+  Serial.println("OTA:CONNECTING_WIFI");
+  
+  unsigned long startTime = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startTime < 10000) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("ERROR:OTA_WIFI_CONNECTION_FAILED");
+    return;
+  }
+  
+  Serial.println();
+  Serial.println("OTA:WIFI_CONNECTED:" + WiFi.localIP().toString());
+  
+  // Configurar OTA
+  ArduinoOTA.setHostname(OTA_HOSTNAME);
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  
+  ArduinoOTA.onStart([]() {
+    Serial.println("OTA:UPDATE_START");
+  });
+  
+  ArduinoOTA.onEnd([]() {
+    Serial.println("OTA:UPDATE_END");
+  });
+  
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("OTA:PROGRESS:%u%%\n", (progress * 100) / total);
+  });
+  
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("OTA:ERROR[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  });
+  
+  ArduinoOTA.begin();
+  otaEnabled = true;
+  
+  Serial.println("OTA:ENABLED");
+}
+
+void stopOTA() {
+  if (!otaEnabled) {
+    return;
+  }
+  
+  ArduinoOTA.end();
+  WiFi.disconnect();
+  otaEnabled = false;
+  
+  Serial.println("OTA:DISABLED");
+}
 void blinkLED(int times, int delayMs) {
   bool originalStateL = digitalRead(LEFT_LED_PIN);
   bool originalStateR = digitalRead(RIGHT_LED_PIN);
