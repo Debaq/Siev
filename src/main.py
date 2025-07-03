@@ -913,6 +913,9 @@ Sistema Integrado de Evaluación Vestibular<br><br>
 
 def main():
     """Función principal de SIEV"""
+    # IMPORTANTE: Configurar atributos Qt ANTES de crear QApplication
+    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
+    
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     
