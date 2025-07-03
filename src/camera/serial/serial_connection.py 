@@ -1,0 +1,400 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+SerialConnection - Hilo permanente para comunicación serial con ESP8266 SIEV
+"""
+
+import serial
+import threading
+import time
+import queue
+from typing import Optional, Dict, Any, Callable
+from PySide6.QtCore import QObject, Signal, QThread, QTimer
+
+
+class SerialConnection(QObject):
+    """
+    Conexión serial permanente en hilo separado para ESP8266 SIEV.
+    Maneja envío de comandos, recepción de respuestas y stream IMU.
+    """
+    
+    # Señales
+    connected = Signal()
+    disconnected = Signal()
+    command_response = Signal(str, str)  # (comando_enviado, respuesta)
+    imu_data_received = Signal(dict)     # datos IMU parseados
+    error_occurred = Signal(str)         # mensaje de error
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        
+        # Configuración serial
+        self.port = None
+        self.baudrate = 115200
+        self.timeout = 2.0
+        self.serial_conn = None
+        
+        # Control de hilo
+        self.running = False
+        self.thread = None
+        self._stop_event = threading.Event()
+        
+        # Queues para comunicación thread-safe
+        self.command_queue = queue.Queue()
+        self.response_queue = queue.Queue()
+        
+        # Estado de conexión
+        self.is_connected_flag = False
+        self.imu_live_active = False
+        
+        # Buffer para comandos pendientes
+        self.pending_commands = {}
+        self.command_id_counter = 0
+        
+        print("🔗 SerialConnection inicializado")
+    
+    def connect(self, port: str) -> bool:
+        """
+        Conectar al puerto serial y iniciar hilo de comunicación.
+        
+        Args:
+            port: Puerto serial (ej: COM3, /dev/ttyUSB0)
+            
+        Returns:
+            bool: True si la conexión fue exitosa
+        """
+        if self.is_connected_flag:
+            print(f"⚠️ Ya conectado a {self.port}")
+            return True
+        
+        try:
+            print(f"🔌 Conectando a puerto serial: {port}")
+            
+            # Crear conexión serial
+            self.serial_conn = serial.Serial(
+                port=port,
+                baudrate=self.baudrate,
+                timeout=self.timeout,
+                write_timeout=self.timeout
+            )
+            
+            if not self.serial_conn.is_open:
+                self.serial_conn.open()
+            
+            # Limpiar buffers
+            self.serial_conn.reset_input_buffer()
+            self.serial_conn.reset_output_buffer()
+            
+            self.port = port
+            self.is_connected_flag = True
+            
+            # Iniciar hilo de comunicación
+            self._start_communication_thread()
+            
+            # Test inicial con PING
+            time.sleep(0.2)
+            test_response = self.send_command_sync("PING", timeout=3.0)
+            if test_response and "SIEV_ESP_OK" in test_response:
+                print(f"✅ Conexión exitosa: {test_response}")
+                self.connected.emit()
+                return True
+            else:
+                print(f"❌ Test PING falló: {test_response}")
+                self.disconnect()
+                return False
+                
+        except Exception as e:
+            error_msg = f"Error conectando a {port}: {e}"
+            print(f"❌ {error_msg}")
+            self.error_occurred.emit(error_msg)
+            self._cleanup_connection()
+            return False
+    
+    def disconnect(self):
+        """Desconectar del puerto serial y detener hilo."""
+        if not self.is_connected_flag:
+            return
+        
+        print("🔌 Desconectando puerto serial...")
+        
+        # Detener stream IMU si está activo
+        if self.imu_live_active:
+            self.send_command_async("IMU_READ_LIVE_OFF")
+            time.sleep(0.1)
+        
+        # Detener hilo
+        self._stop_communication_thread()
+        
+        # Cerrar conexión
+        self._cleanup_connection()
+        
+        self.disconnected.emit()
+        print("✅ Puerto serial desconectado")
+    
+    def send_command_async(self, command: str) -> int:
+        """
+        Enviar comando de forma asíncrona.
+        
+        Args:
+            command: Comando a enviar
+            
+        Returns:
+            int: ID del comando para rastrear respuesta
+        """
+        if not self.is_connected_flag:
+            self.error_occurred.emit("No hay conexión serial")
+            return -1
+        
+        command_id = self.command_id_counter
+        self.command_id_counter += 1
+        
+        try:
+            self.command_queue.put((command_id, command, time.time()), timeout=1.0)
+            self.pending_commands[command_id] = command
+            return command_id
+        except queue.Full:
+            self.error_occurred.emit("Cola de comandos llena")
+            return -1
+    
+    def send_command_sync(self, command: str, timeout: float = 3.0) -> Optional[str]:
+        """
+        Enviar comando de forma síncrona y esperar respuesta.
+        
+        Args:
+            command: Comando a enviar
+            timeout: Timeout en segundos
+            
+        Returns:
+            str: Respuesta del ESP8266 o None si hay error
+        """
+        if not self.is_connected_flag:
+            return None
+        
+        command_id = self.send_command_async(command)
+        if command_id == -1:
+            return None
+        
+        # Esperar respuesta
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                response = self.response_queue.get(timeout=0.1)
+                recv_id, recv_command, recv_response = response
+                
+                if recv_id == command_id:
+                    return recv_response
+                else:
+                    # Respuesta de otro comando, devolverla a la cola
+                    self.response_queue.put(response)
+                    
+            except queue.Empty:
+                continue
+        
+        # Timeout
+        self.pending_commands.pop(command_id, None)
+        return None
+    
+    def is_connected(self) -> bool:
+        """Verificar si está conectado."""
+        return self.is_connected_flag and self.serial_conn and self.serial_conn.is_open
+    
+    def _start_communication_thread(self):
+        """Iniciar hilo de comunicación."""
+        self.running = True
+        self._stop_event.clear()
+        self.thread = threading.Thread(target=self._communication_loop, daemon=True)
+        self.thread.start()
+        print("📡 Hilo de comunicación iniciado")
+    
+    def _stop_communication_thread(self):
+        """Detener hilo de comunicación."""
+        if self.running:
+            self.running = False
+            self._stop_event.set()
+            
+            if self.thread and self.thread.is_alive():
+                self.thread.join(timeout=2.0)
+                if self.thread.is_alive():
+                    print("⚠️ Hilo no terminó correctamente")
+            
+            print("📡 Hilo de comunicación detenido")
+    
+    def _communication_loop(self):
+        """Loop principal del hilo de comunicación."""
+        print("🔄 Loop de comunicación iniciado")
+        
+        while self.running and not self._stop_event.is_set():
+            try:
+                # Procesar comandos pendientes
+                self._process_outgoing_commands()
+                
+                # Leer respuestas
+                self._process_incoming_data()
+                
+                # Pausa pequeña para no saturar CPU
+                time.sleep(0.01)
+                
+            except Exception as e:
+                if self.running:  # Solo reportar si no estamos cerrando
+                    error_msg = f"Error en loop de comunicación: {e}"
+                    print(f"❌ {error_msg}")
+                    self.error_occurred.emit(error_msg)
+                    break
+        
+        print("🔄 Loop de comunicación terminado")
+    
+    def _process_outgoing_commands(self):
+        """Procesar comandos salientes de la cola."""
+        try:
+            while not self.command_queue.empty():
+                command_id, command, timestamp = self.command_queue.get_nowait()
+                
+                # Verificar timeout del comando
+                if time.time() - timestamp > 5.0:
+                    self.pending_commands.pop(command_id, None)
+                    continue
+                
+                # Enviar comando
+                if self.serial_conn and self.serial_conn.is_open:
+                    command_line = f"{command}\r\n"
+                    self.serial_conn.write(command_line.encode('utf-8'))
+                    self.serial_conn.flush()
+                    print(f"📤 Enviado: {command}")
+                
+        except queue.Empty:
+            pass
+        except Exception as e:
+            print(f"❌ Error enviando comando: {e}")
+    
+    def _process_incoming_data(self):
+        """Procesar datos entrantes del puerto serial."""
+        if not self.serial_conn or not self.serial_conn.is_open:
+            return
+        
+        try:
+            if self.serial_conn.in_waiting > 0:
+                line = self.serial_conn.readline().decode('utf-8', errors='ignore').strip()
+                
+                if line:
+                    print(f"📥 Recibido: {line}")
+                    self._handle_received_line(line)
+                    
+        except Exception as e:
+            print(f"❌ Error leyendo datos: {e}")
+    
+    def _handle_received_line(self, line: str):
+        """
+        Manejar línea recibida del ESP8266.
+        
+        Args:
+            line: Línea recibida
+        """
+        # Detectar datos de stream IMU
+        if line.startswith("LIVE:"):
+            self._handle_imu_live_data(line)
+            return
+        
+        # Detectar respuestas a comandos
+        if self.pending_commands:
+            # Asociar respuesta con el comando más antiguo
+            oldest_id = min(self.pending_commands.keys())
+            oldest_command = self.pending_commands.pop(oldest_id)
+            
+            # Emitir señal de respuesta
+            self.command_response.emit(oldest_command, line)
+            
+            # Guardar en cola para comandos síncronos
+            self.response_queue.put((oldest_id, oldest_command, line))
+        
+        # Detectar inicio/fin de stream IMU
+        if "IMU_LIVE:STARTED" in line:
+            self.imu_live_active = True
+            print("📊 Stream IMU iniciado")
+        elif "IMU_LIVE:STOPPED" in line:
+            self.imu_live_active = False
+            print("📊 Stream IMU detenido")
+    
+    def _handle_imu_live_data(self, line: str):
+        """
+        Procesar datos de stream IMU y emitir señal.
+        
+        Args:
+            line: Línea con datos IMU (formato: LIVE:timestamp,acc_x,acc_y,...)
+        """
+        try:
+            # Remover prefijo LIVE:
+            data_part = line[5:]  # Remover "LIVE:"
+            values = data_part.split(',')
+            
+            if len(values) >= 15:
+                imu_data = {
+                    'timestamp': int(values[0]),
+                    'accelerometer': {
+                        'x': float(values[1]),
+                        'y': float(values[2]),
+                        'z': float(values[3])
+                    },
+                    'gyroscope': {
+                        'x': float(values[4]),
+                        'y': float(values[5]),
+                        'z': float(values[6])
+                    },
+                    'magnetometer': {
+                        'x': float(values[7]),
+                        'y': float(values[8]),
+                        'z': float(values[9])
+                    },
+                    'temperature': float(values[10]),
+                    'quaternion': {
+                        'w': float(values[11]),
+                        'x': float(values[12]),
+                        'y': float(values[13]),
+                        'z': float(values[14])
+                    }
+                }
+                
+                self.imu_data_received.emit(imu_data)
+            else:
+                print(f"⚠️ Datos IMU incompletos: {len(values)} valores")
+                
+        except Exception as e:
+            print(f"❌ Error parseando datos IMU: {e}")
+    
+    def _cleanup_connection(self):
+        """Limpiar recursos de conexión."""
+        self.is_connected_flag = False
+        self.imu_live_active = False
+        
+        if self.serial_conn:
+            try:
+                self.serial_conn.close()
+            except:
+                pass
+            self.serial_conn = None
+        
+        # Limpiar colas
+        while not self.command_queue.empty():
+            try:
+                self.command_queue.get_nowait()
+            except queue.Empty:
+                break
+        
+        while not self.response_queue.empty():
+            try:
+                self.response_queue.get_nowait()
+            except queue.Empty:
+                break
+        
+        self.pending_commands.clear()
+        self.port = None
+    
+    def get_connection_info(self) -> Dict[str, Any]:
+        """Obtener información de la conexión."""
+        return {
+            'connected': self.is_connected_flag,
+            'port': self.port,
+            'baudrate': self.baudrate,
+            'imu_live_active': self.imu_live_active,
+            'pending_commands': len(self.pending_commands),
+            'thread_running': self.running
+        }
