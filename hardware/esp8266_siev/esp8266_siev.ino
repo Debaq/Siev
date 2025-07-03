@@ -1,8 +1,6 @@
 /*
   SIEV ESP8266 Firmware v1.1.0
   
-  Firmware básico para comunicación serie con sistema SIEV
-  Responde a comandos básicos: PING, STATUS, VERSION, RESET, LED_ON, LED_OFF
   Firmware con soporte modular para sensores IMU
   Actualmente soporta BNO055, fácilmente intercambiable
   
@@ -12,23 +10,6 @@
   - LEDs externos en GPIO12 (LEFT) y GPIO14 (RIGHT)
   - Comunicación serie: 115200 baud, 8N1
   
-  Comandos:
-  - PING              -> SIEV_ESP_OK_v1.0.0
-  - STATUS            -> STATUS:OK,UPTIME:12345,FREE_HEAP:45678
-  - VERSION           -> VERSION:SIEV_ESP8266,FW:1.0.0,CHIP:ESP8266,SDK:3.0.2
-  - RESET             -> RESET_OK (luego reinicia)
-  - LED_ON:LEFT       -> LED_ON:LEFT (enciende LED izquierdo)
-  - LED_OFF:LEFT      -> LED_OFF:LEFT (apaga LED izquierdo)
-  - LED_ON:RIGHT      -> LED_ON:RIGHT (enciende LED derecho)
-  - LED_OFF:RIGHT     -> LED_OFF:RIGHT (apaga LED derecho)
-  - LED_ON:BOTH       -> LED_ON:BOTH (enciende ambos LEDs)
-  - LED_OFF:BOTH      -> LED_OFF:BOTH (apaga ambos LEDs)
-  - IMU_READ_ONE
-  - IMU_READ_LIVE_ON
-  - IMU_READ_LIVE_OFF
-  - IMU_CALIBRATE
-  - Autor: Sistema SIEV
-  - Fecha: 2025-07-02
   Comandos disponibles:
   - PING, STATUS, VERSION, RESET
   - LED_ON:LEFT/RIGHT/BOTH, LED_OFF:LEFT/RIGHT/BOTH
@@ -57,8 +38,6 @@
 #define SERIAL_BAUD 115200
 #define COMMAND_TIMEOUT 5000
 #define MAX_COMMAND_LENGTH 32
-#define LEFT_LED_PIN 12   // GPIO12
-#define RIGHT_LED_PIN 14  // GPIO14
 #define LEFT_LED_PIN 12   // GPIO12
 #define RIGHT_LED_PIN 14  // GPIO14
 
@@ -206,12 +185,6 @@ void setup() {
     delay(10);
   }
   
-  
-  // Configurar LEDs izquierdo y derecho
-  pinMode(LEFT_LED_PIN, OUTPUT);
-  pinMode(RIGHT_LED_PIN, OUTPUT);
-  digitalWrite(LEFT_LED_PIN, HIGH);  // LED izquierdo off (HIGH = apagado)
-  digitalWrite(RIGHT_LED_PIN, HIGH); // LED derecho off (HIGH = apagado)
   // Configurar LEDs
   pinMode(LEFT_LED_PIN, OUTPUT);
   pinMode(RIGHT_LED_PIN, OUTPUT);
@@ -265,10 +238,6 @@ void loop() {
   // Procesar comandos serie
   processSerialCommands();
   
-
-  
-  // Pequeña pausa para no saturar
-  delay(10);
   // Procesar stream IMU si está activo
   if (imuLiveMode && imuInitialized) {
     processIMULiveStream();
@@ -315,14 +284,6 @@ void processCommand(String command) {
   else if (command == "RESET") {
     handleResetCommand();
   }
-  // Comandos LED
-  else if (command.startsWith("LED_ON:")) {
-    handleLedCommand(command, true);
-  }
-  else if (command.startsWith("LED_OFF:")) {
-    handleLedCommand(command, false);
-  }
-  // Comando desconocido
   else if (command.startsWith("LED_ON:")) {
     handleLedCommand(command, true);
   }
@@ -400,52 +361,6 @@ void handleResetCommand() {
   ESP.restart();
 }
 
-// ===== CONTROL DE LEDs =====
-void handleLedCommand(String command, bool turnOn) {
-  // Extraer el parámetro después de los dos puntos
-  int colonIndex = command.indexOf(':');
-  if (colonIndex == -1) {
-    Serial.println("ERROR:INVALID_LED_COMMAND");
-    return;
-  }
-  
-  String target = command.substring(colonIndex + 1);
-  String action = turnOn ? "LED_ON:" : "LED_OFF:";
-  
-  if (target == "LEFT") {
-    digitalWrite(LEFT_LED_PIN, turnOn ? LOW : HIGH); // LOW = encendido, HIGH = apagado
-    Serial.println(action + "LEFT");
-  }
-  else if (target == "RIGHT") {
-    digitalWrite(RIGHT_LED_PIN, turnOn ? LOW : HIGH); // LOW = encendido, HIGH = apagado
-    Serial.println(action + "RIGHT");
-  }
-  else if (target == "BOTH") {
-    digitalWrite(LEFT_LED_PIN, turnOn ? LOW : HIGH);
-    digitalWrite(RIGHT_LED_PIN, turnOn ? LOW : HIGH);
-    Serial.println(action + "BOTH");
-  }
-  else {
-    Serial.println("ERROR:INVALID_LED_TARGET:" + target);
-  }
-}
-
-// ===== FUNCIONES AUXILIARES =====
-
-
-void blinkLED(int times, int delayMs) {
-  bool originalStateL = digitalRead(LEFT_LED_PIN);
-  bool originalStateR = digitalRead(RIGHT_LED_PIN);
-
-  for (int i = 0; i < times; i++) {
-    digitalWrite(RIGHT_LED_PIN, LOW);  // LED on
-    digitalWrite(LEFT_LED_PIN, HIGH); // LED off
-
-    delay(delayMs);
-    digitalWrite(RIGHT_LED_PIN, HIGH); // LED off
-    digitalWrite(LEFT_LED_PIN, LOW);  // LED on
-
-    delay(delayMs);
 void handleLedCommand(String command, bool turnOn) {
   int colonIndex = command.indexOf(':');
   if (colonIndex == -1) {
@@ -473,68 +388,11 @@ void handleLedCommand(String command, bool turnOn) {
     rightLedState = turnOn;
     Serial.println(action + "BOTH");
   }
-  
-  digitalWrite(LEFT_LED_PIN, originalStateL); // Restaurar estado
-  digitalWrite(RIGHT_LED_PIN, originalStateR); // Restaurar estado
-
   else {
     Serial.println("ERROR:INVALID_LED_TARGET:" + target);
   }
 }
 
-// ===== FUNCIONES DE UTILIDAD =====
-
-void sendDebugInfo() {
-  Serial.println("DEBUG:ESP8266_SIEV_FIRMWARE");
-  Serial.println("DEBUG:VERSION_" + String(FIRMWARE_VERSION));
-  Serial.println("DEBUG:BAUD_" + String(SERIAL_BAUD));
-  Serial.println("DEBUG:UPTIME_" + String((millis() - bootTime) / 1000));
-  Serial.println("DEBUG:FREE_HEAP_" + String(ESP.getFreeHeap()));
-}
-
-// ===== COMANDOS ADICIONALES PARA DESARROLLO =====
-
-void handleDebugCommand() {
-  sendDebugInfo();
-}
-
-void handleHelpCommand() {
-  Serial.println("HELP:AVAILABLE_COMMANDS");
-  Serial.println("HELP:PING - Test connectivity");
-  Serial.println("HELP:STATUS - System status");
-  Serial.println("HELP:VERSION - Firmware info");
-  Serial.println("HELP:RESET - Restart device");
-  Serial.println("HELP:LED_ON:LEFT/RIGHT/BOTH - Turn on LEDs");
-  Serial.println("HELP:LED_OFF:LEFT/RIGHT/BOTH - Turn off LEDs");
-  Serial.println("HELP:DEBUG - Debug information");
-  Serial.println("HELP:HELP - This message");
-}
-
-// ===== MANEJO DE ERRORES =====
-
-void handleSerialError() {
-  Serial.println("ERROR:SERIAL_COMMUNICATION");
-  blinkLED(10, 50); // Parpadeo rápido de error
-}
-
-void handleBufferOverflow() {
-  Serial.println("ERROR:BUFFER_OVERFLOW");
-  inputBuffer = "";
-}
-
-// ===== INFORMACIÓN DEL SISTEMA =====
-
-void printSystemInfo() {
-  Serial.println("=== SIEV ESP8266 SYSTEM INFO ===");
-  Serial.println("Device: " + String(DEVICE_NAME));
-  Serial.println("Firmware: v" + String(FIRMWARE_VERSION));
-  Serial.println("Chip ID: 0x" + String(ESP.getChipId(), HEX));
-  Serial.println("Flash Size: " + String(ESP.getFlashChipSize()) + " bytes");
-  Serial.println("Free Heap: " + String(ESP.getFreeHeap()) + " bytes");
-  Serial.println("SDK Version: " + String(ESP.getSdkVersion()));
-  Serial.println("Core Version: " + String(ESP.getCoreVersion()));
-  Serial.println("Serial: " + String(SERIAL_BAUD) + " baud");
-  Serial.println("==============================");
 // ===== COMANDOS IMU =====
 void handleIMUReadOne() {
   if (!imuInitialized) {
