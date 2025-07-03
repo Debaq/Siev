@@ -38,7 +38,7 @@ class EyeDetector(QObject):
     pupils_detected = Signal(list)  # Lista de pupilas detectadas
     detection_failed = Signal(str)  # Error en detección
     
-    def __init__(self, model_path: str = "assets/model/", parent=None):
+    def __init__(self, model_path: str = "src/assets/model/", parent=None):
         super().__init__(parent)
         
         # Configuración de rutas

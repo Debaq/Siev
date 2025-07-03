@@ -1,0 +1,679 @@
+{
+  "version": "1.0",
+  "description": "Protocolos de evaluación vestibular SIEV - Configuraciones estándar médicas y presets personalizados",
+  "last_updated": "2025-07-03",
+  "default": {
+    "nistagmo_espontaneo": {
+      "name": "Nistagmo Espontáneo",
+      "category": "observacion",
+      "behavior_type": "recording",
+      "duration_max": null,
+      "description": "Grabación libre controlada manualmente por el especialista",
+      "protocol": {
+        "recording_mode": "manual",
+        "auto_stop": false,
+        "phases": [
+          {
+            "name": "mirada_central",
+            "description": "Observación con mirada central fija",
+            "duration": "variable"
+          },
+          {
+            "name": "mirada_excentrica",
+            "description": "Observación con mirada excéntrica (±30°)",
+            "duration": "variable"
+          },
+          {
+            "name": "con_sin_fijacion",
+            "description": "Evaluación con y sin fijación visual",
+            "duration": "variable"
+          }
+        ]
+      },
+      "ui_settings": {
+        "show_crosshair": true,
+        "show_tracking_circles": true,
+        "show_eye_detection": true,
+        "show_pupil_detection": true
+      },
+      "hardware_control": {
+        "led_control": false,
+        "esp8266_commands": []
+      },
+      "graph_tools": {
+        "torok_tool": false,
+        "peak_editing": true,
+        "tiempo_fijacion": false,
+        "zoom": true,
+        "crosshair": true
+      }
+    },
+    "sacadas": {
+      "name": "Sacadas",
+      "category": "oculomotoras",
+      "behavior_type": "window",
+      "duration_max": 180,
+      "description": "Ventana nueva con puntos alternativos para movimientos oculares rápidos",
+      "protocol": {
+        "window_type": "saccades",
+        "target_amplitude": 20,
+        "target_positions": [
+          -20,
+          -10,
+          0,
+          10,
+          20
+        ],
+        "target_duration": 1.5,
+        "inter_target_delay": 0.5,
+        "repetitions": 10,
+        "directions": [
+          "horizontal",
+          "vertical"
+        ]
+      },
+      "ui_settings": {
+        "background_color": "#2c3e50",
+        "target_color": "#e74c3c",
+        "target_size": 15,
+        "fixation_cross": true
+      },
+      "hardware_control": {
+        "led_control": false,
+        "esp8266_commands": []
+      },
+      "graph_tools": {
+        "torok_tool": false,
+        "peak_editing": true,
+        "tiempo_fijacion": false,
+        "zoom": true,
+        "crosshair": true,
+        "peak_detection": true
+      }
+    },
+    "seguimiento_lento": {
+      "name": "Seguimiento Lento",
+      "category": "oculomotoras",
+      "behavior_type": "window",
+      "duration_max": 180,
+      "description": "Ventana nueva con punto móvil en movimiento de rampa lento",
+      "protocol": {
+        "window_type": "smooth_pursuit",
+        "frequency": 0.4,
+        "amplitude": 20,
+        "waveform": "sinusoidal",
+        "speed": "0.4_hz",
+        "directions": [
+          "horizontal",
+          "vertical"
+        ],
+        "cycles": 5
+      },
+      "ui_settings": {
+        "background_color": "#2c3e50",
+        "target_color": "#27ae60",
+        "target_size": 12,
+        "trajectory_visible": false
+      },
+      "hardware_control": {
+        "led_control": false,
+        "esp8266_commands": []
+      },
+      "graph_tools": {
+        "torok_tool": false,
+        "peak_editing": true,
+        "tiempo_fijacion": false,
+        "zoom": true,
+        "crosshair": true,
+        "peak_detection": true
+      }
+    },
+    "optoquineticas": {
+      "name": "Optoquinéticas",
+      "category": "oculomotoras",
+      "behavior_type": "window",
+      "duration_max": 300,
+      "description": "Ventana nueva con estímulos optocinéticos horizontales y verticales",
+      "protocol": {
+        "window_type": "optokinetic",
+        "pattern_type": "stripes",
+        "velocities": [
+          20,
+          40
+        ],
+        "directions": [
+          "left",
+          "right",
+          "up",
+          "down"
+        ],
+        "stripe_width": 10,
+        "contrast": 0.9,
+        "duration_per_direction": 30
+      },
+      "ui_settings": {
+        "background_color": "#000000",
+        "stripe_color": "#ffffff",
+        "fullscreen": true
+      },
+      "hardware_control": {
+        "led_control": false,
+        "esp8266_commands": []
+      },
+      "graph_tools": {
+        "torok_tool": true,
+        "peak_editing": true,
+        "tiempo_fijacion": false,
+        "zoom": true,
+        "crosshair": true,
+        "peak_detection": true
+      }
+    },
+    "calorica_caliente_od": {
+      "name": "Calórica Caliente OD",
+      "category": "calorica",
+      "behavior_type": "caloric",
+      "duration_max": 300,
+      "description": "Estimulación térmica con agua caliente (44°C) en oído derecho",
+      "protocol": {
+        "temperature": 44,
+        "ear": "right",
+        "irrigation_duration": 40,
+        "total_recording": 300,
+        "events": [
+          {
+            "time": 40,
+            "type": "torok_start",
+            "description": "Inicio período Torok - marcar en gráfico",
+            "action": "activate_torok_tool"
+          },
+          {
+            "time": 80,
+            "type": "fixation_start",
+            "description": "Inicio fijación visual + LED encendido",
+            "action": "led_on",
+            "led_target": "LEFT",
+            "duration": 10
+          },
+          {
+            "time": 90,
+            "type": "fixation_end",
+            "description": "Fin fijación visual + LED apagado",
+            "action": "led_off",
+            "led_target": "LEFT"
+          }
+        ]
+      },
+      "ui_settings": {
+        "show_crosshair": true,
+        "show_tracking_circles": true,
+        "show_timer": true,
+        "show_event_markers": true
+      },
+      "hardware_control": {
+        "led_control": true,
+        "default_led": "LEFT",
+        "esp8266_commands": [
+          "LED_ON:LEFT",
+          "LED_OFF:LEFT"
+        ]
+      },
+      "graph_tools": {
+        "torok_tool": true,
+        "peak_editing": true,
+        "tiempo_fijacion": true,
+        "zoom": true,
+        "crosshair": true,
+        "peak_detection": false
+      }
+    },
+    "calorica_caliente_oi": {
+      "name": "Calórica Caliente OI",
+      "category": "calorica",
+      "behavior_type": "caloric",
+      "duration_max": 300,
+      "description": "Estimulación térmica con agua caliente (44°C) en oído izquierdo",
+      "protocol": {
+        "temperature": 44,
+        "ear": "left",
+        "irrigation_duration": 40,
+        "total_recording": 300,
+        "events": [
+          {
+            "time": 40,
+            "type": "torok_start",
+            "description": "Inicio período Torok - marcar en gráfico",
+            "action": "activate_torok_tool"
+          },
+          {
+            "time": 80,
+            "type": "fixation_start",
+            "description": "Inicio fijación visual + LED encendido",
+            "action": "led_on",
+            "led_target": "LEFT",
+            "duration": 10
+          },
+          {
+            "time": 90,
+            "type": "fixation_end",
+            "description": "Fin fijación visual + LED apagado",
+            "action": "led_off",
+            "led_target": "LEFT"
+          }
+        ]
+      },
+      "ui_settings": {
+        "show_crosshair": true,
+        "show_tracking_circles": true,
+        "show_timer": true,
+        "show_event_markers": true
+      },
+      "hardware_control": {
+        "led_control": true,
+        "default_led": "LEFT",
+        "esp8266_commands": [
+          "LED_ON:LEFT",
+          "LED_OFF:LEFT"
+        ]
+      },
+      "graph_tools": {
+        "torok_tool": true,
+        "peak_editing": true,
+        "tiempo_fijacion": true,
+        "zoom": true,
+        "crosshair": true,
+        "peak_detection": false
+      }
+    },
+    "calorica_fria_od": {
+      "name": "Calórica Fría OD",
+      "category": "calorica",
+      "behavior_type": "caloric",
+      "duration_max": 300,
+      "description": "Estimulación térmica con agua fría (30°C) en oído derecho",
+      "protocol": {
+        "temperature": 30,
+        "ear": "right",
+        "irrigation_duration": 40,
+        "total_recording": 300,
+        "events": [
+          {
+            "time": 40,
+            "type": "torok_start",
+            "description": "Inicio período Torok - marcar en gráfico",
+            "action": "activate_torok_tool"
+          },
+          {
+            "time": 80,
+            "type": "fixation_start",
+            "description": "Inicio fijación visual + LED encendido",
+            "action": "led_on",
+            "led_target": "LEFT",
+            "duration": 10
+          },
+          {
+            "time": 90,
+            "type": "fixation_end",
+            "description": "Fin fijación visual + LED apagado",
+            "action": "led_off",
+            "led_target": "LEFT"
+          }
+        ]
+      },
+      "ui_settings": {
+        "show_crosshair": true,
+        "show_tracking_circles": true,
+        "show_timer": true,
+        "show_event_markers": true
+      },
+      "hardware_control": {
+        "led_control": true,
+        "default_led": "LEFT",
+        "esp8266_commands": [
+          "LED_ON:LEFT",
+          "LED_OFF:LEFT"
+        ]
+      },
+      "graph_tools": {
+        "torok_tool": true,
+        "peak_editing": true,
+        "tiempo_fijacion": true,
+        "zoom": true,
+        "crosshair": true,
+        "peak_detection": false
+      }
+    },
+    "calorica_fria_oi": {
+      "name": "Calórica Fría OI",
+      "category": "calorica",
+      "behavior_type": "caloric",
+      "duration_max": 300,
+      "description": "Estimulación térmica con agua fría (30°C) en oído izquierdo",
+      "protocol": {
+        "temperature": 30,
+        "ear": "left",
+        "irrigation_duration": 40,
+        "total_recording": 300,
+        "events": [
+          {
+            "time": 40,
+            "type": "torok_start",
+            "description": "Inicio período Torok - marcar en gráfico",
+            "action": "activate_torok_tool"
+          },
+          {
+            "time": 80,
+            "type": "fixation_start",
+            "description": "Inicio fijación visual + LED encendido",
+            "action": "led_on",
+            "led_target": "LEFT",
+            "duration": 10
+          },
+          {
+            "time": 90,
+            "type": "fixation_end",
+            "description": "Fin fijación visual + LED apagado",
+            "action": "led_off",
+            "led_target": "LEFT"
+          }
+        ]
+      },
+      "ui_settings": {
+        "show_crosshair": true,
+        "show_tracking_circles": true,
+        "show_timer": true,
+        "show_event_markers": true
+      },
+      "hardware_control": {
+        "led_control": true,
+        "default_led": "LEFT",
+        "esp8266_commands": [
+          "LED_ON:LEFT",
+          "LED_OFF:LEFT"
+        ]
+      },
+      "graph_tools": {
+        "torok_tool": true,
+        "peak_editing": true,
+        "tiempo_fijacion": true,
+        "zoom": true,
+        "crosshair": true,
+        "peak_detection": false
+      }
+    },
+    "dix_hallpike": {
+      "name": "Maniobra Dix-Hallpike",
+      "category": "posicional",
+      "behavior_type": "recording",
+      "duration_max": 120,
+      "description": "Maniobra posicional para detectar VPPB - grabación con observación de latencia y fatiga",
+      "protocol": {
+        "recording_mode": "manual",
+        "phases": [
+          {
+            "name": "posicion_inicial",
+            "description": "Paciente sentado, cabeza girada 45° hacia lado a evaluar",
+            "duration": 10
+          },
+          {
+            "name": "movimiento_rapido",
+            "description": "Movimiento rápido a decúbito con cabeza colgando 20°",
+            "duration": 2
+          },
+          {
+            "name": "observacion",
+            "description": "Observar latencia (5-30s), dirección y duración del nistagmo",
+            "duration": 60,
+            "markers": [
+              "latencia",
+              "inicio_nistagmo",
+              "pico_intensidad",
+              "fatiga"
+            ]
+          },
+          {
+            "name": "retorno",
+            "description": "Retorno a posición sentado",
+            "duration": 30
+          }
+        ]
+      },
+      "ui_settings": {
+        "show_crosshair": true,
+        "show_tracking_circles": false,
+        "show_timer": true,
+        "show_phase_indicator": true
+      },
+      "hardware_control": {
+        "led_control": false,
+        "esp8266_commands": []
+      },
+      "graph_tools": {
+        "torok_tool": false,
+        "peak_editing": true,
+        "tiempo_fijacion": true,
+        "zoom": true,
+        "crosshair": true,
+        "peak_detection": false
+      }
+    },
+    "test_romberg": {
+      "name": "Test de Romberg",
+      "category": "equilibrio",
+      "behavior_type": "recording",
+      "duration_max": 120,
+      "description": "Prueba de equilibrio estático con ojos abiertos y cerrados",
+      "protocol": {
+        "recording_mode": "timed",
+        "phases": [
+          {
+            "name": "ojos_abiertos",
+            "description": "De pie, talones juntos, brazos extendidos, ojos abiertos",
+            "duration": 30
+          },
+          {
+            "name": "ojos_cerrados",
+            "description": "Misma posición pero con ojos cerrados",
+            "duration": 30
+          }
+        ],
+        "evaluation_criteria": [
+          "oscilaciones_excesivas",
+          "perdida_equilibrio",
+          "desviacion_lateral",
+          "compensacion_brazos"
+        ]
+      },
+      "ui_settings": {
+        "show_crosshair": false,
+        "show_tracking_circles": false,
+        "show_timer": true,
+        "show_phase_indicator": true,
+        "camera_focus": "full_body"
+      },
+      "hardware_control": {
+        "led_control": false,
+        "esp8266_commands": []
+      },
+      "graph_tools": {
+        "torok_tool": false,
+        "peak_editing": false,
+        "tiempo_fijacion": false,
+        "zoom": true,
+        "crosshair": false,
+        "peak_detection": false
+      }
+    }
+  },
+  "presets": {
+    "ejemplo_preset_modificado": {
+      "name": "Calórica Modificada - LED Derecho",
+      "base": "calorica_caliente_od",
+      "description": "Ejemplo de preset personalizado basado en Calórica Caliente OD",
+      "created_by": "Usuario",
+      "created_date": "2025-07-03",
+      "modifications": {
+        "hardware_control.default_led": "RIGHT",
+        "protocol.events[1].led_target": "RIGHT",
+        "protocol.events[2].led_target": "RIGHT",
+        "duration_max": 240
+      }
+    },
+    "seguimiento_lento___copia": {
+      "name": "Seguimiento Lento - Copia",
+      "category": "oculomotoras",
+      "behavior_type": "window",
+      "duration_max": 180,
+      "description": "Ventana nueva con punto móvil en movimiento de rampa lento",
+      "protocol": {
+        "window_type": "smooth_pursuit",
+        "frequency": 0.4,
+        "amplitude": 20,
+        "waveform": "sinusoidal",
+        "speed": "0.4_hz",
+        "directions": [
+          "horizontal",
+          "vertical"
+        ],
+        "cycles": 5
+      },
+      "ui_settings": {
+        "background_color": "#2c3e50",
+        "target_color": "#27ae60",
+        "target_size": 12,
+        "trajectory_visible": false
+      },
+      "hardware_control": {
+        "led_control": false,
+        "esp8266_commands": []
+      },
+      "graph_tools": {
+        "torok_tool": false,
+        "peak_editing": true,
+        "tiempo_fijacion": false,
+        "zoom": true,
+        "crosshair": true,
+        "peak_detection": true
+      },
+      "base": "seguimiento_lento",
+      "created_by": "Usuario",
+      "created_date": "2025-07-03"
+    }
+  },
+  "ui_tree_structure": {
+    "nistagmo_espontaneo": {
+      "parent": null,
+      "display_name": "Nistagmo Espontáneo",
+      "icon": "eye",
+      "expandable": false
+    },
+    "oculomotoras": {
+      "parent": null,
+      "display_name": "Pruebas Oculomotoras",
+      "icon": "target",
+      "expandable": true,
+      "children": [
+        {
+          "key": "sacadas",
+          "display_name": "Sacadas",
+          "icon": "zap"
+        },
+        {
+          "key": "seguimiento_lento",
+          "display_name": "Seguimiento Lento",
+          "icon": "move"
+        },
+        {
+          "key": "optoquineticas",
+          "display_name": "Optoquinéticas",
+          "icon": "repeat"
+        }
+      ]
+    },
+    "calorica": {
+      "parent": null,
+      "display_name": "Prueba Calórica",
+      "icon": "thermometer",
+      "expandable": true,
+      "children": [
+        {
+          "key": "calorica_caliente_od",
+          "display_name": "Caliente OD (44°C)",
+          "icon": "circle-arrow-up"
+        },
+        {
+          "key": "calorica_caliente_oi",
+          "display_name": "Caliente OI (44°C)",
+          "icon": "circle-arrow-up"
+        },
+        {
+          "key": "calorica_fria_od",
+          "display_name": "Fría OD (30°C)",
+          "icon": "circle-arrow-down"
+        },
+        {
+          "key": "calorica_fria_oi",
+          "display_name": "Fría OI (30°C)",
+          "icon": "circle-arrow-down"
+        }
+      ]
+    },
+    "posicional": {
+      "parent": null,
+      "display_name": "Pruebas Posicionales",
+      "icon": "rotate-3d",
+      "expandable": true,
+      "children": [
+        {
+          "key": "dix_hallpike",
+          "display_name": "Maniobra Dix-Hallpike",
+          "icon": "corner-down-right"
+        }
+      ]
+    },
+    "equilibrio": {
+      "parent": null,
+      "display_name": "Pruebas de Equilibrio",
+      "icon": "footprints",
+      "expandable": true,
+      "children": [
+        {
+          "key": "test_romberg",
+          "display_name": "Test de Romberg",
+          "icon": "user"
+        }
+      ]
+    }
+  },
+  "configuration_schema": {
+    "modifiable_fields": [
+      "duration_max",
+      "protocol.events",
+      "hardware_control.default_led",
+      "ui_settings",
+      "graph_tools"
+    ],
+    "field_types": {
+      "duration_max": "integer",
+      "led_target": "enum",
+      "time": "integer",
+      "temperature": "float",
+      "amplitude": "integer"
+    },
+    "validation_rules": {
+      "duration_max": {
+        "min": 30,
+        "max": 600
+      },
+      "temperature": {
+        "min": 25,
+        "max": 50
+      },
+      "time": {
+        "min": 0,
+        "max": "duration_max"
+      }
+    }
+  },
+  "last_saved": "2025-07-03T01:58:15.254549"
+}

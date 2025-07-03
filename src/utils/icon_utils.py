@@ -18,7 +18,7 @@ from PySide6.QtWidgets import QApplication
 class IconManager:
     """Gestor de iconos SVG con PySide6 y control de colores"""
     
-    def __init__(self, cache_dir="assets/icons"):
+    def __init__(self, cache_dir="src/assets/icons"):
         self.cache_dir = cache_dir
         self.icons_cache = {}  # Cache en memoria
         self.downloading = set()
