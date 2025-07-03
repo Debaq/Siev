@@ -20,9 +20,12 @@
   - LED_OFF:RIGHT     -> LED_OFF:RIGHT (apaga LED derecho)
   - LED_ON:BOTH       -> LED_ON:BOTH (enciende ambos LEDs)
   - LED_OFF:BOTH      -> LED_OFF:BOTH (apaga ambos LEDs)
-  
-  Autor: Sistema SIEV
-  Fecha: 2025-07-02
+  - IMU_READ_ONE
+  - IMU_READ_LIVE_ON
+  - IMU_READ_LIVE_OFF
+  - IMU_CALIBRATE
+  - Autor: Sistema SIEV
+  - Fecha: 2025-07-02
 */
 
 // ===== CONFIGURACIÓN =====
@@ -31,8 +34,6 @@
 #define SERIAL_BAUD 115200
 #define COMMAND_TIMEOUT 5000
 #define MAX_COMMAND_LENGTH 32
-#define HEARTBEAT_LED_PIN LED_BUILTIN
-#define HEARTBEAT_INTERVAL 2000
 #define LEFT_LED_PIN 12   // GPIO12
 #define RIGHT_LED_PIN 14  // GPIO14
 
@@ -50,9 +51,6 @@ void setup() {
     delay(10);
   }
   
-  // Configurar LED de estado (heartbeat)
-  pinMode(HEARTBEAT_LED_PIN, OUTPUT);
-  digitalWrite(HEARTBEAT_LED_PIN, HIGH); // LED off (inverted on most ESP8266)
   
   // Configurar LEDs izquierdo y derecho
   pinMode(LEFT_LED_PIN, OUTPUT);
@@ -80,8 +78,7 @@ void loop() {
   // Procesar comandos serie
   processSerialCommands();
   
-  // Heartbeat LED
-  handleHeartbeat();
+
   
   // Pequeña pausa para no saturar
   delay(10);
@@ -226,27 +223,25 @@ void handleLedCommand(String command, bool turnOn) {
 
 // ===== FUNCIONES AUXILIARES =====
 
-void handleHeartbeat() {
-  unsigned long currentTime = millis();
-  
-  if (currentTime - lastHeartbeat >= HEARTBEAT_INTERVAL) {
-    lastHeartbeat = currentTime;
-    ledState = !ledState;
-    digitalWrite(HEARTBEAT_LED_PIN, ledState ? LOW : HIGH); // Inverted logic
-  }
-}
 
 void blinkLED(int times, int delayMs) {
-  bool originalState = digitalRead(HEARTBEAT_LED_PIN);
-  
+  bool originalStateL = digitalRead(LEFT_LED_PIN);
+  bool originalStateR = digitalRead(RIGHT_LED_PIN);
+
   for (int i = 0; i < times; i++) {
-    digitalWrite(HEARTBEAT_LED_PIN, LOW);  // LED on
+    digitalWrite(RIGHT_LED_PIN, LOW);  // LED on
+    digitalWrite(LEFT_LED_PIN, HIGH); // LED off
+
     delay(delayMs);
-    digitalWrite(HEARTBEAT_LED_PIN, HIGH); // LED off
+    digitalWrite(RIGHT_LED_PIN, HIGH); // LED off
+    digitalWrite(LEFT_LED_PIN, LOW);  // LED on
+
     delay(delayMs);
   }
   
-  digitalWrite(HEARTBEAT_LED_PIN, originalState); // Restaurar estado
+  digitalWrite(LEFT_LED_PIN, originalStateL); // Restaurar estado
+  digitalWrite(RIGHT_LED_PIN, originalStateR); // Restaurar estado
+
 }
 
 // ===== FUNCIONES DE UTILIDAD =====
