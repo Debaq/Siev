@@ -143,8 +143,6 @@ class SIEVMainWindow(QMainWindow):
             loader = QUiLoader()
             self.ui = loader.load(ui_path, self)  # Cambiar esta línea
 
-            with open(ui_path, 'r') as ui_file:
-                self.ui = loader.load(ui_file, self)
             
             # Configurar como widget central
             self.setCentralWidget(self.ui.centralwidget)
