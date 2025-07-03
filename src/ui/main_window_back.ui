@@ -230,6 +230,103 @@ QGroupBox::title {
            <property name="spacing">
             <number>10</number>
            </property>
+           <item>
+            <widget class="QPushButton" name="btn_conectar_camara">
+             <property name="font">
+              <font>
+               <pointsize>10</pointsize>
+               <bold>true</bold>
+              </font>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">QPushButton {
+    background-color: #27ae60;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #2ecc71;
+}
+
+QPushButton:pressed {
+    background-color: #229954;
+}</string>
+             </property>
+             <property name="text">
+              <string>🔗 Conectar Cámara</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_grabar">
+             <property name="enabled">
+              <bool>false</bool>
+             </property>
+             <property name="font">
+              <font>
+               <pointsize>10</pointsize>
+               <bold>true</bold>
+              </font>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">QPushButton {
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+QPushButton:hover {
+    background-color: #c0392b;
+}
+
+QPushButton:disabled {
+    background-color: #95a5a6;
+}</string>
+             </property>
+             <property name="text">
+              <string>Grabar</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <spacer name="spacer_camera_controls">
+             <property name="orientation">
+              <enum>Qt::Orientation::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>40</width>
+               <height>20</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item>
+            <widget class="QLabel" name="lbl_estado_camara">
+             <property name="font">
+              <font>
+               <pointsize>10</pointsize>
+               <bold>true</bold>
+              </font>
+             </property>
+             <property name="styleSheet">
+              <string notr="true">QLabel {
+    color: #7f8c8d;
+    font-weight: bold;
+}</string>
+             </property>
+             <property name="text">
+              <string>Estado: Desconectado</string>
+             </property>
+            </widget>
+           </item>
           </layout>
          </item>
         </layout>
