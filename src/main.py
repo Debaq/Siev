@@ -14,7 +14,7 @@ from PySide6.QtCore import QTimer, Qt, QSize, Signal, QRect, QFile
 from PySide6.QtGui import QIcon
 from PySide6.QtUiTools import QUiLoader
 from utils.vcl_graph import VCLGraphWidget
-from camera.camera_widget import OptimizedCameraWidget
+from camera.camera_widget import ModularCameraWidget
 from utils.siev_detection_modal import SievDetectionModal
 from utils.icon_utils import get_icon, IconColors
 
@@ -121,7 +121,7 @@ class SIEVMainWindow(QMainWindow):
         
         if camera_index >= 0:
             camera_placeholder.setParent(None)
-            self.camera_widget = OptimizedCameraWidget()
+            self.camera_widget = ModularCameraWidget()
             camera_layout.insertWidget(camera_index, self.camera_widget)
             print("✅ Widget de cámara integrado")
     

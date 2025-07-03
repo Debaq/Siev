@@ -309,7 +309,7 @@ class SievDetectionModal(QDialog):
         self.clear_info_area()
         
         self.add_info_line("circle-x", f"Error: {error_message}", IconColors.RED)
-        self.add_info_line("alert-triangle", "Verifique que:", IconColors.ORANGE)
+        self.add_info_line("triangle-alert", "Verifique que:", IconColors.ORANGE)
         self.add_info_line("circle", "El dispositivo esté conectado correctamente", IconColors.GRAY)
         self.add_info_line("circle", "Los drivers USB estén instalados", IconColors.GRAY)
         self.add_info_line("circle", "El ESP8266 esté funcionando (LED parpadeando)", IconColors.GRAY)

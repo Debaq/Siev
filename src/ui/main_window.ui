@@ -408,7 +408,7 @@ QPushButton:disabled {
 }</string>
              </property>
              <property name="text">
-              <string>⏺️ Grabar</string>
+              <string>Grabar</string>
              </property>
             </widget>
            </item>
