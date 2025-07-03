@@ -173,7 +173,7 @@ QGroupBox::title {
        </widget>
       </item>
       <item>
-       <widget class="QFrame" name="frame_camera_area">
+       <widget class="QFrame" name="frame_central_panel">
         <property name="sizePolicy">
          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
           <horstretch>0</horstretch>

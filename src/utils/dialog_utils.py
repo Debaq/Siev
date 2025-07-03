@@ -183,7 +183,7 @@ class DialogUtils:
                         cancel_text: str = "Cancelar", parent=None) -> bool:
         """Mostrar diálogo de confirmación"""
         dialog = SIEVDialog(title, parent, (500, 300))
-        dialog.add_icon_header("help-circle", title, message, IconColors.BLUE)
+        dialog.add_icon_header("circle-circle", title, message, IconColors.BLUE)
         
         # Botones
         button_layout = QHBoxLayout()

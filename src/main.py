@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                               QMessageBox)
 from PySide6.QtCore import QTimer, Qt, QSize
 from PySide6.QtGui import QIcon
-from PySide6.QtUiTools import QUiLoader
 
 # Imports de widgets y módulos
 from widgets.welcome_widget import WelcomeWidget
@@ -27,9 +26,12 @@ from utils.icon_utils import get_icon, IconColors, preload_icons
 from utils.dialog_utils import (show_info, show_success, show_warning, show_error, 
                                ask_confirmation, DialogUtils)
 
+from utils.ui_tools import UILoader, inspect_ui_widgets
+
 # Widgets dinámicos (se importan según necesidad)
 from utils.vcl_graph import VCLGraphWidget
 from camera.camera_widget import ModularCameraWidget
+
 
 
 class SIEVMainWindow(QMainWindow):
@@ -42,6 +44,29 @@ class SIEVMainWindow(QMainWindow):
     def __init__(self, ui_file_path="ui/main_window.ui"):
         super().__init__()
         
+       
+        # Cargar UI
+        self.ui_loader = UILoader(ui_file_path)
+        
+        # INMEDIATAMENTE después de cargar, obtener referencias
+        self.left_panel = self.ui_loader.find_widget("frame_left_panel", QFrame)
+        self.central_panel = self.ui_loader.find_widget("frame_central_panel", QFrame)
+        self.right_panel = self.ui_loader.find_widget("frame_right_panel", QFrame)
+        
+        # DESPUÉS configurar elementos básicos
+        central_widget = self.ui_loader.widget("centralwidget")
+        menubar = self.ui_loader.widget("menubar")
+        statusbar = self.ui_loader.widget("statusbar")
+        
+        if not central_widget:
+            raise Exception("No se encontró centralwidget en el UI")
+        
+        self.setCentralWidget(central_widget)  # ← Esto puede invalidar self.ui
+        if menubar:
+            self.setMenuBar(menubar)
+        if statusbar:
+            self.setStatusBar(statusbar)
+
         # Estado del sistema
         self.document_manager = None
         self.protocol_executor = None
@@ -53,16 +78,17 @@ class SIEVMainWindow(QMainWindow):
         self.document_tests_widget = None
         self.central_widgets = {}  # Cache de widgets centrales
         
-        # Referencias a contenedores del UI
-        self.ui = None
-        self.left_panel = None
-        self.central_panel = None
-        self.right_panel = None
+        # Referencias a contenedores del UI (obtener aquí)
+        self.left_panel = self.ui_loader.frame("frame_left_panel")
+        self.central_panel = self.ui_loader.frame("frame_central_panel")
+        self.right_panel = self.ui_loader.frame("frame_right_panel")
         
-        # Cargar UI
-        if not self.load_ui(ui_file_path):
-            # Si falla cargar UI, crear layout básico
-            self.create_fallback_ui()
+        # Log de paneles encontrados
+        panels = []
+        if self.left_panel: panels.append("left")
+        if self.central_panel: panels.append("central")
+        if self.right_panel: panels.append("right")
+        print(f"📦 Paneles UI encontrados: {', '.join(panels)}")
         
         # Configurar ventana
         self.setup_window()
@@ -75,107 +101,21 @@ class SIEVMainWindow(QMainWindow):
         
         # Estado inicial: mostrar bienvenida
         self.show_welcome_state()
-        
-    def create_fallback_ui(self):
-        """Crear UI básico si falla cargar el archivo .ui"""
-        print("⚠️ Creando UI de respaldo...")
-        
-        # Widget central
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        
-        # Layout principal horizontal
-        main_layout = QHBoxLayout(central_widget)
-        main_layout.setSpacing(5)
-        main_layout.setContentsMargins(5, 5, 5, 5)
-        
-        # Panel izquierdo
-        self.left_panel = QFrame()
-        self.left_panel.setMaximumWidth(250)
-        self.left_panel.setFrameStyle(QFrame.StyledPanel)
-        main_layout.addWidget(self.left_panel)
-        
-        # Panel central
-        self.central_panel = QFrame()
-        self.central_panel.setFrameStyle(QFrame.StyledPanel)
-        main_layout.addWidget(self.central_panel)
-        
-        # Panel derecho
-        self.right_panel = QFrame()
-        self.right_panel.setMaximumWidth(220)
-        self.right_panel.setFrameStyle(QFrame.StyledPanel)
-        main_layout.addWidget(self.right_panel)
-        
-        # Crear layouts para cada panel
-        QVBoxLayout(self.left_panel)
-        QVBoxLayout(self.central_panel) 
-        QVBoxLayout(self.right_panel)
-        
-        # Crear barra de estado
-        self.statusBar().showMessage("UI de respaldo cargado")
-        
-        print("✅ UI de respaldo creado")
-    
-    
-    def load_ui(self, ui_file_path: str) -> bool:
-        """Cargar archivo .ui con contenedores vacíos"""
-        try:
-            # Buscar archivo UI
-            possible_paths = [
-                ui_file_path,
-                os.path.join("src", ui_file_path),
-                os.path.join("src", "ui", "main_window.ui"),  # Agregar esta ruta
-                os.path.join("ui", "main_window.ui"),
-                "main_window.ui"
-            ]
-            
-            ui_path = None
-            for path in possible_paths:
-                if os.path.exists(path):
-                    ui_path = path
-                    break
-            
-            if not ui_path:
-                print("❌ No se encontró archivo main_window.ui")
-                return False
-            
-            # Cargar UI
-            loader = QUiLoader()
-            self.ui = loader.load(ui_path)  # Cambiar esta línea
 
-            
-            # Configurar como widget central
-            self.setCentralWidget(self.ui.centralwidget)
-            self.setMenuBar(self.ui.menubar)
-            self.setStatusBar(self.ui.statusbar)
-            
-            # Obtener referencias a contenedores
-            self.left_panel = self.ui.findChild(QWidget, "frame_left_panel")
-            self.central_panel = self.ui.findChild(QWidget, "frame_central_panel") 
-            self.right_panel = self.ui.findChild(QWidget, "frame_right_panel")
-            
-            if not all([self.left_panel, self.central_panel, self.right_panel]):
-                print("❌ No se encontraron todos los contenedores en el UI")
-                return False
-            
-            print(f"✅ UI cargado desde: {ui_path}")
-            return True
-            
-        except Exception as e:
-            print(f"❌ Error cargando UI: {e}")
-            return False
-    
+
+
     def setup_window(self):
         """Configurar propiedades de la ventana"""
         self.setWindowTitle("SIEV v2.0 - Sistema Integrado de Evaluación Vestibular")
         self.setMinimumSize(1200, 800)
+        self.showMaximized()
         
         # Icono de la aplicación
         try:
             app_icon = get_icon("eye", 32, IconColors.BLUE)
             self.setWindowIcon(app_icon)
         except:
-            pass
+            print("cagamos con el icono")
         
         # Centrar ventana
         screen = QApplication.primaryScreen().geometry()
