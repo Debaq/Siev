@@ -7,7 +7,7 @@ Camera Widget Modular - Coordinador entre camera_capture y eye_detector
 import cv2
 import numpy as np
 from PySide6.QtWidgets import QWidget, QLabel
-from PySide6.QtCore import QTimer, Qt, QSize, Signal
+from PySide6.QtCore import QTimer, Qt, QSize, Signal, QRect
 from PySide6.QtGui import QImage, QPixmap, QFont, QPainter, QPen, QColor
 from typing import Optional, Dict, Any, List, Tuple
 
