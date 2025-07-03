@@ -141,7 +141,7 @@ class SIEVMainWindow(QMainWindow):
             
             # Cargar UI
             loader = QUiLoader()
-            self.ui = loader.load(ui_path, self)  # Cambiar esta línea
+            self.ui = loader.load(ui_path)  # Cambiar esta línea
 
             
             # Configurar como widget central
