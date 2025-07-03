@@ -518,46 +518,6 @@
         "protocol.events[2].led_target": "RIGHT",
         "duration_max": 240
       }
-    },
-    "seguimiento_lento___copia": {
-      "name": "Seguimiento Lento - Copia",
-      "category": "oculomotoras",
-      "behavior_type": "window",
-      "duration_max": 180,
-      "description": "Ventana nueva con punto móvil en movimiento de rampa lento",
-      "protocol": {
-        "window_type": "smooth_pursuit",
-        "frequency": 0.4,
-        "amplitude": 20,
-        "waveform": "sinusoidal",
-        "speed": "0.4_hz",
-        "directions": [
-          "horizontal",
-          "vertical"
-        ],
-        "cycles": 5
-      },
-      "ui_settings": {
-        "background_color": "#2c3e50",
-        "target_color": "#27ae60",
-        "target_size": 12,
-        "trajectory_visible": false
-      },
-      "hardware_control": {
-        "led_control": false,
-        "esp8266_commands": []
-      },
-      "graph_tools": {
-        "torok_tool": false,
-        "peak_editing": true,
-        "tiempo_fijacion": false,
-        "zoom": true,
-        "crosshair": true,
-        "peak_detection": true
-      },
-      "base": "seguimiento_lento",
-      "created_by": "Usuario",
-      "created_date": "2025-07-03"
     }
   },
   "ui_tree_structure": {
@@ -675,5 +635,5 @@
       }
     }
   },
-  "last_saved": "2025-07-03T01:58:15.254549"
+  "last_saved": "2025-07-03T01:59:45.832789"
 }
