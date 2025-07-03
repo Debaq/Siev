@@ -105,7 +105,7 @@ private:
   Adafruit_BNO055 bno;
   
 public:
-  BNO055Sensor() : bno(55) {}
+  BNO055Sensor() : bno(55, 0X29) {}
   
   bool init() override {
     if (!bno.begin()) {
