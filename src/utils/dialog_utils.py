@@ -568,7 +568,7 @@ class ProgressDialog(QDialog):
         # Icono
         icon_label = QLabel()
         icon_label.setFixedSize(32, 32)
-        icon = get_icon("play-circle", 32, IconColors.GREEN)
+        icon = get_icon("circle-play", 32, IconColors.GREEN)
         pixmap = icon.pixmap(QSize(32, 32))
         icon_label.setPixmap(pixmap)
         header_layout.addWidget(icon_label)
@@ -604,7 +604,7 @@ class ProgressDialog(QDialog):
                 background-color: #c0392b;
             }
         """)
-        self.stop_button.setIcon(get_icon("stop", 16, IconColors.WHITE))
+        self.stop_button.setIcon(get_icon("circle-stop", 16, IconColors.WHITE))
         button_layout.addWidget(self.stop_button)
         
         layout.addLayout(button_layout)

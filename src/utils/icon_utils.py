@@ -44,8 +44,8 @@ class IconManager:
             "info": "Información",
             "rotate-cw": "Rotar",
             "play": "Reproducir",
-            "pause": "Pausar",
-            "stop": "Detener"
+            "circle-pause": "Pausar",
+            "circle-stop": "Detener"
         }
     
     def get_svg_path(self, name: str) -> str:

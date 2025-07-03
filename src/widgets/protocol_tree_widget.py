@@ -517,18 +517,100 @@ class ProtocolTreeWidget(QWidget):
         if not protocol:
             return
         
-        # TODO: Abrir ventana de configuración específica
-        # Por ahora, mostrar información del protocolo
-        QMessageBox.information(
-            self,
-            "Editar Protocolo",
-            f"Protocolo: {protocol['name']}\n"
-            f"Tipo: {protocol.get('behavior_type', 'N/A')}\n"
-            f"Categoría: {protocol.get('category', 'N/A')}\n"
-            f"Duración máx: {protocol.get('duration_max', 'N/A')} seg\n\n"
-            f"[Ventana de configuración en desarrollo]"
+        # Importar el diálogo de configuración
+        try:
+            from widgets.protocol_config_dialog import show_protocol_config_dialog
+        except ImportError:
+            QMessageBox.critical(
+                self,
+                "Error",
+                "No se pudo cargar el editor de protocolos.\n"
+                "Verifique que el archivo protocol_config_dialog.py esté disponible."
+            )
+            return
+        
+        # Obtener esquema de validación
+        validation_schema = {
+            "required_fields": ["name", "category", "behavior_type"],
+            "behavior_types": ["recording", "window", "caloric"],
+            "categories": ["observacion", "oculomotoras", "calorica", "posicional", "equilibrio"],
+            "field_types": {
+                "duration_max": int,
+                "temperature": (int, float),
+                "amplitude": (int, float),
+                "frequency": (int, float),
+                "time": (int, float)
+            },
+            "validation_rules": {
+                "duration_max": {"min": 10, "max": 600},
+                "temperature": {"min": 20, "max": 50},
+                "amplitude": {"min": 1, "max": 90},
+                "frequency": {"min": 0.1, "max": 10.0},
+                "time": {"min": 0, "max": 600}
+            },
+            "led_targets": ["LEFT", "RIGHT"],
+            "event_actions": ["activate_torok_tool", "led_on", "led_off", "deactivate_torok_tool"]
+        }
+        
+        # Mostrar diálogo de configuración
+        updated_protocol = show_protocol_config_dialog(
+            self.selected_protocol_key,
+            protocol,
+            validation_schema,
+            self
         )
-    
+        
+        # Si se guardaron cambios, actualizar
+        if updated_protocol:
+            # Actualizar el protocolo en el manager
+            success = False
+            
+            if self.protocol_manager.is_default_protocol(self.selected_protocol_key):
+                # Para protocolos default, crear una copia como preset
+                QMessageBox.information(
+                    self,
+                    "Protocolo Estándar",
+                    f"Los protocolos estándar no se pueden modificar.\n"
+                    f"Se creará una copia personalizada con los cambios."
+                )
+                
+                # Generar nombre único para la copia
+                new_name = f"{updated_protocol['name']} - Personalizado"
+                new_key = self.protocol_manager.copy_protocol(self.selected_protocol_key, new_name)
+                
+                if new_key:
+                    # Aplicar cambios a la copia
+                    if "presets" not in self.protocol_manager.protocols_data:
+                        self.protocol_manager.protocols_data["presets"] = {}
+                    
+                    self.protocol_manager.protocols_data["presets"][new_key] = updated_protocol
+                    success = True
+                    
+                    # Seleccionar el nuevo protocolo
+                    self.selected_protocol_key = new_key
+            else:
+                # Para presets, actualizar directamente
+                if "presets" not in self.protocol_manager.protocols_data:
+                    self.protocol_manager.protocols_data["presets"] = {}
+                
+                self.protocol_manager.protocols_data["presets"][self.selected_protocol_key] = updated_protocol
+                success = True
+            
+            if success:
+                # Guardar cambios
+                self.protocol_manager.save_protocols()
+                
+                # Recargar TreeWidget
+                self.load_protocols_to_tree()
+                
+                # Seleccionar el protocolo actualizado
+                self.select_protocol_by_key(self.selected_protocol_key)
+                
+                self.protocol_changed.emit(f"Protocolo actualizado: {updated_protocol['name']}")
+            else:
+                QMessageBox.critical(self, "Error", "No se pudo actualizar el protocolo")
+
+
     def delete_protocol(self):
         """Eliminar protocolo seleccionado"""
         if not self.selected_protocol_key:

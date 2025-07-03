@@ -518,52 +518,6 @@
         "protocol.events[2].led_target": "RIGHT",
         "duration_max": 240
       }
-    },
-    "sacadas___copia": {
-      "name": "Sacadas - Copia",
-      "category": "oculomotoras",
-      "behavior_type": "window",
-      "duration_max": 180,
-      "description": "Ventana nueva con puntos alternativos para movimientos oculares rápidos",
-      "protocol": {
-        "window_type": "saccades",
-        "target_amplitude": 20,
-        "target_positions": [
-          -20,
-          -10,
-          0,
-          10,
-          20
-        ],
-        "target_duration": 1.5,
-        "inter_target_delay": 0.5,
-        "repetitions": 10,
-        "directions": [
-          "horizontal",
-          "vertical"
-        ]
-      },
-      "ui_settings": {
-        "background_color": "#2c3e50",
-        "target_color": "#e74c3c",
-        "target_size": 15,
-        "fixation_cross": true
-      },
-      "hardware_control": {
-        "led_control": false,
-        "esp8266_commands": []
-      },
-      "graph_tools": {
-        "torok_tool": false,
-        "peak_editing": true,
-        "tiempo_fijacion": false,
-        "zoom": true,
-        "crosshair": true,
-        "peak_detection": true
-      },
-      "base": "sacadas",
-      "created_by": "Usuario",
-      "created_date": "2025-07-03"
     }
   },
   "ui_tree_structure": {
@@ -681,5 +635,5 @@
       }
     }
   },
-  "last_saved": "2025-07-03T01:59:45.832789"
+  "last_saved": "2025-07-03T02:08:00.132840"
 }
