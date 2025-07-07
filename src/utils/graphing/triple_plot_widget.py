@@ -72,75 +72,75 @@ class OptimizedTriplePlotWidget(QWidget):
         self.data_points_received = 0
     
     def _setup_plots(self):
-        """Configura los tres gráficos optimizados."""
-        plot_labels = [
-            ('Posición X', 'px'),
-            ('Posición Y', 'px'), 
-            ('IMU', 'g')
-        ]
-        
-        print("Configurando 3 gráficos...")
-        
-        for i, (label, unit) in enumerate(plot_labels):
-            # Crear gráfico optimizado
-            plot = pg.PlotWidget()
-            plot.setBackground('w')
-            plot.getAxis('bottom').setPen(pg.mkPen(color='black', width=1))
-            plot.getAxis('left').setPen(pg.mkPen(color='black', width=1))
-            plot.getAxis('bottom').setTextPen(pg.mkPen(color='black'))
-            plot.getAxis('left').setTextPen(pg.mkPen(color='black'))
+            """Configura SOLO 2 gráficos optimizados (sin IMU)."""
+            plot_labels = [
+                ('Posición X', 'px'),
+                ('Posición Y', 'px')
+                # IMU removido para mejor performance
+            ]
             
-            # Configurar etiquetas
-            labelStyle = {'color': '#000', 'font-size': '10pt'}
-            plot.setLabel('left', label, units=unit, **labelStyle)
-            if i == 2:  # Solo el último gráfico tiene etiqueta de tiempo
-                plot.setLabel('bottom', 'Tiempo', units='s', **labelStyle)
+            print("Configurando 2 gráficos optimizados (sin IMU)...")
             
-            # Optimizaciones de rendimiento
-            plot.showGrid(x=True, y=True)
-            plot.setDownsampling(auto=True, mode='peak')
-            plot.setClipToView(True)
-            plot.setMouseEnabled(x=True, y=False)
+            for i, (label, unit) in enumerate(plot_labels):
+                # Crear gráfico optimizado
+                plot = pg.PlotWidget()
+                plot.setBackground('w')
+                plot.getAxis('bottom').setPen(pg.mkPen(color='black', width=1))
+                plot.getAxis('left').setPen(pg.mkPen(color='black', width=1))
+                plot.getAxis('bottom').setTextPen(pg.mkPen(color='black'))
+                plot.getAxis('left').setTextPen(pg.mkPen(color='black'))
+                
+                # Configurar etiquetas
+                labelStyle = {'color': '#000', 'font-size': '10pt'}
+                plot.setLabel('left', label, units=unit, **labelStyle)
+                if i == 1:  # El segundo (y último) gráfico tiene etiqueta de tiempo
+                    plot.setLabel('bottom', 'Tiempo', units='s', **labelStyle)
+                
+                # Optimizaciones de rendimiento
+                plot.showGrid(x=True, y=True)
+                plot.setDownsampling(auto=True, mode='peak')
+                plot.setClipToView(True)
+                plot.setMouseEnabled(x=True, y=False)
+                
+                # Crear curvas optimizadas
+                # Ojo izquierdo (azul)
+                curve_left = plot.plot(
+                    pen=pg.mkPen(color=(0, 0, 200), width=1),
+                    name="Ojo Izquierdo"
+                )
+                curve_left.setDownsampling(auto=True, method='peak')
+                curve_left.setClipToView(True)
+                
+                # Ojo derecho (rojo)  
+                curve_right = plot.plot(
+                    pen=pg.mkPen(color=(200, 0, 0), width=1),
+                    name="Ojo Derecho"
+                )
+                curve_right.setDownsampling(auto=True, method='peak')
+                curve_right.setClipToView(True)
+                
+                # Línea vertical para tiempo seleccionado
+                vLine = pg.InfiniteLine(angle=90, movable=True)
+                plot.addItem(vLine)
+                vLine.sigPositionChanged.connect(self._line_moved_event)
+                
+                # Conectar eventos de rango
+                plot.sigRangeChanged.connect(self._on_range_changed)
+                
+                # Almacenar referencias
+                self.plots.append(plot)
+                self.curves.extend([curve_left, curve_right])
+                self.vLines.append(vLine)
+                self.layout.addWidget(plot)
+                
+                print(f"Gráfico {i+1} configurado: {label}")
             
-            # Crear curvas optimizadas
-            # Ojo izquierdo (azul)
-            curve_left = plot.plot(
-                pen=pg.mkPen(color=(0, 0, 200), width=1),
-                name="Ojo Izquierdo"
-            )
-            curve_left.setDownsampling(auto=True, method='peak')
-            curve_left.setClipToView(True)
+            # Vincular ejes X para sincronización (solo 1 vinculación ahora)
+            self.plots[1].setXLink(self.plots[0])
             
-            # Ojo derecho (rojo)  
-            curve_right = plot.plot(
-                pen=pg.mkPen(color=(200, 0, 0), width=1),
-                name="Ojo Derecho"
-            )
-            curve_right.setDownsampling(auto=True, method='peak')
-            curve_right.setClipToView(True)
-            
-            # Línea vertical para tiempo seleccionado
-            vLine = pg.InfiniteLine(angle=90, movable=True)
-            plot.addItem(vLine)
-            vLine.sigPositionChanged.connect(self._line_moved_event)
-            
-            # Conectar eventos de rango
-            plot.sigRangeChanged.connect(self._on_range_changed)
-            
-            # Almacenar referencias
-            self.plots.append(plot)
-            self.curves.extend([curve_left, curve_right])
-            self.vLines.append(vLine)
-            self.layout.addWidget(plot)
-            
-            print(f"Gráfico {i+1} configurado: {label}")
-        
-        # Vincular ejes X para sincronización
-        for i in range(1, 3):
-            self.plots[i].setXLink(self.plots[0])
-        
-        print("Todos los gráficos configurados y vinculados")
-    
+            print("2 gráficos configurados y vinculados (IMU desactivado)")
+
+
     def add_data_point(self, left_eye: Optional[List[float]], right_eye: Optional[List[float]], 
                       imu_x: float, imu_y: float, timestamp: Optional[float] = None):
         """
@@ -160,46 +160,47 @@ class OptimizedTriplePlotWidget(QWidget):
             buffer_info = self.display_buffer.get_buffer_info()
             print(f"Puntos recibidos: {self.data_points_received}, Buffer: {buffer_info['current_size']}")
     
+ 
     def _update_display(self):
-        """Actualiza la visualización de manera optimizada."""
-        current_time = time.time()
+        """Actualiza la visualización - OPTIMIZADO para 2 gráficos."""
+        # Usar tiempo relativo para control de framerate
+        current_real_time = time.time()
         
         # Control de framerate - evitar actualizaciones demasiado frecuentes
-        if current_time - self.last_update_time < self.frame_skip_threshold:
+        if current_real_time - self.last_update_time < self.frame_skip_threshold:
             return
         
         self.update_count += 1
         
-        # Obtener datos visibles con downsampling automático
+        # Obtener datos visibles SIN pasar current_time (dejar que use None)
         try:
             visible_data = self.display_buffer.get_downsampled_data(
                 max_points=2000,  # Máximo para performance
-                current_time=current_time
+                current_time=None  # Dejar que use tiempo relativo del buffer
             )
             
             if len(visible_data['timestamps']) == 0:
                 # Debug: no hay datos disponibles
-                if self.update_count % 100 == 0:  # Debug cada 100 updates
+                if self.update_count % 200 == 0:  # Debug menos frecuente
                     buffer_info = self.display_buffer.get_buffer_info()
                     print(f"Update {self.update_count}: Sin datos visibles. Buffer size: {buffer_info['current_size']}")
                 return
             
-            # Debug: datos disponibles
-            if self.update_count % 100 == 0:
+            # Debug: datos disponibles (menos frecuente)
+            if self.update_count % 200 == 0:
                 print(f"Update {self.update_count}: {len(visible_data['timestamps'])} puntos visibles")
             
             # Aplicar auto-scroll si está activo
             if self.auto_scroll and self.is_recording:
                 self._apply_auto_scroll(visible_data['timestamps'])
             
-            # Actualizar las 6 curvas (3 gráficos x 2 ojos)
+            # Actualizar SOLO 4 curvas (2 gráficos x 2 ojos) - SIN IMU
             data_arrays = [
                 visible_data['left_eye_x'],    # Gráfico 0, ojo izquierdo X
                 visible_data['right_eye_x'],   # Gráfico 0, ojo derecho X
                 visible_data['left_eye_y'],    # Gráfico 1, ojo izquierdo Y  
-                visible_data['right_eye_y'],   # Gráfico 1, ojo derecho Y
-                visible_data['imu_x'],         # Gráfico 2, IMU X
-                visible_data['imu_y']          # Gráfico 2, IMU Y
+                visible_data['right_eye_y']    # Gráfico 1, ojo derecho Y
+                # IMU removido para mejor performance
             ]
             
             # Actualizar curvas de manera eficiente
@@ -215,14 +216,14 @@ class OptimizedTriplePlotWidget(QWidget):
                     else:
                         print(f"Error: timestamps ({len(timestamps)}) != data ({len(data)}) para curva {i}")
             
-            # Actualizar regiones de parpadeo
+            # Actualizar regiones de parpadeo (solo en los 2 gráficos)
             self._update_blink_regions(visible_data)
             
-            self.last_update_time = current_time
+            self.last_update_time = current_real_time
             
-            # Debug exitoso cada 100 updates
-            if self.update_count % 100 == 0:
-                print(f"Display actualizado exitosamente #{self.update_count}")
+            # Debug exitoso menos frecuente
+            if self.update_count % 200 == 0:
+                print(f"Display actualizado exitosamente #{self.update_count} (2 gráficos)")
             
         except Exception as e:
             print(f"Error en actualización de display: {e}")
@@ -257,53 +258,54 @@ class OptimizedTriplePlotWidget(QWidget):
             self._updating_range = False
     
     def _update_blink_regions(self, visible_data: Dict):
-        """Actualiza las regiones de parpadeo de manera eficiente."""
-        try:
-            # Obtener regiones de parpadeo
-            left_regions, right_regions = self.display_buffer.get_blink_regions()
-            
-            # Limpiar regiones existentes
-            for plot_idx, plot in enumerate(self.plots):
-                for region in self.blink_regions[plot_idx]:
-                    try:
-                        plot.removeItem(region)
-                    except:
-                        pass  # Ignorar errores al remover
-                self.blink_regions[plot_idx].clear()
-            
-            # Añadir nuevas regiones
-            for plot_idx, plot in enumerate(self.plots):
-                # Regiones de ojo izquierdo (azul)
-                for start, end in left_regions:
-                    if end > start and (end - start) > 0.01:  # Validar región mínima
-                        try:
-                            region = pg.LinearRegionItem(
-                                values=[start, end],
-                                brush=pg.mkBrush(0, 0, 255, 50),
-                                movable=False
-                            )
-                            plot.addItem(region)
-                            self.blink_regions[plot_idx].append(region)
-                        except Exception as e:
-                            print(f"Error añadiendo región izquierda: {e}")
+            """Actualiza las regiones de parpadeo - OPTIMIZADO para 2 gráficos."""
+            try:
+                # Obtener regiones de parpadeo
+                left_regions, right_regions = self.display_buffer.get_blink_regions()
                 
-                # Regiones de ojo derecho (rojo)
-                for start, end in right_regions:
-                    if end > start and (end - start) > 0.01:  # Validar región mínima
+                # Limpiar regiones existentes (solo 2 gráficos)
+                for plot_idx, plot in enumerate(self.plots):
+                    for region in self.blink_regions[plot_idx]:
                         try:
-                            region = pg.LinearRegionItem(
-                                values=[start, end], 
-                                brush=pg.mkBrush(255, 0, 0, 50),
-                                movable=False
-                            )
-                            plot.addItem(region)
-                            self.blink_regions[plot_idx].append(region)
-                        except Exception as e:
-                            print(f"Error añadiendo región derecha: {e}")
-                        
-        except Exception as e:
-            print(f"Error actualizando regiones de parpadeo: {e}")
-    
+                            plot.removeItem(region)
+                        except:
+                            pass
+                    self.blink_regions[plot_idx].clear()
+                
+                # Añadir nuevas regiones (solo 2 gráficos)
+                for plot_idx, plot in enumerate(self.plots):
+                    # Regiones de ojo izquierdo (azul)
+                    for start, end in left_regions:
+                        if end > start and (end - start) > 0.01:
+                            try:
+                                region = pg.LinearRegionItem(
+                                    values=[start, end],
+                                    brush=pg.mkBrush(0, 0, 255, 50),
+                                    movable=False
+                                )
+                                plot.addItem(region)
+                                self.blink_regions[plot_idx].append(region)
+                            except Exception as e:
+                                print(f"Error añadiendo región izquierda: {e}")
+                    
+                    # Regiones de ojo derecho (rojo)
+                    for start, end in right_regions:
+                        if end > start and (end - start) > 0.01:
+                            try:
+                                region = pg.LinearRegionItem(
+                                    values=[start, end], 
+                                    brush=pg.mkBrush(255, 0, 0, 50),
+                                    movable=False
+                                )
+                                plot.addItem(region)
+                                self.blink_regions[plot_idx].append(region)
+                            except Exception as e:
+                                print(f"Error añadiendo región derecha: {e}")
+                            
+            except Exception as e:
+                print(f"Error actualizando regiones de parpadeo: {e}")
+
+
     def _line_moved_event(self):
         """Maneja el movimiento de la línea vertical."""
         try:
@@ -347,34 +349,35 @@ class OptimizedTriplePlotWidget(QWidget):
             print("Gráfico optimizado: Grabación detenida, modo exploración disponible")
     
     def clear_data(self):
-        """Limpia todos los datos del buffer de visualización."""
-        print("Limpiando datos del gráfico...")
-        
-        self.display_buffer.clear()
-        self.auto_scroll = True
-        
-        # Limpiar curvas
-        for curve in self.curves:
-            try:
-                curve.setData([], [])
-            except:
-                pass
-        
-        # Limpiar regiones de parpadeo
-        for plot_idx, plot in enumerate(self.plots):
-            for region in self.blink_regions[plot_idx]:
+            """Limpia todos los datos del buffer de visualización."""
+            print("Limpiando datos del gráfico (2 gráficos)...")
+            
+            self.display_buffer.clear()
+            self.auto_scroll = True
+            
+            # Limpiar curvas
+            for curve in self.curves:
                 try:
-                    plot.removeItem(region)
+                    curve.setData([], [])
                 except:
                     pass
-            self.blink_regions[plot_idx].clear()
-        
-        # Reset contadores de debug
-        self.update_count = 0
-        self.data_points_received = 0
-        
-        print("Datos del gráfico limpiados")
-    
+            
+            # Limpiar regiones de parpadeo (solo 2 gráficos)
+            for plot_idx, plot in enumerate(self.plots):
+                for region in self.blink_regions[plot_idx]:
+                    try:
+                        plot.removeItem(region)
+                    except:
+                        pass
+                self.blink_regions[plot_idx].clear()
+            
+            # Reset contadores de debug
+            self.update_count = 0
+            self.data_points_received = 0
+            
+            print("Datos del gráfico limpiados (2 gráficos)")
+
+
     def set_visible_window(self, seconds: float):
         """Cambia el tamaño de la ventana visible."""
         self.visible_window = seconds

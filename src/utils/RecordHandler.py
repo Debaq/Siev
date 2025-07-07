@@ -267,39 +267,28 @@ class RecordingController:
                 self.graph_data_buffer.append(latest_point)
                 self.last_graph_update = current_time
     
+    # En RecordHandler.py - modificar flush_graph_buffer()
     def flush_graph_buffer(self):
-        """
-        Envía datos acumulados al gráfico de manera eficiente.
-        Llamado por timer cada 50ms.
-        """
+        """Solo envía datos al gráfico cada X segundos"""
+        current_time = time.time()
+        
+        # Solo actualizar gráficos cada 5 segundos
+        if current_time - getattr(self, '_last_batch_update', 0) < 5.0:
+            return
+        
         if not self.graph_data_buffer:
             return
         
-        # Enviar solo el último punto del buffer para máxima eficiencia
-        # (o enviar todos si hay pocos)
-        if len(self.graph_data_buffer) <= 3:
-            # Pocos puntos, enviar todos
-            points_to_send = list(self.graph_data_buffer)
-        else:
-            # Muchos puntos, enviar solo algunos clave (primero, último, y un par del medio)
-            points_to_send = [
-                self.graph_data_buffer[0],                    # Primer punto
-                self.graph_data_buffer[len(self.graph_data_buffer)//2],  # Punto medio
-                self.graph_data_buffer[-1]                   # Último punto
-            ]
-        
-        # Enviar puntos seleccionados al gráfico
-        for point in points_to_send:
+        # Enviar TODOS los datos acumulados de una vez
+        for point in self.graph_data_buffer:
             processed_left, processed_right, imu_x, imu_y, point_time = point
-            
-            # Usar la nueva interfaz optimizada
             self.plot_widget.add_data_point(
                 processed_left, processed_right, imu_x, imu_y, point_time
             )
-            self.points_sent_to_graph += 1
         
-        # Limpiar buffer
         self.graph_data_buffer.clear()
+        self._last_batch_update = current_time
+        print(f"Gráficos actualizados - lote de {len(self.graph_data_buffer)} puntos")
     
     def _show_performance_stats(self):
         """Muestra estadísticas de performance para debug."""
