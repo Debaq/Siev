@@ -808,7 +808,7 @@ class VideoThread(QThread):
 class VideoWidget(QObject):
     sig_pos = Signal(list)
 
-    def __init__(self, camera_frame, sliders, cbres):
+    def __init__(self, camera_frame, sliders, cbres, camera_id=2):
         super().__init__()
 
         # Guardar referencias a los widgets de UI
@@ -822,7 +822,7 @@ class VideoWidget(QObject):
         self.sliders_changed()
         
         # Crear el hilo de video
-        self.video_thread = VideoThread()
+        self.video_thread = VideoThread(camera_id=camera_id)
         self.video_thread.frame_ready.connect(self.update_frame)
                 
         self.current_fps = 0

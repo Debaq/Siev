@@ -52,6 +52,9 @@ class MainWindow(QMainWindow, RecordingController):
         # Variables de datos
         self.pos_eye = []
         self.pos_hit = []
+        
+        # === CONFIGURACIÓN DE CÁMARA ===
+        self.camera_index = 3  # ← CAMBIA ESTE NÚMERO para cambiar la cámara
 
         # === INICIALIZAR PROCESAMIENTO DE VIDEO ===
         self.slider_thresholds = [
@@ -65,7 +68,9 @@ class MainWindow(QMainWindow, RecordingController):
         self.video_widget = VideoWidget(
             self.ui.CameraFrame, 
             self.slider_thresholds,
-            self.ui.cb_resolution
+            self.ui.cb_resolution,
+            camera_id=self.camera_index  # ← AGREGAR ESTA LÍNEA
+
         )
         
         self.video_widget.sig_pos.connect(self.set_pos_eye)
@@ -80,7 +85,8 @@ class MainWindow(QMainWindow, RecordingController):
         
         # Añadir widget de gráficos al layout
         self.ui.layout_graph.addWidget(self.plot_widget)
-        
+        self.video_widget.sig_pos.connect(self._adapt_pos_data_for_plots)  # ← NUEVA LÍNEA
+
         # === INICIALIZAR COMUNICACIÓN SERIAL ===
         try:
             self.serial_handler = SerialHandler('/dev/ttyUSB0', 115200)
@@ -121,6 +127,26 @@ class MainWindow(QMainWindow, RecordingController):
         self.showMaximized()
         
         print("=== SISTEMA VNG OPTIMIZADO INICIADO ===")
+
+
+
+
+    def _adapt_pos_data_for_plots(self, pos_eye):
+        """Adapta datos de posición para enviar a los gráficos"""
+        try:
+            # Extraer datos de ojos (pos_eye contiene [ojo_derecho, ojo_izquierdo])
+            if len(pos_eye) >= 2:
+                right_eye = pos_eye[0]  # Ojo derecho
+                left_eye = pos_eye[1]   # Ojo izquierdo
+                
+                # Usar datos IMU si están disponibles, sino usar 0
+                imu_x = self.pos_hit[0] if len(self.pos_hit) > 0 else 0.0
+                imu_y = self.pos_hit[1] if len(self.pos_hit) > 1 else 0.0
+                
+                # Enviar a gráficos con formato correcto
+                self.plot_widget.add_data_point(left_eye, right_eye, imu_x, imu_y)
+        except Exception as e:
+            print(f"Error adaptando datos para gráficos: {e}")
 
     def load_config(self):
         """Cargar configuración desde config.json"""
