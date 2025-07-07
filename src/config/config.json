@@ -1,0 +1,16 @@
+{
+    "app_name": "vng",
+    "window_title": "vng Application",
+    "version": "0.0.2",
+    "author": {
+        "name": "Nicolás Baier",
+        "email": "david.avila@uach.cl",
+        "company": "UACH"
+    },
+    "description": "VNG",
+    "license": "MIT",
+    "window_size": {
+        "width": 800,
+        "height": 600
+    }
+}
