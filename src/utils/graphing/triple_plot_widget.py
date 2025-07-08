@@ -15,27 +15,51 @@ except ImportError:
         from optimized_buffer import OptimizedBuffer
 
 
-class OptimizedTriplePlotWidget(QWidget):
+class ConfigurablePlotWidget(QWidget):
     """
-    Widget optimizado que muestra tres gráficos sincronizados.
-    VERSIÓN CORREGIDA - Ahora grafica correctamente.
+    Widget configurable que permite activar/desactivar gráficos y curvas específicas.
+    VERSIÓN ULTRA-OPTIMIZADA con configuración flexible.
     """
     
     linePositionChanged = Signal(float)
     
-    def __init__(self, parent=None, visible_window=60.0, update_fps=10):
+    def __init__(self, parent=None, visible_window=60.0, update_fps=10, plot_config=None):
         super().__init__(parent)
         
-        print(f"Inicializando OptimizedTriplePlotWidget con ventana de {visible_window}s a {update_fps} FPS")
+        # Configuración por defecto
+        self.default_config = {
+            'show_position_x': True,
+            'show_position_y': True, 
+            'show_imu': True,
+            'show_left_eye': True,
+            'show_right_eye': True,
+            'line_width': 1,
+            'colors': {
+                'left_eye': (0, 0, 200),    # Azul
+                'right_eye': (200, 0, 0)    # Rojo
+            }
+        }
+        
+        # Aplicar configuración personalizada
+        self.config = self.default_config.copy()
+        if plot_config:
+            self.config.update(plot_config)
+        
+        print(f"Inicializando widget configurable:")
+        print(f"  - Posición X: {'✓' if self.config['show_position_x'] else '✗'}")
+        print(f"  - Posición Y: {'✓' if self.config['show_position_y'] else '✗'}")
+        print(f"  - IMU: {'✓' if self.config['show_imu'] else '✗'}")
+        print(f"  - Ojo izquierdo: {'✓' if self.config['show_left_eye'] else '✗'}")
+        print(f"  - Ojo derecho: {'✓' if self.config['show_right_eye'] else '✗'}")
         
         # Configuración optimizada
         self.visible_window = visible_window
-        self.update_interval = int(1000 / update_fps)  # Convertir FPS a ms
+        self.update_interval = int(1000 / update_fps)
         
         # Buffer inteligente para visualización
         self.display_buffer = OptimizedBuffer(
             visible_window=visible_window,
-            max_buffer_size=max(10000, int(visible_window * 200))  # ~200 Hz estimado
+            max_buffer_size=max(10000, int(visible_window * 200))
         )
         
         # Layout principal
@@ -47,105 +71,152 @@ class OptimizedTriplePlotWidget(QWidget):
         self.auto_scroll = True
         self._updating_range = False
         
-        # Crear gráficos y elementos visuales
+        # Crear gráficos y elementos visuales según configuración
         self.plots = []
         self.curves = []
+        self.curve_mapping = {}  # Mapeo de curva a tipo de dato
         self.vLines = []
-        self.blink_regions = [[] for _ in range(3)]  # Para cada gráfico
+        self.blink_regions = []
         
         # Configurar PyQtGraph para máximo rendimiento
         pg.setConfigOptions(antialias=False)
         
-        # Crear los tres gráficos
+        # Crear los gráficos según configuración
         self._setup_plots()
         
         # Timer optimizado para actualización visual
         self.display_timer = QTimer()
         self.display_timer.timeout.connect(self._update_display)
         self.display_timer.start(self.update_interval)
-        print(f"Timer de visualización iniciado cada {self.update_interval}ms")
         
         # Control de performance
         self.last_update_time = 0
         self.frame_skip_threshold = 0.016  # 60 FPS máximo
         self.update_count = 0
         self.data_points_received = 0
+        
+        print(f"Timer de visualización iniciado cada {self.update_interval}ms")
+        print(f"Total de gráficos creados: {len(self.plots)}")
+        print(f"Total de curvas creadas: {len(self.curves)}")
     
     def _setup_plots(self):
-            """Configura SOLO 2 gráficos optimizados (sin IMU)."""
-            plot_labels = [
-                ('Posición X', 'px'),
-                ('Posición Y', 'px')
-                # IMU removido para mejor performance
-            ]
+        """Configura los gráficos según la configuración especificada."""
+        plots_to_create = []
+        
+        # Determinar qué gráficos crear
+        if self.config['show_position_x']:
+            plots_to_create.append(('Posición X', 'px'))
+        
+        if self.config['show_position_y']:
+            plots_to_create.append(('Posición Y', 'px'))
+        
+        if self.config['show_imu']:
+            plots_to_create.append(('IMU', 'g'))
+        
+        if not plots_to_create:
+            print("ADVERTENCIA: No se configuró ningún gráfico para mostrar")
+            return
+        
+        print(f"Configurando {len(plots_to_create)} gráficos...")
+        
+        for i, (label, unit) in enumerate(plots_to_create):
+            # Crear gráfico optimizado
+            plot = pg.PlotWidget()
+            plot.setBackground('w')
+            plot.getAxis('bottom').setPen(pg.mkPen(color='black', width=1))
+            plot.getAxis('left').setPen(pg.mkPen(color='black', width=1))
+            plot.getAxis('bottom').setTextPen(pg.mkPen(color='black'))
+            plot.getAxis('left').setTextPen(pg.mkPen(color='black'))
             
-            print("Configurando 2 gráficos optimizados (sin IMU)...")
+            # Configurar etiquetas
+            labelStyle = {'color': '#000', 'font-size': '10pt'}
+            plot.setLabel('left', label, units=unit, **labelStyle)
             
-            for i, (label, unit) in enumerate(plot_labels):
-                # Crear gráfico optimizado
-                plot = pg.PlotWidget()
-                plot.setBackground('w')
-                plot.getAxis('bottom').setPen(pg.mkPen(color='black', width=1))
-                plot.getAxis('left').setPen(pg.mkPen(color='black', width=1))
-                plot.getAxis('bottom').setTextPen(pg.mkPen(color='black'))
-                plot.getAxis('left').setTextPen(pg.mkPen(color='black'))
-                
-                # Configurar etiquetas
-                labelStyle = {'color': '#000', 'font-size': '10pt'}
-                plot.setLabel('left', label, units=unit, **labelStyle)
-                if i == 1:  # El segundo (y último) gráfico tiene etiqueta de tiempo
-                    plot.setLabel('bottom', 'Tiempo', units='s', **labelStyle)
-                
-                # Optimizaciones de rendimiento
-                plot.showGrid(x=True, y=True)
-                plot.setDownsampling(auto=True, mode='peak')
-                plot.setClipToView(True)
-                plot.setMouseEnabled(x=True, y=False)
-                
-                # Crear curvas optimizadas
-                # Ojo izquierdo (azul)
+            # Solo el último gráfico tiene etiqueta de tiempo
+            if i == len(plots_to_create) - 1:
+                plot.setLabel('bottom', 'Tiempo', units='s', **labelStyle)
+            
+            # Optimizaciones de rendimiento
+            plot.showGrid(x=True, y=True)
+            plot.setDownsampling(auto=True, mode='peak')
+            plot.setClipToView(True)
+            plot.setMouseEnabled(x=True, y=False)
+            
+            # Crear curvas según configuración
+            curves_created = 0
+            
+            # Ojo izquierdo
+            if self.config['show_left_eye']:
                 curve_left = plot.plot(
-                    pen=pg.mkPen(color=(0, 0, 200), width=1),
-                    name="Ojo Izquierdo"
+                    pen=pg.mkPen(color=self.config['colors']['left_eye'], 
+                               width=self.config['line_width']),
+                    name=f"Ojo Izquierdo {label}"
                 )
                 curve_left.setDownsampling(auto=True, method='peak')
                 curve_left.setClipToView(True)
+                self.curves.append(curve_left)
                 
-                # Ojo derecho (rojo)  
+                # Mapear curva a tipo de dato
+                data_type = self._get_data_type_for_plot(label, 'left')
+                self.curve_mapping[len(self.curves) - 1] = data_type
+                curves_created += 1
+            
+            # Ojo derecho
+            if self.config['show_right_eye']:
                 curve_right = plot.plot(
-                    pen=pg.mkPen(color=(200, 0, 0), width=1),
-                    name="Ojo Derecho"
+                    pen=pg.mkPen(color=self.config['colors']['right_eye'], 
+                               width=self.config['line_width']),
+                    name=f"Ojo Derecho {label}"
                 )
                 curve_right.setDownsampling(auto=True, method='peak')
                 curve_right.setClipToView(True)
+                self.curves.append(curve_right)
                 
-                # Línea vertical para tiempo seleccionado
+                # Mapear curva a tipo de dato
+                data_type = self._get_data_type_for_plot(label, 'right')
+                self.curve_mapping[len(self.curves) - 1] = data_type
+                curves_created += 1
+            
+            # Solo crear línea vertical si hay curvas
+            if curves_created > 0:
                 vLine = pg.InfiniteLine(angle=90, movable=True)
                 plot.addItem(vLine)
                 vLine.sigPositionChanged.connect(self._line_moved_event)
+                self.vLines.append(vLine)
                 
                 # Conectar eventos de rango
                 plot.sigRangeChanged.connect(self._on_range_changed)
                 
                 # Almacenar referencias
                 self.plots.append(plot)
-                self.curves.extend([curve_left, curve_right])
-                self.vLines.append(vLine)
+                self.blink_regions.append([])
                 self.layout.addWidget(plot)
                 
-                print(f"Gráfico {i+1} configurado: {label}")
-            
-            # Vincular ejes X para sincronización (solo 1 vinculación ahora)
-            self.plots[1].setXLink(self.plots[0])
-            
-            print("2 gráficos configurados y vinculados (IMU desactivado)")
-
-
+                print(f"Gráfico {i+1} configurado: {label} ({curves_created} curvas)")
+        
+        # Vincular ejes X para sincronización
+        for i in range(1, len(self.plots)):
+            self.plots[i].setXLink(self.plots[0])
+        
+        print(f"Todos los gráficos configurados y vinculados")
+        print(f"Mapeo de curvas: {self.curve_mapping}")
+    
+    def _get_data_type_for_plot(self, plot_label: str, eye: str) -> str:
+        """Determina el tipo de dato para una curva específica."""
+        if plot_label == 'Posición X':
+            return f'{eye}_eye_x'
+        elif plot_label == 'Posición Y':
+            return f'{eye}_eye_y'
+        elif plot_label == 'IMU':
+            if eye == 'left':
+                return 'imu_x'
+            else:
+                return 'imu_y'
+        return 'unknown'
+    
     def add_data_point(self, left_eye: Optional[List[float]], right_eye: Optional[List[float]], 
                       imu_x: float, imu_y: float, timestamp: Optional[float] = None):
-        """
-        Añade un punto de datos al buffer de visualización.
-        """
+        """Añade un punto de datos al buffer de visualización."""
         if timestamp is None:
             timestamp = time.time()
         
@@ -160,70 +231,64 @@ class OptimizedTriplePlotWidget(QWidget):
             buffer_info = self.display_buffer.get_buffer_info()
             print(f"Puntos recibidos: {self.data_points_received}, Buffer: {buffer_info['current_size']}")
     
- 
     def _update_display(self):
-        """Actualiza la visualización - OPTIMIZADO para 2 gráficos."""
-        # Usar tiempo relativo para control de framerate
+        """Actualiza la visualización de manera optimizada."""
         current_real_time = time.time()
         
-        # Control de framerate - evitar actualizaciones demasiado frecuentes
+        # Control de framerate
         if current_real_time - self.last_update_time < self.frame_skip_threshold:
             return
         
         self.update_count += 1
         
-        # Obtener datos visibles SIN pasar current_time (dejar que use None)
+        # Obtener datos visibles
         try:
             visible_data = self.display_buffer.get_downsampled_data(
-                max_points=2000,  # Máximo para performance
-                current_time=None  # Dejar que use tiempo relativo del buffer
+                max_points=2000,
+                current_time=None
             )
             
             if len(visible_data['timestamps']) == 0:
-                # Debug: no hay datos disponibles
-                if self.update_count % 200 == 0:  # Debug menos frecuente
+                if self.update_count % 300 == 0:
                     buffer_info = self.display_buffer.get_buffer_info()
                     print(f"Update {self.update_count}: Sin datos visibles. Buffer size: {buffer_info['current_size']}")
                 return
             
-            # Debug: datos disponibles (menos frecuente)
-            if self.update_count % 200 == 0:
+            # Debug menos frecuente
+            if self.update_count % 300 == 0:
                 print(f"Update {self.update_count}: {len(visible_data['timestamps'])} puntos visibles")
             
             # Aplicar auto-scroll si está activo
             if self.auto_scroll and self.is_recording:
                 self._apply_auto_scroll(visible_data['timestamps'])
             
-            # Actualizar SOLO 4 curvas (2 gráficos x 2 ojos) - SIN IMU
-            data_arrays = [
-                visible_data['left_eye_x'],    # Gráfico 0, ojo izquierdo X
-                visible_data['right_eye_x'],   # Gráfico 0, ojo derecho X
-                visible_data['left_eye_y'],    # Gráfico 1, ojo izquierdo Y  
-                visible_data['right_eye_y']    # Gráfico 1, ojo derecho Y
-                # IMU removido para mejor performance
-            ]
-            
-            # Actualizar curvas de manera eficiente
+            # Actualizar curvas según mapeo
             timestamps = visible_data['timestamps']
-            for i, (curve, data) in enumerate(zip(self.curves, data_arrays)):
-                if len(data) > 0:
-                    # Verificar que los datos son válidos
-                    if len(timestamps) == len(data):
-                        try:
-                            curve.setData(timestamps, data)
-                        except Exception as e:
-                            print(f"Error actualizando curva {i}: {e}")
-                    else:
-                        print(f"Error: timestamps ({len(timestamps)}) != data ({len(data)}) para curva {i}")
+            for curve_idx, curve in enumerate(self.curves):
+                if curve_idx in self.curve_mapping:
+                    data_type = self.curve_mapping[curve_idx]
+                    
+                    if data_type in visible_data:
+                        data = visible_data[data_type]
+                        
+                        if len(data) > 0 and len(timestamps) == len(data):
+                            try:
+                                curve.setData(timestamps, data)
+                            except Exception as e:
+                                print(f"Error actualizando curva {curve_idx} ({data_type}): {e}")
+                        elif len(data) > 0:
+                            print(f"Error: timestamps ({len(timestamps)}) != data ({len(data)}) para {data_type}")
             
-            # Actualizar regiones de parpadeo (solo en los 2 gráficos)
+            # Actualizar regiones de parpadeo
             self._update_blink_regions(visible_data)
             
             self.last_update_time = current_real_time
             
-            # Debug exitoso menos frecuente
-            if self.update_count % 200 == 0:
-                print(f"Display actualizado exitosamente #{self.update_count} (2 gráficos)")
+            # Debug exitoso
+            if self.update_count % 500 == 0:
+                active_plots = len(self.plots)
+                active_curves = len(self.curves)
+                print(f"Display actualizado exitosamente #{self.update_count} ({active_plots} gráficos, {active_curves} curvas)")
             
         except Exception as e:
             print(f"Error en actualización de display: {e}")
@@ -239,11 +304,9 @@ class OptimizedTriplePlotWidget(QWidget):
         
         # Calcular ventana visible
         if current_time < self.visible_window * 2/3:
-            # Etapa inicial
             window_start = 0
             window_end = self.visible_window
         else:
-            # Etapa de deslizamiento
             window_start = current_time - (self.visible_window * 2/3)
             window_end = window_start + self.visible_window
         
@@ -258,23 +321,24 @@ class OptimizedTriplePlotWidget(QWidget):
             self._updating_range = False
     
     def _update_blink_regions(self, visible_data: Dict):
-            """Actualiza las regiones de parpadeo - OPTIMIZADO para 2 gráficos."""
-            try:
-                # Obtener regiones de parpadeo
-                left_regions, right_regions = self.display_buffer.get_blink_regions()
-                
-                # Limpiar regiones existentes (solo 2 gráficos)
-                for plot_idx, plot in enumerate(self.plots):
-                    for region in self.blink_regions[plot_idx]:
-                        try:
-                            plot.removeItem(region)
-                        except:
-                            pass
-                    self.blink_regions[plot_idx].clear()
-                
-                # Añadir nuevas regiones (solo 2 gráficos)
-                for plot_idx, plot in enumerate(self.plots):
-                    # Regiones de ojo izquierdo (azul)
+        """Actualiza las regiones de parpadeo de manera eficiente."""
+        try:
+            # Obtener regiones de parpadeo
+            left_regions, right_regions = self.display_buffer.get_blink_regions()
+            
+            # Limpiar regiones existentes
+            for plot_idx, plot in enumerate(self.plots):
+                for region in self.blink_regions[plot_idx]:
+                    try:
+                        plot.removeItem(region)
+                    except:
+                        pass
+                self.blink_regions[plot_idx].clear()
+            
+            # Añadir nuevas regiones solo si se muestran los ojos correspondientes
+            for plot_idx, plot in enumerate(self.plots):
+                # Regiones de ojo izquierdo (azul)
+                if self.config['show_left_eye']:
                     for start, end in left_regions:
                         if end > start and (end - start) > 0.01:
                             try:
@@ -287,8 +351,9 @@ class OptimizedTriplePlotWidget(QWidget):
                                 self.blink_regions[plot_idx].append(region)
                             except Exception as e:
                                 print(f"Error añadiendo región izquierda: {e}")
-                    
-                    # Regiones de ojo derecho (rojo)
+                
+                # Regiones de ojo derecho (rojo)
+                if self.config['show_right_eye']:
                     for start, end in right_regions:
                         if end > start and (end - start) > 0.01:
                             try:
@@ -301,11 +366,10 @@ class OptimizedTriplePlotWidget(QWidget):
                                 self.blink_regions[plot_idx].append(region)
                             except Exception as e:
                                 print(f"Error añadiendo región derecha: {e}")
-                            
-            except Exception as e:
-                print(f"Error actualizando regiones de parpadeo: {e}")
-
-
+                        
+        except Exception as e:
+            print(f"Error actualizando regiones de parpadeo: {e}")
+    
     def _line_moved_event(self):
         """Maneja el movimiento de la línea vertical."""
         try:
@@ -324,14 +388,13 @@ class OptimizedTriplePlotWidget(QWidget):
     def _on_range_changed(self, plot, ranges):
         """Maneja cambios de rango para controlar auto-scroll."""
         try:
-            if plot == self.plots[0] and not self._updating_range:
+            if len(self.plots) > 0 and plot == self.plots[0] and not self._updating_range:
                 if not self.is_recording:
                     view_range = self.plots[0].viewRange()
                     current_max = view_range[0][1]
                     
                     if self.display_buffer.last_update_time > 0:
                         data_max = self.display_buffer.last_update_time
-                        # Si está cerca del final, activar auto-scroll
                         if abs(current_max - data_max) < self.visible_window / 10:
                             self.auto_scroll = True
                         else:
@@ -344,40 +407,39 @@ class OptimizedTriplePlotWidget(QWidget):
         self.is_recording = is_recording
         if is_recording:
             self.auto_scroll = True
-            print("Gráfico optimizado: Auto-scroll activado para grabación")
+            print("Gráfico configurable: Auto-scroll activado para grabación")
         else:
-            print("Gráfico optimizado: Grabación detenida, modo exploración disponible")
+            print("Gráfico configurable: Grabación detenida, modo exploración disponible")
     
     def clear_data(self):
-            """Limpia todos los datos del buffer de visualización."""
-            print("Limpiando datos del gráfico (2 gráficos)...")
-            
-            self.display_buffer.clear()
-            self.auto_scroll = True
-            
-            # Limpiar curvas
-            for curve in self.curves:
+        """Limpia todos los datos del buffer de visualización."""
+        print("Limpiando datos del gráfico configurable...")
+        
+        self.display_buffer.clear()
+        self.auto_scroll = True
+        
+        # Limpiar curvas
+        for curve in self.curves:
+            try:
+                curve.setData([], [])
+            except:
+                pass
+        
+        # Limpiar regiones de parpadeo
+        for plot_idx, plot in enumerate(self.plots):
+            for region in self.blink_regions[plot_idx]:
                 try:
-                    curve.setData([], [])
+                    plot.removeItem(region)
                 except:
                     pass
-            
-            # Limpiar regiones de parpadeo (solo 2 gráficos)
-            for plot_idx, plot in enumerate(self.plots):
-                for region in self.blink_regions[plot_idx]:
-                    try:
-                        plot.removeItem(region)
-                    except:
-                        pass
-                self.blink_regions[plot_idx].clear()
-            
-            # Reset contadores de debug
-            self.update_count = 0
-            self.data_points_received = 0
-            
-            print("Datos del gráfico limpiados (2 gráficos)")
-
-
+            self.blink_regions[plot_idx].clear()
+        
+        # Reset contadores
+        self.update_count = 0
+        self.data_points_received = 0
+        
+        print("Datos del gráfico configurable limpiados")
+    
     def set_visible_window(self, seconds: float):
         """Cambia el tamaño de la ventana visible."""
         self.visible_window = seconds
@@ -386,11 +448,10 @@ class OptimizedTriplePlotWidget(QWidget):
     
     def set_update_fps(self, fps: int):
         """Cambia la frecuencia de actualización."""
-        new_interval = int(1000 / max(1, min(fps, 60)))  # Límite entre 1-60 FPS
+        new_interval = int(1000 / max(1, min(fps, 60)))
         self.update_interval = new_interval
         self.display_timer.setInterval(self.update_interval)
         
-        # Ajustar threshold de frame skip
         self.frame_skip_threshold = 1.0 / (fps * 1.5)
         
         print(f"FPS cambiado a {fps} (intervalo: {new_interval}ms)")
@@ -403,37 +464,150 @@ class OptimizedTriplePlotWidget(QWidget):
         """Aplica optimizaciones automáticas de performance."""
         self.display_buffer.optimize_for_performance()
         
-        # Ajustar FPS basado en carga
         buffer_info = self.get_buffer_info()
         if buffer_info['utilization_percent'] > 80:
-            # Reducir FPS si el buffer está muy lleno
             self.set_update_fps(5)
             print("Performance optimizada: FPS reducido a 5")
         elif buffer_info['utilization_percent'] < 50:
-            # Aumentar FPS si hay poco uso
             self.set_update_fps(10)
     
     def export_visible_data(self) -> Dict:
         """Exporta los datos actualmente visibles."""
         return self.display_buffer.get_visible_data()
     
+    def get_configuration_summary(self) -> str:
+        """Retorna un resumen de la configuración actual."""
+        summary = f"Configuración del widget de gráficos:\n"
+        summary += f"  - Gráficos activos: {len(self.plots)}\n"
+        summary += f"  - Curvas activas: {len(self.curves)}\n"
+        summary += f"  - Posición X: {'✓' if self.config['show_position_x'] else '✗'}\n"
+        summary += f"  - Posición Y: {'✓' if self.config['show_position_y'] else '✗'}\n"
+        summary += f"  - IMU: {'✓' if self.config['show_imu'] else '✗'}\n"
+        summary += f"  - Ojo izquierdo: {'✓' if self.config['show_left_eye'] else '✗'}\n"
+        summary += f"  - Ojo derecho: {'✓' if self.config['show_right_eye'] else '✗'}\n"
+        return summary
+    
     def closeEvent(self, event):
         """Limpia recursos al cerrar."""
-        print("Cerrando OptimizedTriplePlotWidget...")
+        print("Cerrando widget de gráficos configurable...")
         self.display_timer.stop()
         self.clear_data()
         super().closeEvent(event)
 
 
-# Mantener compatibilidad con código existente
-class TriplePlotWidget(OptimizedTriplePlotWidget):
-    """Alias para compatibilidad hacia atrás."""
+# Configuraciones predefinidas para casos comunes
+class PlotConfigurations:
+    """Configuraciones predefinidas para el widget de gráficos."""
     
-    def __init__(self, parent=None, window_size=60, update_interval=16):
+    @staticmethod
+    def get_ultra_minimal():
+        """Solo movimiento horizontal del ojo derecho (máximo rendimiento)."""
+        return {
+            'show_position_x': True,
+            'show_position_y': False,
+            'show_imu': False,
+            'show_left_eye': False,
+            'show_right_eye': True,
+            'line_width': 2,
+            'colors': {
+                'right_eye': (200, 0, 0)
+            }
+        }
+    
+    @staticmethod
+    def get_horizontal_only():
+        """Solo movimientos horizontales de ambos ojos."""
+        return {
+            'show_position_x': True,
+            'show_position_y': False,
+            'show_imu': False,
+            'show_left_eye': True,
+            'show_right_eye': True,
+            'line_width': 1,
+            'colors': {
+                'left_eye': (0, 0, 200),
+                'right_eye': (200, 0, 0)
+            }
+        }
+    
+    @staticmethod
+    def get_eyes_only():
+        """Solo datos oculares (sin IMU)."""
+        return {
+            'show_position_x': True,
+            'show_position_y': True,
+            'show_imu': False,
+            'show_left_eye': True,
+            'show_right_eye': True,
+            'line_width': 1,
+            'colors': {
+                'left_eye': (0, 0, 200),
+                'right_eye': (200, 0, 0)
+            }
+        }
+    
+    @staticmethod
+    def get_full():
+        """Configuración completa (todos los gráficos y curvas)."""
+        return {
+            'show_position_x': True,
+            'show_position_y': True,
+            'show_imu': True,
+            'show_left_eye': True,
+            'show_right_eye': True,
+            'line_width': 1,
+            'colors': {
+                'left_eye': (0, 0, 200),
+                'right_eye': (200, 0, 0)
+            }
+        }
+    
+    @staticmethod
+    def get_left_eye_only():
+        """Solo ojo izquierdo (todos los gráficos)."""
+        return {
+            'show_position_x': True,
+            'show_position_y': True,
+            'show_imu': True,
+            'show_left_eye': True,
+            'show_right_eye': False,
+            'line_width': 2,
+            'colors': {
+                'left_eye': (0, 0, 200)
+            }
+        }
+    
+    @staticmethod
+    def get_right_eye_only():
+        """Solo ojo derecho (todos los gráficos)."""
+        return {
+            'show_position_x': True,
+            'show_position_y': True,
+            'show_imu': True,
+            'show_left_eye': False,
+            'show_right_eye': True,
+            'line_width': 2,
+            'colors': {
+                'right_eye': (200, 0, 0)
+            }
+        }
+
+
+# Mantener compatibilidad con código existente
+class TriplePlotWidget(ConfigurablePlotWidget):
+    """Alias para compatibilidad hacia atrás con configuración por defecto."""
+    
+    def __init__(self, parent=None, window_size=60, update_interval=16, plot_config=None):
         # Convertir parámetros del formato anterior
         fps = int(1000 / update_interval) if update_interval > 0 else 10
-        super().__init__(parent, visible_window=window_size, update_fps=fps)
-        print(f"TriplePlotWidget inicializado con compatibilidad (window_size={window_size}, fps={fps})")
+        
+        # Si no se especifica configuración, usar configuración eficiente por defecto
+        if plot_config is None:
+            plot_config = PlotConfigurations.get_horizontal_only()  # Solo horizontal para mejor rendimiento
+        
+        super().__init__(parent, visible_window=window_size, update_fps=fps, plot_config=plot_config)
+        print(f"TriplePlotWidget inicializado con configuración optimizada")
+        print(self.get_configuration_summary())
     
     def updatePlots(self, data):
         """Método de compatibilidad con la interfaz anterior."""

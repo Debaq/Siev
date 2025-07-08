@@ -14,6 +14,7 @@ from utils.RecordHandler import RecordingController
 
 # Importar los nuevos módulos optimizados
 from utils.graphing.triple_plot_widget import TriplePlotWidget
+from utils.graphing.triple_plot_widget import PlotConfigurations
 
 class SerialReadThread(QThread):
     data_received = Signal(str)
@@ -77,10 +78,14 @@ class MainWindow(QMainWindow, RecordingController):
 
         # === INICIALIZAR GRÁFICOS OPTIMIZADOS ===
         print("Inicializando sistema de gráficos optimizado...")
+        config = PlotConfigurations.get_ultra_minimal()
+
         self.plot_widget = TriplePlotWidget(
             parent=None,
             window_size=60,      # 60 segundos de ventana visible
-            update_interval=50   # 20 FPS para gráficos (optimizado)
+            update_interval=50,   # 20 FPS para gráficos (optimizado)
+            plot_config=config  # ← AGREGAR ESTA LÍNEA
+
         )
         
         # Añadir widget de gráficos al layout
