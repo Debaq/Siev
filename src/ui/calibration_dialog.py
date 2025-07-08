@@ -1,25 +1,28 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                             QPushButton, QProgressBar, QFrame)
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QPixmap, QPainter, QBrush, QColor
+from PySide6.QtGui import QFont
 import time
 
 
 class CalibrationDialog(QDialog):
     """
-    Ventana modal para guiar al usuario a través del proceso de calibración.
+    Ventana modal para calibración con comunicación DIRECTA al CalibrationManager.
     """
     
     # Señales para comunicar con el sistema principal
-    step_completed = Signal()  # Usuario presionó continuar
     calibration_finished = Signal(bool)  # True si exitosa, False si cancelada
     
-    # Configuración de tiempos - AJUSTADO AL TIMING REAL
-    RECORDING_TIME_PER_LED = 6.0  # segundos totales por LED (3s preparación + 1s setup + 2s grabación)
-    GRAPH_MARGIN_DEGREES = 20.0   # grados adicionales para límites del gráfico
+    # Configuración de tiempos
+    RECORDING_TIME_PER_LED = 6.0
+    GRAPH_MARGIN_DEGREES = 20.0
     
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self, calibration_manager, parent_window=None):
+        super().__init__(parent_window)
+        
+        # Referencias directas - SIN CONTROLLER
+        self.calibration_manager = calibration_manager
+        self.parent_window = parent_window
         
         # Configurar ventana modal
         self.setModal(True)
@@ -31,6 +34,11 @@ class CalibrationDialog(QDialog):
         self.current_step = 0
         self.recording_timer = None
         self.countdown_time = 0
+        
+        # Variables para captura de datos
+        self.capturing_data = False
+        self.captured_positions = []
+        self.current_led = None
         
         # Configurar UI
         self.setup_ui()
@@ -69,7 +77,7 @@ class CalibrationDialog(QDialog):
         self.content_label.setMinimumHeight(120)
         layout.addWidget(self.content_label)
         
-        # Barra de progreso (oculta inicialmente)
+        # Barra de progreso
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
@@ -79,6 +87,13 @@ class CalibrationDialog(QDialog):
         self.time_label.setAlignment(Qt.AlignCenter)
         self.time_label.setVisible(False)
         layout.addWidget(self.time_label)
+        
+        # Label para mostrar datos capturados
+        self.data_label = QLabel()
+        self.data_label.setAlignment(Qt.AlignCenter)
+        self.data_label.setVisible(False)
+        self.data_label.setStyleSheet("color: green; font-size: 10px;")
+        layout.addWidget(self.data_label)
         
         # Botones
         button_layout = QHBoxLayout()
@@ -96,30 +111,6 @@ class CalibrationDialog(QDialog):
         
         layout.addLayout(button_layout)
     
-    def set_led_color(self, color_name):
-        """
-        Cambia el color del indicador LED.
-        
-        Args:
-            color_name: 'green', 'red', 'gray', 'yellow'
-        """
-        colors = {
-            'green': '#4CAF50',
-            'red': '#F44336', 
-            'gray': '#9E9E9E',
-            'yellow': '#FFC107',
-            'blue': '#2196F3'
-        }
-        
-        color = colors.get(color_name, '#9E9E9E')
-        self.led_indicator.setStyleSheet(f"""
-            QLabel {{
-                border: 2px solid #333;
-                border-radius: 25px;
-                background-color: {color};
-            }}
-        """)
-    
     def show_step_1(self):
         """Paso 1: Preparación para LED izquierdo."""
         self.current_step = 1
@@ -136,26 +127,36 @@ class CalibrationDialog(QDialog):
         
         self.continue_button.setText("Continuar")
         self.continue_button.setEnabled(True)
-        self.progress_bar.setVisible(False)
-        self.time_label.setVisible(False)
+        self._hide_progress_ui()
     
     def show_step_2(self):
         """Paso 2: Grabando LED izquierdo."""
         self.current_step = 2
+        self.current_led = 'left'
         self.title_label.setText("Calibración - LED Izquierdo")
         self.content_label.setText(
             "¡MIRE EL LED VERDE FÍSICO!\n\n"
             "El LED está encendido.\n"
             "Mantenga la mirada fija en el LED verde.\n"
             "No mueva la cabeza ni los ojos.\n\n"
-            "Proceso automático en curso..."
+            "Capturando posiciones oculares..."
         )
         
         self.continue_button.setEnabled(False)
-        self.progress_bar.setVisible(True)
-        self.time_label.setVisible(True)
+        self._show_progress_ui()
         
-        # Iniciar grabación temporizada
+        # ENCENDER LED DIRECTAMENTE
+        print("=== ENCENDIENDO LED IZQUIERDO ===")
+        success = self.calibration_manager.start_left_led_capture()
+        if not success:
+            self.show_error("Error encendiendo LED izquierdo")
+            return
+        
+        # Inicializar captura de datos
+        self.captured_positions = []
+        self.capturing_data = True
+        
+        # Iniciar timer de grabación
         self.start_recording_timer()
     
     def show_step_3(self):
@@ -174,26 +175,36 @@ class CalibrationDialog(QDialog):
         
         self.continue_button.setText("Continuar")
         self.continue_button.setEnabled(True)
-        self.progress_bar.setVisible(False)
-        self.time_label.setVisible(False)
+        self._hide_progress_ui()
     
     def show_step_4(self):
         """Paso 4: Grabando LED derecho."""
         self.current_step = 4
+        self.current_led = 'right'
         self.title_label.setText("Calibración - LED Derecho")
         self.content_label.setText(
             "¡MIRE EL LED VERDE FÍSICO!\n\n"
             "El LED derecho está encendido.\n"
             "Mantenga la mirada fija en el LED verde.\n"
             "No mueva la cabeza ni los ojos.\n\n"
-            "Proceso automático en curso..."
+            "Capturando posiciones oculares..."
         )
         
         self.continue_button.setEnabled(False)
-        self.progress_bar.setVisible(True)
-        self.time_label.setVisible(True)
+        self._show_progress_ui()
         
-        # Iniciar grabación temporizada
+        # ENCENDER LED DIRECTAMENTE
+        print("=== ENCENDIENDO LED DERECHO ===")
+        success = self.calibration_manager.start_right_led_capture()
+        if not success:
+            self.show_error("Error encendiendo LED derecho")
+            return
+        
+        # Inicializar captura de datos
+        self.captured_positions = []
+        self.capturing_data = True
+        
+        # Iniciar timer de grabación
         self.start_recording_timer()
     
     def show_step_5(self):
@@ -209,9 +220,20 @@ class CalibrationDialog(QDialog):
         self.progress_bar.setVisible(True)
         self.progress_bar.setRange(0, 0)  # Modo indeterminado
         self.time_label.setVisible(False)
+        self.data_label.setVisible(False)
         
-        # Simular tiempo de procesamiento
-        QTimer.singleShot(2000, self.show_step_6)
+        # CALCULAR CALIBRACIÓN DIRECTAMENTE
+        print("=== CALCULANDO CALIBRACIÓN ===")
+        QTimer.singleShot(500, self.calculate_calibration)
+    
+    def calculate_calibration(self):
+        """Ejecuta el cálculo de calibración."""
+        success = self.calibration_manager.calculate_calibration()
+        
+        if success:
+            QTimer.singleShot(1500, self.show_step_6)
+        else:
+            self.show_error("Error calculando parámetros de calibración")
     
     def show_step_6(self):
         """Paso 6: Calibración completada."""
@@ -227,8 +249,7 @@ class CalibrationDialog(QDialog):
         
         self.continue_button.setText("Finalizar")
         self.continue_button.setEnabled(True)
-        self.progress_bar.setVisible(False)
-        self.time_label.setVisible(False)
+        self._hide_progress_ui()
     
     def show_error(self, message):
         """Muestra un error en la calibración."""
@@ -242,27 +263,42 @@ class CalibrationDialog(QDialog):
         
         self.continue_button.setText("Reintentar")
         self.continue_button.setEnabled(True)
+        self._hide_progress_ui()
+    
+    def _show_progress_ui(self):
+        """Muestra elementos de progreso."""
+        self.progress_bar.setVisible(True)
+        self.time_label.setVisible(True)
+        self.data_label.setVisible(True)
+    
+    def _hide_progress_ui(self):
+        """Oculta elementos de progreso."""
         self.progress_bar.setVisible(False)
         self.time_label.setVisible(False)
+        self.data_label.setVisible(False)
     
     def start_recording_timer(self):
-        """Inicia el timer para la grabación temporizada - AJUSTADO A 6 SEGUNDOS."""
+        """Inicia el timer para la grabación."""
         self.countdown_time = int(self.RECORDING_TIME_PER_LED)
         self.progress_bar.setRange(0, self.countdown_time)
         self.progress_bar.setValue(0)
         
-        # Timer que se ejecuta cada segundo
         self.recording_timer = QTimer()
         self.recording_timer.timeout.connect(self.update_recording_progress)
-        self.recording_timer.start(1000)  # 1000ms = 1 segundo
+        self.recording_timer.start(1000)  # Cada segundo
         
         self.update_recording_progress()
     
     def update_recording_progress(self):
-        """Actualiza el progreso de la grabación."""
+        """Actualiza el progreso y captura posiciones."""
         if self.countdown_time > 0:
             self.time_label.setText(f"Tiempo restante: {self.countdown_time} segundos")
             self.progress_bar.setValue(int(self.RECORDING_TIME_PER_LED) - self.countdown_time)
+            
+            # CAPTURAR POSICIÓN ACTUAL DIRECTAMENTE
+            if self.capturing_data:
+                self.capture_current_position()
+            
             self.countdown_time -= 1
         else:
             # Tiempo completado
@@ -270,49 +306,97 @@ class CalibrationDialog(QDialog):
             self.time_label.setText("¡Grabación completada!")
             self.progress_bar.setValue(int(self.RECORDING_TIME_PER_LED))
             
+            # Finalizar captura de datos
+            self.finish_data_capture()
+            
             # Avanzar al siguiente paso
             QTimer.singleShot(1000, self.auto_continue)
+    
+    def capture_current_position(self):
+        """Captura la posición actual DIRECTAMENTE del parent_window."""
+        if not self.parent_window or not hasattr(self.parent_window, 'pos_eye'):
+            print("ERROR: No hay acceso a posiciones oculares")
+            return
+        
+        try:
+            # ACCESO DIRECTO A pos_eye
+            pos_eye = self.parent_window.pos_eye
+            
+            if not pos_eye or len(pos_eye) < 2:
+                print("WARNING: pos_eye no tiene datos suficientes")
+                return
+            
+            # Según estructura: pos_eye[0] = derecho, pos_eye[1] = izquierdo
+            right_eye = pos_eye[0] if pos_eye[0] and len(pos_eye[0]) >= 2 else None
+            left_eye = pos_eye[1] if pos_eye[1] and len(pos_eye[1]) >= 2 else None
+            
+            # Crear registro
+            position_record = {
+                'timestamp': time.time(),
+                'left_eye': [float(left_eye[0]), float(left_eye[1])] if left_eye else None,
+                'right_eye': [float(right_eye[0]), float(right_eye[1])] if right_eye else None
+            }
+            
+            self.captured_positions.append(position_record)
+            
+            # Actualizar UI
+            total_captured = len(self.captured_positions)
+            left_detected = sum(1 for p in self.captured_positions if p['left_eye'] is not None)
+            right_detected = sum(1 for p in self.captured_positions if p['right_eye'] is not None)
+            
+            self.data_label.setText(
+                f"Muestras: {total_captured} | Izq: {left_detected} | Der: {right_detected}"
+            )
+            
+            print(f"Capturada muestra {total_captured} para LED {self.current_led}")
+            
+        except Exception as e:
+            print(f"Error capturando posición: {e}")
+    
+    def finish_data_capture(self):
+        """Finaliza la captura y envía datos al manager."""
+        self.capturing_data = False
+        
+        if not self.captured_positions:
+            print(f"ERROR: No se capturaron datos para LED {self.current_led}")
+            self.data_label.setText("⚠ No se capturaron datos")
+            return
+        
+        print(f"Finalizando captura LED {self.current_led}: {len(self.captured_positions)} muestras")
+        
+        # APAGAR LED DIRECTAMENTE
+        if self.current_led == 'left':
+            self.calibration_manager.finish_left_led_capture()
+        elif self.current_led == 'right':
+            self.calibration_manager.finish_right_led_capture()
+        
+        # PROCESAR DATOS DIRECTAMENTE
+        success = self.calibration_manager.process_led_data(self.current_led, self.captured_positions)
+        
+        if success:
+            self.data_label.setText(f"✓ {len(self.captured_positions)} muestras procesadas")
+        else:
+            self.show_error(f"Error procesando datos del LED {self.current_led}")
     
     def auto_continue(self):
         """Continúa automáticamente después de completar la grabación."""
         if self.current_step == 2:
-            # Terminó grabación LED izquierdo
-            # Notificar al controller que termine la captura
-            if hasattr(self, '_controller_ref'):
-                self._controller_ref.auto_continue_from_dialog()
-            self.step_completed.emit()
+            # Terminó LED izquierdo
             self.show_step_3()
         elif self.current_step == 4:
-            # Terminó grabación LED derecho
-            # Notificar al controller que termine la captura
-            if hasattr(self, '_controller_ref'):
-                self._controller_ref.auto_continue_from_dialog()
-            self.step_completed.emit()
+            # Terminó LED derecho
             self.show_step_5()
-    
-    def set_controller_reference(self, controller):
-        """Permite al controller registrarse para recibir eventos del timer."""
-        self._controller_ref = controller
     
     def continue_step(self):
         """Maneja el clic en el botón continuar."""
         if self.current_step == 1:
-            # Usuario listo para LED izquierdo
-            self.step_completed.emit()
             self.show_step_2()
-            
         elif self.current_step == 3:
-            # Usuario listo para LED derecho
-            self.step_completed.emit()
             self.show_step_4()
-            
         elif self.current_step == 6:
-            # Calibración completada
             self.calibration_finished.emit(True)
             self.accept()
-            
         elif self.current_step == -1:
-            # Reintentar después de error
             self.show_step_1()
     
     def cancel_calibration(self):
@@ -320,6 +404,7 @@ class CalibrationDialog(QDialog):
         if self.recording_timer:
             self.recording_timer.stop()
         
+        self.capturing_data = False
         self.calibration_finished.emit(False)
         self.reject()
     
@@ -327,158 +412,3 @@ class CalibrationDialog(QDialog):
         """Maneja el cierre de la ventana."""
         self.cancel_calibration()
         event.accept()
-
-
-class CalibrationController:
-    """
-    Controlador que coordina entre CalibrationDialog y CalibrationManager.
-    Ahora el Dialog controla el timing, el Manager solo ejecuta acciones.
-    """
-    
-    def __init__(self, calibration_manager, parent_window=None):
-        self.calibration_manager = calibration_manager
-        self.parent_window = parent_window
-        self.dialog = None
-        
-        # Variables para captura de datos
-        self.capturing_left_led = False
-        self.capturing_right_led = False
-        self.captured_positions_left = []
-        self.captured_positions_right = []
-    
-    def start_calibration_process(self):
-        """
-        Inicia el proceso completo de calibración con ventanas modales.
-        
-        Returns:
-            True si se inició correctamente
-        """
-        if not self.calibration_manager.start_calibration():
-            return False
-        
-        # Crear y mostrar ventana modal
-        self.dialog = CalibrationDialog(self.parent_window)
-        
-        # Conectar señales
-        self.dialog.step_completed.connect(self.handle_step_completed)
-        self.dialog.calibration_finished.connect(self.handle_calibration_finished)
-        
-        # NUEVA CONEXIÓN: Registrar controller en el dialog
-        self.dialog.set_controller_reference(self)
-        
-        # Mostrar ventana modal
-        self.dialog.exec()
-        
-        return True
-    
-    def handle_step_completed(self):
-        """Maneja cuando el usuario completa un paso."""
-        if self.dialog.current_step == 2:
-            # Paso 2: Iniciando LED izquierdo
-            print("Iniciando captura LED izquierdo...")
-            success = self.calibration_manager.start_left_led_capture()
-            if success:
-                self.capturing_left_led = True
-                self.captured_positions_left = []
-            else:
-                self.dialog.show_error("Error encendiendo LED izquierdo")
-            
-        elif self.dialog.current_step == 4:
-            # Paso 4: Iniciando LED derecho
-            print("Iniciando captura LED derecho...")
-            success = self.calibration_manager.start_right_led_capture()
-            if success:
-                self.capturing_right_led = True
-                self.captured_positions_right = []
-            else:
-                self.dialog.show_error("Error encendiendo LED derecho")
-    
-    def capture_during_progress(self):
-        """
-        Se ejecuta cada segundo durante la barra de progreso.
-        Captura posiciones oculares mientras el LED está encendido.
-        """
-        # Obtener posiciones actuales del sistema de video
-        if hasattr(self.parent_window, 'pos_eye'):
-            left_eye = self.parent_window.pos_eye[1] if len(self.parent_window.pos_eye) > 1 else None
-            right_eye = self.parent_window.pos_eye[0] if len(self.parent_window.pos_eye) > 0 else None
-            
-            if self.capturing_left_led:
-                # Capturando para LED izquierdo
-                captured = self.calibration_manager.capture_left_led_position(left_eye, right_eye)
-                if captured:
-                    self.captured_positions_left.append({
-                        'left_eye': left_eye,
-                        'right_eye': right_eye,
-                        'timestamp': time.time()
-                    })
-                    print(f"Capturada posición LED izquierdo: {len(self.captured_positions_left)} muestras")
-                    
-            elif self.capturing_right_led:
-                # Capturando para LED derecho
-                captured = self.calibration_manager.capture_right_led_position(left_eye, right_eye)
-                if captured:
-                    self.captured_positions_right.append({
-                        'left_eye': left_eye,
-                        'right_eye': right_eye,
-                        'timestamp': time.time()
-                    })
-                    print(f"Capturada posición LED derecho: {len(self.captured_positions_right)} muestras")
-    
-    def auto_continue_from_dialog(self):
-        """
-        Llamado automáticamente cuando termina la barra de progreso del dialog.
-        """
-        if self.capturing_left_led:
-            # Terminó captura LED izquierdo
-            print("Finalizando captura LED izquierdo...")
-            success = self.calibration_manager.finish_left_led_capture()
-            self.capturing_left_led = False
-            
-            if not success or len(self.captured_positions_left) == 0:
-                self.dialog.show_error("No se capturaron suficientes datos del LED izquierdo")
-                return
-            
-            print(f"LED izquierdo: {len(self.captured_positions_left)} posiciones capturadas")
-            
-        elif self.capturing_right_led:
-            # Terminó captura LED derecho
-            print("Finalizando captura LED derecho...")
-            success = self.calibration_manager.finish_right_led_capture()
-            self.capturing_right_led = False
-            
-            if not success or len(self.captured_positions_right) == 0:
-                self.dialog.show_error("No se capturaron suficientes datos del LED derecho")
-                return
-            
-            print(f"LED derecho: {len(self.captured_positions_right)} posiciones capturadas")
-            
-            # Ambos LEDs completados, calcular calibración
-            calibration_success = self.calibration_manager.calculate_calibration()
-            
-            if not calibration_success:
-                self.dialog.show_error("Error calculando parámetros de calibración")
-    
-    def handle_calibration_finished(self, success):
-        """Maneja cuando termina la calibración."""
-        if success:
-            print("=== CALIBRACIÓN COMPLETADA EXITOSAMENTE ===")
-            summary = self.calibration_manager.get_calibration_summary()
-            print(f"Ángulo teórico: {summary['theoretical_angle']:.1f}°")
-            print("Factores de conversión calculados:")
-            for eye, factors in summary['conversion_factors'].items():
-                print(f"  {eye}: {factors['px_per_degree_x']:.2f} px/grado")
-            
-            # Notificar a la ventana principal para actualizar límites del gráfico
-            if hasattr(self.parent_window, 'update_graph_limits_after_calibration'):
-                self.parent_window.update_graph_limits_after_calibration()
-                
-        else:
-            print("Calibración cancelada por el usuario")
-        
-        # Limpiar estado
-        self.dialog = None
-        self.capturing_left_led = False
-        self.capturing_right_led = False
-        self.captured_positions_left = []
-        self.captured_positions_right = []

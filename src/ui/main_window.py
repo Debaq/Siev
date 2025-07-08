@@ -13,7 +13,7 @@ from utils.DetectorNistagmo import DetectorNistagmo
 from utils.EyeDataProcessor import EyeDataProcessor
 from utils.RecordHandler import RecordingController
 from utils.CalibrationManager import CalibrationManager
-from ui.calibration_dialog import CalibrationDialog, CalibrationController
+from ui.calibration_dialog import CalibrationDialog
 
 # Importar los módulos de gráficos optimizados
 from utils.graphing.triple_plot_widget import TriplePlotWidget
@@ -622,8 +622,9 @@ class MainWindow(QMainWindow, RecordingController):
         if hasattr(self.plot_widget, 'linePositionChanged'):
             self.plot_widget.linePositionChanged.connect(self.on_graph_line_changed)
 
+
     def start_calibration(self):
-        """Inicia el proceso de calibración con ventanas modales."""
+        """Inicia el proceso de calibración SIN CONTROLLER."""
         if not self.serial_handler:
             QMessageBox.warning(
                 self,
@@ -632,29 +633,58 @@ class MainWindow(QMainWindow, RecordingController):
             )
             return
         
-        print("Iniciando proceso de calibración...")
+        print("Iniciando proceso de calibración SIMPLIFICADO...")
         
-        # Crear controlador de calibración
-        self.calibration_controller = CalibrationController(
-            self.calibration_manager, 
-            self
+        # Crear el dialog DIRECTAMENTE con el manager
+        from ui.calibration_dialog import CalibrationDialog
+        
+        calibration_dialog = CalibrationDialog(
+            calibration_manager=self.calibration_manager,
+            parent_window=self  # Pasar referencia a MainWindow
         )
         
-        # Conectar el procesamiento de datos oculares
-        self.calibration_in_progress = True
+        # Conectar señal de finalización
+        calibration_dialog.calibration_finished.connect(self.on_calibration_finished)
         
-        # Iniciar proceso
-        success = self.calibration_controller.start_calibration_process()
+        # Mostrar dialog modal
+        result = calibration_dialog.exec()
         
-        if success:
-            print("Proceso de calibración iniciado")
+        if result == QDialog.Accepted:
+            print("Calibración completada exitosamente")
         else:
-            QMessageBox.critical(
+            print("Calibración cancelada")
+
+    def on_calibration_finished(self, success):
+        """Maneja el final de la calibración."""
+        if success:
+            print("=== CALIBRACIÓN EXITOSA ===")
+            summary = self.calibration_manager.get_calibration_summary()
+            print(f"Ángulo teórico: {summary['theoretical_angle']:.1f}°")
+            
+            # Actualizar UI
+            if hasattr(self, 'btn_calibrate'):
+                self.btn_calibrate.setText("Sistema Calibrado ✓")
+                self.btn_calibrate.setStyleSheet("color: green; font-weight: bold;")
+            
+            # Actualizar límites del gráfico
+            self.update_graph_limits_after_calibration()
+            
+            # Mostrar mensaje de éxito
+            QMessageBox.information(
                 self,
-                "Error",
-                "No se pudo iniciar la calibración.\nVerifique la conexión serial."
+                "Calibración Exitosa",
+                f"El sistema ha sido calibrado correctamente.\n\n"
+                f"Ángulo medido: {summary['theoretical_angle']:.1f}°\n"
+                f"Los gráficos ahora mostrarán datos en grados."
             )
-            self.calibration_in_progress = False
+        else:
+            print("Calibración cancelada o falló")
+            QMessageBox.information(
+                self,
+                "Calibración Cancelada",
+                "La calibración no se completó."
+            )
+
 
     def on_yolo_toggled(self, checked):
         """Maneja el cambio del checkbox YOLO"""
@@ -804,6 +834,10 @@ class MainWindow(QMainWindow, RecordingController):
         if hasattr(self, 'btn_calibrate'):
             self.btn_calibrate.setText("Sistema Calibrado ✓")
             self.btn_calibrate.setStyleSheet("color: green; font-weight: bold;")
+
+            # APLICAR A LOS PLOTS REALES
+        for plot in self.plot_widget.plots:
+            plot.setYRange(min_limit, max_limit)
 
     def closeEvent(self, event):
         """Maneja el cierre de la aplicación"""

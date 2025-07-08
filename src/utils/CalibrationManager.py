@@ -7,12 +7,12 @@ from PySide6.QtCore import QObject, Signal
 class CalibrationManager(QObject):
     """
     Gestor de calibración que convierte posiciones oculares de píxeles a grados.
-    Usa LEDs de referencia para establecer la escala angular.
+    MODIFICADO: Ahora recibe listas completas de posiciones en lugar de una por una.
     """
     
-    # === VARIABLES GEOMÉTRICAS - MODIFICAR AQUÍ PARA CAMBIOS DE MÁSCARA ===
-    LED_DISTANCE_FROM_MIDLINE = 7.0  # cm - Distancia de cada LED desde línea media (nariz)
-    LED_DISTANCE_FROM_EYE = 5.0      # cm - Distancia perpendicular de LEDs a cada ojo
+    # === VARIABLES GEOMÉTRICAS ===
+    LED_DISTANCE_FROM_MIDLINE = 6.0  # cm - Distancia de cada LED desde línea media (nariz)
+    LED_DISTANCE_FROM_EYE = 9.0      # cm - Distancia perpendicular de LEDs a cada ojo
     LED_SEPARATION_TOTAL = LED_DISTANCE_FROM_MIDLINE * 2  # cm - Separación total entre LEDs (14cm)
     
     # Comandos seriales para LEDs
@@ -22,7 +22,7 @@ class CalibrationManager(QObject):
     LED_RIGHT_OFF = "L_14_OFF"
     PAUSE_COMMAND = "PAUSE"
     
-    # Señales para comunicación con UI (si se necesita en el futuro)
+    # Señales para comunicación con UI
     calibration_progress = Signal(str)  # Mensaje de progreso
     calibration_completed = Signal(bool)  # True si exitosa, False si falló
     
@@ -34,9 +34,19 @@ class CalibrationManager(QObject):
         
         # Estado de calibración
         self.is_calibrated = False
+        
+        # MODIFICADO: Ahora almacenamos las listas completas de posiciones
         self.calibration_data = {
-            'left_led': {'left_eye': None, 'right_eye': None},
-            'right_led': {'left_eye': None, 'right_eye': None}
+            'left_led': {
+                'raw_positions': [],  # Lista completa de posiciones capturadas
+                'average_left_eye': None,  # Promedio calculado del ojo izquierdo
+                'average_right_eye': None  # Promedio calculado del ojo derecho
+            },
+            'right_led': {
+                'raw_positions': [],  # Lista completa de posiciones capturadas
+                'average_left_eye': None,  # Promedio calculado del ojo izquierdo
+                'average_right_eye': None  # Promedio calculado del ojo derecho
+            }
         }
         
         # Factores de conversión píxel → grados
@@ -59,11 +69,7 @@ class CalibrationManager(QObject):
     def _calculate_theoretical_angle(self) -> float:
         """
         Calcula el ángulo teórico entre los dos LEDs desde la perspectiva del ojo.
-        
-        Returns:
-            Ángulo en grados
         """
-        # Usando trigonometría: ángulo = arctan(separación_horizontal / distancia_perpendicular)
         angle_rad = np.arctan(self.LED_SEPARATION_TOTAL / self.LED_DISTANCE_FROM_EYE)
         angle_deg = np.degrees(angle_rad)
         return angle_deg
@@ -71,9 +77,6 @@ class CalibrationManager(QObject):
     def start_calibration(self) -> bool:
         """
         Inicia el proceso de calibración.
-        
-        Returns:
-            True si se puede iniciar la calibración
         """
         if not self.serial_handler:
             print("Error: No hay conexión serial disponible")
@@ -87,8 +90,16 @@ class CalibrationManager(QObject):
         
         # Resetear datos de calibración
         self.calibration_data = {
-            'left_led': {'left_eye': None, 'right_eye': None},
-            'right_led': {'left_eye': None, 'right_eye': None}
+            'left_led': {
+                'raw_positions': [],
+                'average_left_eye': None,
+                'average_right_eye': None
+            },
+            'right_led': {
+                'raw_positions': [],
+                'average_left_eye': None,
+                'average_right_eye': None
+            }
         }
         self.is_calibrated = False
         
@@ -97,10 +108,7 @@ class CalibrationManager(QObject):
     
     def start_left_led_capture(self) -> bool:
         """
-        Inicia la captura del LED izquierdo - SOLO ENCIENDE EL LED.
-        
-        Returns:
-            True si el LED se encendió correctamente
+        Enciende el LED izquierdo para iniciar captura.
         """
         if not self.serial_handler:
             return False
@@ -110,128 +118,168 @@ class CalibrationManager(QObject):
         print("LED izquierdo encendido")
         self.calibration_progress.emit("LED izquierdo encendido - Mire la luz verde")
         
-        # Resetear datos de captura para este LED
-        self.calibration_data['left_led']['left_eye'] = None
-        self.calibration_data['left_led']['right_eye'] = None
-        
         return True
-    
-    def capture_left_led_position(self, left_eye_pos: Optional[List[float]], 
-                                 right_eye_pos: Optional[List[float]]) -> bool:
-        """
-        Captura UNA posición para el LED izquierdo - SIN TIMING.
-        
-        Args:
-            left_eye_pos: [x, y] en píxeles del ojo izquierdo
-            right_eye_pos: [x, y] en píxeles del ojo derecho
-            
-        Returns:
-            True si se capturó al menos una posición
-        """
-        captured = False
-        
-        # Capturar posiciones si están disponibles
-        if left_eye_pos and len(left_eye_pos) >= 2:
-            self.calibration_data['left_led']['left_eye'] = [float(left_eye_pos[0]), float(left_eye_pos[1])]
-            print(f"Ojo izquierdo → LED izquierdo: {self.calibration_data['left_led']['left_eye']}")
-            captured = True
-        
-        if right_eye_pos and len(right_eye_pos) >= 2:
-            self.calibration_data['left_led']['right_eye'] = [float(right_eye_pos[0]), float(right_eye_pos[1])]
-            print(f"Ojo derecho → LED izquierdo: {self.calibration_data['left_led']['right_eye']}")
-            captured = True
-        
-        return captured
     
     def finish_left_led_capture(self) -> bool:
         """
-        Finaliza la captura del LED izquierdo - SOLO APAGA EL LED.
-        
-        Returns:
-            True si se capturó correctamente
+        Apaga el LED izquierdo.
         """
-        print("=== FINALIZANDO CAPTURA LED IZQUIERDO ===")
-        
-        # Apagar LED izquierdo
+        print("=== APAGANDO LED IZQUIERDO ===")
         self.serial_handler.send_data(self.LED_LEFT_OFF)
         print("LED izquierdo apagado")
+        return True
+    
+    def start_right_led_capture(self) -> bool:
+        """
+        Enciende el LED derecho para iniciar captura.
+        """
+        if not self.serial_handler:
+            return False
+            
+        print("=== ENCENDIENDO LED DERECHO ===")
+        self.serial_handler.send_data(self.LED_RIGHT_ON)
+        print("LED derecho encendido")
+        self.calibration_progress.emit("LED derecho encendido - Mire la luz verde")
+        
+        return True
+    
+    def finish_right_led_capture(self) -> bool:
+        """
+        Apaga el LED derecho.
+        """
+        print("=== APAGANDO LED DERECHO ===")
+        self.serial_handler.send_data(self.LED_RIGHT_OFF)
+        print("LED derecho apagado")
+        return True
+    
+    def process_led_data(self, led_name: str, position_list: List[Dict]) -> bool:
+        """
+        NUEVO: Procesa una lista completa de posiciones capturadas para un LED.
+        
+        Args:
+            led_name: 'left' o 'right'
+            position_list: Lista de diccionarios con estructura:
+                          [{'timestamp': float, 'left_eye': [x,y] o None, 'right_eye': [x,y] o None}, ...]
+        
+        Returns:
+            True si el procesamiento fue exitoso
+        """
+        if led_name not in ['left', 'right']:
+            print(f"Error: led_name debe ser 'left' o 'right', recibido: {led_name}")
+            return False
+        
+        if not position_list:
+            print(f"Error: No hay datos para procesar en LED {led_name}")
+            return False
+        
+        print(f"=== PROCESANDO DATOS LED {led_name.upper()} ===")
+        print(f"Total de muestras recibidas: {len(position_list)}")
+        
+        # Almacenar datos crudos
+        led_key = f"{led_name}_led"
+        self.calibration_data[led_key]['raw_positions'] = position_list.copy()
+        
+        # Separar posiciones válidas por ojo
+        left_eye_positions = []
+        right_eye_positions = []
+        
+        for record in position_list:
+            if record.get('left_eye') is not None:
+                left_eye_positions.append(record['left_eye'])
+            
+            if record.get('right_eye') is not None:
+                right_eye_positions.append(record['right_eye'])
+        
+        print(f"Posiciones válidas ojo izquierdo: {len(left_eye_positions)}")
+        print(f"Posiciones válidas ojo derecho: {len(right_eye_positions)}")
+        
+        # Calcular promedios si hay suficientes datos
+        if len(left_eye_positions) >= 3:  # Mínimo 3 puntos para promedio confiable
+            avg_left = self._calculate_robust_average(left_eye_positions)
+            self.calibration_data[led_key]['average_left_eye'] = avg_left
+            print(f"Promedio ojo izquierdo → LED {led_name}: {avg_left}")
+        else:
+            print(f"Insuficientes datos para ojo izquierdo en LED {led_name}")
+        
+        if len(right_eye_positions) >= 3:  # Mínimo 3 puntos para promedio confiable
+            avg_right = self._calculate_robust_average(right_eye_positions)
+            self.calibration_data[led_key]['average_right_eye'] = avg_right
+            print(f"Promedio ojo derecho → LED {led_name}: {avg_right}")
+        else:
+            print(f"Insuficientes datos para ojo derecho en LED {led_name}")
         
         # Verificar que se capturó al menos un ojo
-        success = (self.calibration_data['left_led']['left_eye'] is not None or 
-                  self.calibration_data['left_led']['right_eye'] is not None)
+        success = (self.calibration_data[led_key]['average_left_eye'] is not None or 
+                  self.calibration_data[led_key]['average_right_eye'] is not None)
         
         if success:
-            self.calibration_progress.emit("Posición LED izquierdo capturada exitosamente")
-            print("Captura LED izquierdo exitosa")
+            self.calibration_progress.emit(f"Datos LED {led_name} procesados exitosamente")
         else:
-            self.calibration_progress.emit("Error: No se detectaron ojos en LED izquierdo")
-            print("Error: No se detectaron ojos en LED izquierdo")
+            self.calibration_progress.emit(f"Error: No se pudieron procesar datos LED {led_name}")
         
         return success
     
-    def capture_right_led_position(self, left_eye_pos: Optional[List[float]], 
-                                  right_eye_pos: Optional[List[float]]) -> bool:
+    def _calculate_robust_average(self, positions: List[List[float]]) -> List[float]:
         """
-        Captura posiciones oculares cuando el paciente mira el LED derecho.
+        Calcula un promedio robusto eliminando outliers.
         
         Args:
-            left_eye_pos: [x, y] en píxeles del ojo izquierdo
-            right_eye_pos: [x, y] en píxeles del ojo derecho
-            
+            positions: Lista de posiciones [[x, y], [x, y], ...]
+        
         Returns:
-            True si la captura fue exitosa
+            [x_promedio, y_promedio]
         """
-        print("=== INICIANDO CAPTURA LED DERECHO ===")
+        if not positions:
+            return [0.0, 0.0]
         
-        # Encender LED derecho PRIMERO
-        self.serial_handler.send_data(self.LED_RIGHT_ON)
-        print("LED derecho encendido")
-        self.calibration_progress.emit("LED derecho encendido - Mire la luz roja")
+        # Convertir a array numpy para facilitar cálculos
+        pos_array = np.array(positions)
         
-        # Dar tiempo amplio para que el paciente mueva los ojos y se estabilice
-        print("Esperando que el paciente enfoque el LED derecho...")
-        time.sleep(3.0)  # 3 segundos para mover ojos
+        # Si hay pocos puntos, simplemente promediar
+        if len(positions) <= 5:
+            return [float(np.mean(pos_array[:, 0])), float(np.mean(pos_array[:, 1]))]
         
-        self.calibration_progress.emit("Preparándose para grabar...")
-        time.sleep(1.0)  # 1 segundo adicional de preparación
+        # Para más puntos, eliminar outliers usando percentiles
+        x_positions = pos_array[:, 0]
+        y_positions = pos_array[:, 1]
         
-        # Ahora capturar posiciones (el LED sigue encendido)
-        self.calibration_progress.emit("¡GRABANDO! Mantenga la mirada fija")
+        # Calcular percentiles 25 y 75 para detectar outliers
+        x_q25, x_q75 = np.percentile(x_positions, [25, 75])
+        y_q25, y_q75 = np.percentile(y_positions, [25, 75])
         
-        if left_eye_pos and len(left_eye_pos) >= 2:
-            self.calibration_data['right_led']['left_eye'] = [float(left_eye_pos[0]), float(left_eye_pos[1])]
-            print(f"Ojo izquierdo → LED derecho: {self.calibration_data['right_led']['left_eye']}")
+        # Calcular IQR (Interquartile Range)
+        x_iqr = x_q75 - x_q25
+        y_iqr = y_q75 - y_q25
         
-        if right_eye_pos and len(right_eye_pos) >= 2:
-            self.calibration_data['right_led']['right_eye'] = [float(right_eye_pos[0]), float(right_eye_pos[1])]
-            print(f"Ojo derecho → LED derecho: {self.calibration_data['right_led']['right_eye']}")
+        # Definir límites para outliers (1.5 * IQR)
+        x_lower = x_q25 - 1.5 * x_iqr
+        x_upper = x_q75 + 1.5 * x_iqr
+        y_lower = y_q25 - 1.5 * y_iqr
+        y_upper = y_q75 + 1.5 * y_iqr
         
-        # Mantener LED encendido durante la grabación
-        time.sleep(2.0)  # 2 segundos más de grabación
+        # Filtrar outliers
+        valid_mask = (
+            (x_positions >= x_lower) & (x_positions <= x_upper) &
+            (y_positions >= y_lower) & (y_positions <= y_upper)
+        )
         
-        # AHORA SÍ apagar LED derecho
-        self.serial_handler.send_data(self.LED_RIGHT_OFF)
-        print("LED derecho apagado")
+        filtered_positions = pos_array[valid_mask]
         
-        # Verificar que se capturó al menos un ojo
-        success = (self.calibration_data['right_led']['left_eye'] is not None or 
-                  self.calibration_data['right_led']['right_eye'] is not None)
-        
-        if success:
-            self.calibration_progress.emit("Posición LED derecho capturada exitosamente")
-            print("Captura LED derecho exitosa")
+        if len(filtered_positions) > 0:
+            avg_x = float(np.mean(filtered_positions[:, 0]))
+            avg_y = float(np.mean(filtered_positions[:, 1]))
+            print(f"  Outliers eliminados: {len(positions) - len(filtered_positions)}/{len(positions)}")
         else:
-            self.calibration_progress.emit("Error: No se detectaron ojos en LED derecho")
-            print("Error: No se detectaron ojos en LED derecho")
+            # Si todos son outliers, usar promedio simple
+            avg_x = float(np.mean(pos_array[:, 0]))
+            avg_y = float(np.mean(pos_array[:, 1]))
+            print(f"  Sin outliers detectados")
         
-        return success
+        return [avg_x, avg_y]
     
     def calculate_calibration(self) -> bool:
         """
         Calcula los factores de conversión píxel → grados basado en las capturas.
-        
-        Returns:
-            True si la calibración fue exitosa
         """
         print("=== CALCULANDO CALIBRACIÓN ===")
         
@@ -239,11 +287,11 @@ class CalibrationManager(QObject):
         print(f"Ángulo teórico entre LEDs: {theoretical_angle:.2f}°")
         
         # Calcular para ojo izquierdo
-        if (self.calibration_data['left_led']['left_eye'] and 
-            self.calibration_data['right_led']['left_eye']):
+        if (self.calibration_data['left_led']['average_left_eye'] and 
+            self.calibration_data['right_led']['average_left_eye']):
             
-            left_pos = self.calibration_data['left_led']['left_eye']
-            right_pos = self.calibration_data['right_led']['left_eye']
+            left_pos = self.calibration_data['left_led']['average_left_eye']
+            right_pos = self.calibration_data['right_led']['average_left_eye']
             
             # Diferencia en píxeles entre las dos posiciones
             pixel_diff_x = abs(right_pos[0] - left_pos[0])
@@ -265,11 +313,11 @@ class CalibrationManager(QObject):
             print(f"  - Centro de referencia: ({self.reference_points['left_eye']['x']:.1f}, {self.reference_points['left_eye']['y']:.1f})")
         
         # Calcular para ojo derecho
-        if (self.calibration_data['left_led']['right_eye'] and 
-            self.calibration_data['right_led']['right_eye']):
+        if (self.calibration_data['left_led']['average_right_eye'] and 
+            self.calibration_data['right_led']['average_right_eye']):
             
-            left_pos = self.calibration_data['left_led']['right_eye']
-            right_pos = self.calibration_data['right_led']['right_eye']
+            left_pos = self.calibration_data['left_led']['average_right_eye']
+            right_pos = self.calibration_data['right_led']['average_right_eye']
             
             # Diferencia en píxeles entre las dos posiciones
             pixel_diff_x = abs(right_pos[0] - left_pos[0])
@@ -310,13 +358,6 @@ class CalibrationManager(QObject):
                           right_eye_pos: Optional[List[float]]) -> Tuple[Optional[List[float]], Optional[List[float]]]:
         """
         Convierte posiciones de píxeles a grados usando la calibración.
-        
-        Args:
-            left_eye_pos: [x, y] en píxeles del ojo izquierdo
-            right_eye_pos: [x, y] en píxeles del ojo derecho
-            
-        Returns:
-            Tupla con posiciones en grados (left_eye_degrees, right_eye_degrees)
         """
         if not self.is_calibrated:
             return left_eye_pos, right_eye_pos
@@ -353,9 +394,6 @@ class CalibrationManager(QObject):
     def get_calibration_summary(self) -> Dict:
         """
         Obtiene un resumen de la calibración actual.
-        
-        Returns:
-            Diccionario con información de calibración
         """
         return {
             'is_calibrated': self.is_calibrated,
@@ -373,8 +411,16 @@ class CalibrationManager(QObject):
         
         self.is_calibrated = False
         self.calibration_data = {
-            'left_led': {'left_eye': None, 'right_eye': None},
-            'right_led': {'left_eye': None, 'right_eye': None}
+            'left_led': {
+                'raw_positions': [],
+                'average_left_eye': None,
+                'average_right_eye': None
+            },
+            'right_led': {
+                'raw_positions': [],
+                'average_left_eye': None,
+                'average_right_eye': None
+            }
         }
         self.conversion_factors = {
             'left_eye': {'px_per_degree_x': 1.0, 'px_per_degree_y': 1.0},
