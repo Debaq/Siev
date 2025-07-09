@@ -15,9 +15,9 @@
     },
     "slider_settings": {
         "slider_th_right": 16,
-        "slider_th_left": 21,
+        "slider_th_left": 19,
         "slider_erode_right": 0,
-        "slider_erode_left": 0,
+        "slider_erode_left": 1,
         "slider_nose_width": 25
     }
 }
