@@ -4,10 +4,16 @@ import sys
 import time
 from PySide6.QtWidgets import (QMainWindow, QMenu, QWidgetAction, QSlider, 
                             QHBoxLayout, QWidget, QLabel, QCheckBox, 
-                            QMessageBox, QPushButton, QDialog, QVBoxLayout, QFrame)
-from PySide6.QtCore import Qt, QTimer, QThread, Signal
+                            QMessageBox, QPushButton)
+from PySide6.QtCore import Qt, QTimer
 
-# Imports principales del sistema
+# Diálogos
+from ui.dialogs.protocol_dialog import ProtocolSelectionDialog
+from ui.dialogs.tracking_dialog import TrackingCalibrationDialog
+
+# Utils
+from utils.serial_thread import SerialReadThread
+from utils.stimulus_system import StimulusManager
 from utils.SerialHandler import SerialHandler
 from utils.VideoWidget import VideoWidget
 from utils.DetectorNistagmo import DetectorNistagmo
@@ -15,190 +21,8 @@ from utils.EyeDataProcessor import EyeDataProcessor
 from utils.CalibrationManager import CalibrationManager
 from utils.data_storage import DataStorage
 from utils.graphing.triple_plot_widget import TriplePlotWidget, PlotConfigurations
-
-
-class SerialReadThread(QThread):
-    """Thread para lectura de datos seriales del IMU"""
-    data_received = Signal(str)
-
-    def __init__(self, serial_handler):
-        super().__init__()
-        self.serial_handler = serial_handler
-        self._running = True
-
-    def run(self):
-        while self._running:
-            try:
-                data = self.serial_handler.read_data()
-                if data:
-                    self.data_received.emit(data)
-                self.msleep(10)
-            except Exception as e:
-                print(f"Error en serial thread: {e}")
-
-    def stop(self):
-        self._running = False
-        self.wait()
-
-class ProtocolSelectionDialog(QDialog):
-    """Ventana de selección de protocolo completa - MEJORADA"""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Selección de Protocolo")
-        self.setModal(True)
-        self.setFixedSize(400, 450)  # Aumentado de 350x250 a 400x450
-        self.selected_protocol = None
-        self.spontaneous_enabled = False
-        self.setup_ui()
-    
-    def setup_ui(self):
-        from PySide6.QtWidgets import QRadioButton, QButtonGroup
-        
-        layout = QVBoxLayout(self)
-        layout.setSpacing(15)
-        layout.setContentsMargins(30, 30, 30, 30)
-        
-        # Título
-        title = QLabel("Seleccione el protocolo de evaluación:")
-        title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("font-size: 14px; font-weight: bold; margin-bottom: 10px;")
-        layout.addWidget(title)
-        
-        # Grupo de radiobuttons
-        self.button_group = QButtonGroup()
-        protocols = [
-            ("Bitermal Alternada", "bitermal_alternada"),
-            ("Monotermal Caliente", "monotermal_caliente"), 
-            ("Monotermal Fría", "monotermal_fria"),
-            ("Sacadas", "sacadas"),
-            ("Seguimiento Lento", "seguimiento_lento"),
-            ("NG Optocinético", "ng_optocinetico"),
-            ("Sin Protocolo", "sin_protocolo")
-        ]
-        
-        self.protocol_buttons = {}
-        for display_name, protocol_id in protocols:
-            radio_btn = QRadioButton(display_name)
-            radio_btn.setStyleSheet("font-size: 12px; padding: 5px;")
-            self.button_group.addButton(radio_btn)
-            self.protocol_buttons[radio_btn] = protocol_id
-            layout.addWidget(radio_btn)
-        
-        # Seleccionar primero por defecto
-        list(self.protocol_buttons.keys())[0].setChecked(True)
-        
-        # Separador visual
-        separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
-        separator.setStyleSheet("margin: 10px 0px;")
-        layout.addWidget(separator)
-        
-        # Checkbox Espontáneo
-        self.spontaneous_checkbox = QCheckBox("Iniciar con Nistagmo Espontáneo")
-        self.spontaneous_checkbox.setStyleSheet("font-size: 12px; padding: 5px; font-weight: bold; color: #2196F3;")
-        self.spontaneous_checkbox.setChecked(False)
-        layout.addWidget(self.spontaneous_checkbox)
-        
-        layout.addStretch()
-        
-        # Botón continuar
-        self.accept_btn = QPushButton("Continuar")
-        self.accept_btn.clicked.connect(self.accept_selection)
-        self.accept_btn.setStyleSheet("""
-            QPushButton {
-                font-size: 12px; padding: 10px 20px; background-color: #4CAF50;
-                color: white; border: none; border-radius: 4px; min-height: 20px;
-            }
-            QPushButton:hover { background-color: #45a049; }
-        """)
-        
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        btn_layout.addWidget(self.accept_btn)
-        btn_layout.addStretch()
-        layout.addLayout(btn_layout)
-    
-    def accept_selection(self):
-        for radio_btn, protocol_id in self.protocol_buttons.items():
-            if radio_btn.isChecked():
-                self.selected_protocol = protocol_id
-                break
-        
-        self.spontaneous_enabled = self.spontaneous_checkbox.isChecked()
-        self.accept()
-    
-    def get_selected_protocol(self):
-        return self.selected_protocol
-    
-    def is_spontaneous_enabled(self):
-        return self.spontaneous_enabled
     
 
-class TrackingCalibrationDialog(QDialog):
-    """Ventana para decidir si calibrar seguimiento primero"""
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Configuración de Seguimiento")
-        self.setModal(True)
-        self.setFixedSize(400, 200)
-        self.user_choice = None
-        self.setup_ui()
-    
-    def setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setSpacing(20)
-        layout.setContentsMargins(30, 30, 30, 30)
-        
-        title = QLabel("Configuración de Seguimiento Ocular")
-        title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet("font-size: 16px; font-weight: bold; margin-bottom: 10px;")
-        layout.addWidget(title)
-        
-        message = QLabel(
-            "Para una calibración precisa se recomienda\n"
-            "ajustar primero el seguimiento ocular con los sliders."
-        )
-        message.setAlignment(Qt.AlignCenter)
-        message.setStyleSheet("font-size: 12px; color: #666; margin-bottom: 15px;")
-        layout.addWidget(message)
-        
-        button_layout = QHBoxLayout()
-        
-        self.continue_btn = QPushButton("Calibrar Seguimiento Primero")
-        self.continue_btn.clicked.connect(self.choose_tracking_first)
-        self.continue_btn.setStyleSheet("""
-            QPushButton {
-                font-size: 12px; padding: 10px 15px; background-color: #4CAF50;
-                color: white; border: none; border-radius: 4px;
-            }
-            QPushButton:hover { background-color: #45a049; }
-        """)
-        
-        self.skip_btn = QPushButton("Saltar a Calibración")
-        self.skip_btn.clicked.connect(self.skip_to_calibration)
-        self.skip_btn.setStyleSheet("""
-            QPushButton {
-                font-size: 12px; padding: 10px 15px; background-color: #f44336;
-                color: white; border: none; border-radius: 4px;
-            }
-            QPushButton:hover { background-color: #da190b; }
-        """)
-        
-        button_layout.addWidget(self.continue_btn)
-        button_layout.addWidget(self.skip_btn)
-        layout.addLayout(button_layout)
-    
-    def choose_tracking_first(self):
-        self.user_choice = "tracking_first"
-        self.accept()
-    
-    def skip_to_calibration(self):
-        self.user_choice = "skip_to_calibration"
-        self.accept()
-    
-    def get_user_choice(self):
-        return self.user_choice
 
 
 class MainWindow(QMainWindow):
@@ -240,6 +64,9 @@ class MainWindow(QMainWindow):
         
         # === TIMERS ===
         self.setup_timers()
+
+        self.init_stimulus_system()
+        self.setup_right_click_trigger()
         
         # === MOSTRAR PROTOCOLO ===
         QTimer.singleShot(500, self.show_protocol_selection)
