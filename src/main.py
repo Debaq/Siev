@@ -405,9 +405,15 @@ def check_for_updates_and_run():
     checker = UpdateChecker(base_path)
     update_dialog = None
     main_window = None
+    update_check_completed = False  # Flag para evitar doble ejecución
     
     def on_update_check_finished(has_updates):
-        nonlocal update_dialog, main_window
+        nonlocal update_dialog, main_window, update_check_completed
+        
+        # Evitar doble ejecución
+        if update_check_completed:
+            return
+        update_check_completed = True
         
         if has_updates:
             print("Actualizaciones disponibles - Mostrando diálogo")
@@ -422,10 +428,17 @@ def check_for_updates_and_run():
         nonlocal main_window
         
         if updated:
-            print("Aplicación actualizada - Reiniciando...")
-            # Reiniciar la aplicación
+            print("Aplicación actualizada - Cerrando...")
+            # Mostrar mensaje de cierre y cerrar aplicación
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                None,
+                "Actualización Completada",
+                "La aplicación se ha actualizado correctamente.\n\n"
+                "La aplicación se cerrará ahora.\n"
+                "Vuelva a abrirla para usar la versión actualizada."
+            )
             app.quit()
-            os.execv(sys.executable, [sys.executable] + sys.argv)
         else:
             print("Continuando sin actualizar")
             start_main_application()
@@ -445,8 +458,13 @@ def check_for_updates_and_run():
     checker.update_available.connect(on_update_check_finished)
     checker.start()
     
-    # Timeout para evitar espera infinita
-    QTimer.singleShot(15000, lambda: on_update_check_finished(False))
+    # Timeout para evitar espera infinita (solo si no se ha completado)
+    def timeout_handler():
+        if not update_check_completed:
+            print("Timeout en verificación - Iniciando sin actualizar")
+            on_update_check_finished(False)
+    
+    QTimer.singleShot(15000, timeout_handler)
     
     return app.exec()
 
