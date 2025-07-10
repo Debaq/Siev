@@ -65,8 +65,8 @@ class MainWindow(QMainWindow):
         # === TIMERS ===
         self.setup_timers()
 
-        self.init_stimulus_system()
-        self.setup_right_click_trigger()
+        #self.init_stimulus_system()
+        #self.setup_right_click_trigger()
         
         # === MOSTRAR PROTOCOLO ===
         QTimer.singleShot(500, self.show_protocol_selection)
