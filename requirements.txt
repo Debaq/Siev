@@ -1,5 +1,5 @@
 # Interfaz gráfica
-PySide6==6.9.1
+PySide6==6.8.0.2
 pyqtgraph==0.13.7
 
 # Procesamiento de video e imágenes
