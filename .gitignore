@@ -6,3 +6,5 @@ __pycache__/
 *.pyc
 *.pyc
 /src/utils/graphing/__pycache__
+src/utils/graphing/__pycache__/__init__.cpython-313.pyc
+*.pyc
