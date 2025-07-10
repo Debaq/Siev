@@ -4,7 +4,7 @@ import sys
 import time
 from PySide6.QtWidgets import (QMainWindow, QMenu, QWidgetAction, QSlider, 
                             QHBoxLayout, QWidget, QLabel, QCheckBox, 
-                            QMessageBox, QPushButton, QDialog, QVBoxLayout)
+                            QMessageBox, QPushButton, QDialog, QVBoxLayout, QFrame)
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
 
 # Imports principales del sistema
@@ -40,15 +40,15 @@ class SerialReadThread(QThread):
         self._running = False
         self.wait()
 
-
 class ProtocolSelectionDialog(QDialog):
-    """Ventana de selección de protocolo completa"""
+    """Ventana de selección de protocolo completa - MEJORADA"""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Selección de Protocolo")
         self.setModal(True)
-        self.setFixedSize(350, 250)
+        self.setFixedSize(400, 450)  # Aumentado de 350x250 a 400x450
         self.selected_protocol = None
+        self.spontaneous_enabled = False
         self.setup_ui()
     
     def setup_ui(self):
@@ -70,6 +70,9 @@ class ProtocolSelectionDialog(QDialog):
             ("Bitermal Alternada", "bitermal_alternada"),
             ("Monotermal Caliente", "monotermal_caliente"), 
             ("Monotermal Fría", "monotermal_fria"),
+            ("Sacadas", "sacadas"),
+            ("Seguimiento Lento", "seguimiento_lento"),
+            ("NG Optocinético", "ng_optocinetico"),
             ("Sin Protocolo", "sin_protocolo")
         ]
         
@@ -84,6 +87,19 @@ class ProtocolSelectionDialog(QDialog):
         # Seleccionar primero por defecto
         list(self.protocol_buttons.keys())[0].setChecked(True)
         
+        # Separador visual
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        separator.setStyleSheet("margin: 10px 0px;")
+        layout.addWidget(separator)
+        
+        # Checkbox Espontáneo
+        self.spontaneous_checkbox = QCheckBox("Iniciar con Nistagmo Espontáneo")
+        self.spontaneous_checkbox.setStyleSheet("font-size: 12px; padding: 5px; font-weight: bold; color: #2196F3;")
+        self.spontaneous_checkbox.setChecked(False)
+        layout.addWidget(self.spontaneous_checkbox)
+        
         layout.addStretch()
         
         # Botón continuar
@@ -91,8 +107,8 @@ class ProtocolSelectionDialog(QDialog):
         self.accept_btn.clicked.connect(self.accept_selection)
         self.accept_btn.setStyleSheet("""
             QPushButton {
-                font-size: 12px; padding: 8px 20px; background-color: #4CAF50;
-                color: white; border: none; border-radius: 4px;
+                font-size: 12px; padding: 10px 20px; background-color: #4CAF50;
+                color: white; border: none; border-radius: 4px; min-height: 20px;
             }
             QPushButton:hover { background-color: #45a049; }
         """)
@@ -108,11 +124,16 @@ class ProtocolSelectionDialog(QDialog):
             if radio_btn.isChecked():
                 self.selected_protocol = protocol_id
                 break
+        
+        self.spontaneous_enabled = self.spontaneous_checkbox.isChecked()
         self.accept()
     
     def get_selected_protocol(self):
         return self.selected_protocol
-
+    
+    def is_spontaneous_enabled(self):
+        return self.spontaneous_enabled
+    
 
 class TrackingCalibrationDialog(QDialog):
     """Ventana para decidir si calibrar seguimiento primero"""
@@ -458,10 +479,10 @@ class MainWindow(QMainWindow):
                 self.ui.toolButton.setMenu(menu)
             
             # Botón de calibración
-            if hasattr(self.ui, 'layout_toolbar'):
-                self.btn_calibrate = QPushButton("Calibrar Sistema")
-                self.btn_calibrate.clicked.connect(self.start_calibration)
-                self.ui.layout_toolbar.addWidget(self.btn_calibrate)
+            #if hasattr(self.ui, 'layout_toolbar'):
+            #    self.btn_calibrate = QPushButton("Calibrar Sistema")
+            #    self.btn_calibrate.clicked.connect(self.start_calibration)
+            #    self.ui.layout_toolbar.addWidget(self.btn_calibrate)
                 
         except Exception as e:
             print(f"Error configurando menú: {e}")
@@ -480,14 +501,22 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error conectando eventos: {e}")
 
+
     def show_protocol_selection(self):
-        """Mostrar selección completa de protocolo"""
+        """Mostrar selección completa de protocolo - ACTUALIZADO"""
         dialog = ProtocolSelectionDialog(self)
         result = dialog.exec()
         
         if result == QDialog.Accepted:
             selected_protocol = dialog.get_selected_protocol()
+            spontaneous_enabled = dialog.is_spontaneous_enabled()
+            
             print(f"Protocolo seleccionado: {selected_protocol}")
+            print(f"Nistagmo espontáneo: {'SÍ' if spontaneous_enabled else 'NO'}")
+            
+            # Guardar configuración para uso posterior
+            self.current_protocol = selected_protocol
+            self.spontaneous_test_enabled = spontaneous_enabled
             
             if selected_protocol != "sin_protocolo":
                 # Si hay protocolo, mostrar opción de seguimiento
@@ -497,6 +526,9 @@ class MainWindow(QMainWindow):
         else:
             # Usar protocolo por defecto
             print("Usando protocolo por defecto: sin protocolo")
+            self.current_protocol = "sin_protocolo"
+            self.spontaneous_test_enabled = False
+
 
     def show_tracking_calibration_choice(self):
         """Mostrar ventana de elección para calibración de seguimiento"""
