@@ -4,7 +4,7 @@ import sys
 import time
 from PySide6.QtWidgets import (QMainWindow, QMenu, QWidgetAction, QSlider, 
                             QHBoxLayout, QWidget, QLabel, QCheckBox, 
-                            QMessageBox, QPushButton)
+                            QMessageBox, QPushButton, QDialog)
 from PySide6.QtCore import Qt, QTimer
 
 # Diálogos
@@ -65,14 +65,36 @@ class MainWindow(QMainWindow):
         # === TIMERS ===
         self.setup_timers()
 
-        #self.init_stimulus_system()
-        #self.setup_right_click_trigger()
+        self.init_stimulus_system()
+        self.setup_right_click_trigger()
         
         # === MOSTRAR PROTOCOLO ===
         QTimer.singleShot(500, self.show_protocol_selection)
         
         self.showMaximized()
         print("=== SISTEMA VNG INICIADO CORRECTAMENTE ===")
+
+    def init_stimulus_system(self):
+        """Inicializar sistema de estímulos"""
+        self.stimulus_manager = StimulusManager(self)
+        self.test_preparation_mode = False
+        print("Sistema de estímulos inicializado")
+
+    def setup_right_click_trigger(self):
+        """Configurar click derecho global"""
+        self.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        """Capturar click derecho"""
+        from PySide6.QtCore import QEvent
+        from PySide6.QtGui import QMouseEvent
+        
+        if event.type() == QEvent.MouseButtonPress:
+            if isinstance(event, QMouseEvent) and event.button() == Qt.RightButton:
+                self.ui.btn_start.click()
+                return True
+        return super().eventFilter(obj, event)
+
 
     def load_config(self):
         """Cargar configuración desde config.json"""
@@ -108,48 +130,7 @@ class MainWindow(QMainWindow):
                 print("UI cargada desde ui.main_ui")
             except ImportError:
                 print("ERROR: No se pudo cargar la UI")
-                self._create_minimal_ui()
 
-    def _create_minimal_ui(self):
-        """Crea una UI mínima si no se puede cargar la principal"""
-        from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
-        
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
-        
-        # Crear elementos mínimos necesarios
-        class MinimalUI:
-            def __init__(self):
-                self.CameraFrame = QLabel("Camera")
-                self.CameraFrame.setMinimumSize(640, 480)
-                self.btn_start = QPushButton("Start/Stop")
-                self.lbl_time = QLabel("00:00 / 05:00")
-                self.layout_graph = QHBoxLayout()
-                self.layout_toolbar = QHBoxLayout()
-                
-                # Sliders básicos
-                self.slider_th_right = QSlider(Qt.Horizontal)
-                self.slider_th_left = QSlider(Qt.Horizontal) 
-                self.slider_erode_right = QSlider(Qt.Horizontal)
-                self.slider_erode_left = QSlider(Qt.Horizontal)
-                self.slider_nose_width = QSlider(Qt.Horizontal)
-                self.slider_nose_width.setValue(25)
-                
-                from PySide6.QtWidgets import QComboBox
-                self.cb_resolution = QComboBox()
-                self.cb_resolution.addItems([
-                    "1028x720@120", "960x540@120", "640x360@210", 
-                    "420x240@210", "320x240@210"
-                ])
-                self.cb_resolution.setCurrentIndex(1)
-        
-        self.ui = MinimalUI()
-        layout.addWidget(self.ui.CameraFrame)
-        layout.addWidget(self.ui.btn_start)
-        layout.addWidget(self.ui.lbl_time)
-        layout.addLayout(self.ui.layout_graph)
-        print("UI mínima creada")
 
     def init_video_system(self):
         """Inicializar sistema de video"""
@@ -199,7 +180,7 @@ class MainWindow(QMainWindow):
     def init_graphics_system(self):
         """Inicializar sistema de gráficos"""
         try:
-            config = PlotConfigurations.get_horizontal_only()
+            config = PlotConfigurations.get_ultra_minimal()
             self.plot_widget = TriplePlotWidget(
                 parent=None,
                 window_size=60,
