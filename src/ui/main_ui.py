@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'MainWindowcsGcpC.ui'
+## Form generated from reading UI file 'MainWindowEWLDEV.ui'
 ##
-## Created by: Qt User Interface Compiler version 6.8.2
+## Created by: Qt User Interface Compiler version 6.9.1
 ##
 ## WARNING! All changes made in this file will be lost when recompiling UI file!
 ################################################################################
@@ -26,7 +26,7 @@ class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(883, 705)
+        MainWindow.resize(1036, 807)
         self.actionSalir = QAction(MainWindow)
         self.actionSalir.setObjectName(u"actionSalir")
         self.actionCalorica = QAction(MainWindow)
@@ -41,20 +41,6 @@ class Ui_MainWindow(object):
         self.centralwidget.setObjectName(u"centralwidget")
         self.verticalLayout_4 = QVBoxLayout(self.centralwidget)
         self.verticalLayout_4.setObjectName(u"verticalLayout_4")
-        self.frame_toolbar = QFrame(self.centralwidget)
-        self.frame_toolbar.setObjectName(u"frame_toolbar")
-        sizePolicy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
-        sizePolicy.setHorizontalStretch(0)
-        sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.frame_toolbar.sizePolicy().hasHeightForWidth())
-        self.frame_toolbar.setSizePolicy(sizePolicy)
-        self.frame_toolbar.setMinimumSize(QSize(0, 30))
-        self.frame_toolbar.setMaximumSize(QSize(16777215, 30))
-        self.layout_toolbar = QHBoxLayout(self.frame_toolbar)
-        self.layout_toolbar.setObjectName(u"layout_toolbar")
-
-        self.verticalLayout_4.addWidget(self.frame_toolbar)
-
         self.horizontalLayout_2 = QHBoxLayout()
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
         self.horizontalLayout_2.setContentsMargins(0, -1, -1, -1)
@@ -63,6 +49,9 @@ class Ui_MainWindow(object):
         self.verticalLayout_3.setContentsMargins(0, -1, -1, -1)
         self.label = QLabel(self.centralwidget)
         self.label.setObjectName(u"label")
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.label.sizePolicy().hasHeightForWidth())
         self.label.setSizePolicy(sizePolicy)
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -184,6 +173,25 @@ class Ui_MainWindow(object):
 
         self.horizontalLayout.addWidget(self.slider_th_left)
 
+        self.verticalLayout_7 = QVBoxLayout()
+        self.verticalLayout_7.setObjectName(u"verticalLayout_7")
+        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_7.addItem(self.verticalSpacer_2)
+
+        self.verticalSlider = QSlider(self.centralwidget)
+        self.verticalSlider.setObjectName(u"verticalSlider")
+        self.verticalSlider.setOrientation(Qt.Orientation.Vertical)
+
+        self.verticalLayout_7.addWidget(self.verticalSlider)
+
+        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_7.addItem(self.verticalSpacer)
+
+
+        self.horizontalLayout.addLayout(self.verticalLayout_7)
+
 
         self.verticalLayout_2.addLayout(self.horizontalLayout)
 
@@ -271,7 +279,7 @@ class Ui_MainWindow(object):
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
-        self.menubar.setGeometry(QRect(0, 0, 883, 23))
+        self.menubar.setGeometry(QRect(0, 0, 1036, 30))
         self.menuArchivo = QMenu(self.menubar)
         self.menuArchivo.setObjectName(u"menuArchivo")
         self.menuNuevo = QMenu(self.menuArchivo)

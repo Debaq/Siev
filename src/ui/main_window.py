@@ -21,6 +21,7 @@ from utils.EyeDataProcessor import EyeDataProcessor
 from utils.CalibrationManager import CalibrationManager
 from utils.data_storage import DataStorage
 from utils.graphing.triple_plot_widget import TriplePlotWidget, PlotConfigurations
+from utils.config_manager import ConfigManager
     
 
 
@@ -32,8 +33,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         
         # === CONFIGURACIÓN BÁSICA ===
-        self.load_config()
         self.setupUi()
+        self.load_config()
         
         # === VARIABLES DE ESTADO ===
         self.pos_eye = []
@@ -74,6 +75,22 @@ class MainWindow(QMainWindow):
         self.showMaximized()
         print("=== SISTEMA VNG INICIADO CORRECTAMENTE ===")
 
+    def load_config(self):
+        """Cargar configuración usando ConfigManager"""
+        try:
+            # Obtener configuración de ventana
+            window_config = self.config_manager.get_window_config()
+            self.setWindowTitle(window_config["title"])
+            self.resize(window_config["size"]["width"], window_config["size"]["height"])
+            
+            # Obtener ruta de datos
+            self.data_path = self.config_manager.get_data_path()
+            
+            print(f"Configuración cargada. Ruta de datos: {self.data_path}")
+            
+        except Exception as e:
+            print(f"Error en load_config: {e}")
+
     def init_stimulus_system(self):
         """Inicializar sistema de estímulos"""
         self.stimulus_manager = StimulusManager(self)
@@ -96,25 +113,6 @@ class MainWindow(QMainWindow):
         return super().eventFilter(obj, event)
 
 
-    def load_config(self):
-        """Cargar configuración desde config.json"""
-        if getattr(sys, "frozen", False):
-            base_path = os.path.dirname(sys.executable)
-        else:
-            base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        
-        config_path = os.path.join(base_path, "config", "config.json")
-        try:
-            with open(config_path, "r") as f:
-                self.config = json.load(f)
-            self.setWindowTitle(self.config.get("window_title", "VNG Application"))
-            size = self.config.get("window_size", {"width": 800, "height": 600})
-            self.resize(size["width"], size["height"])
-        except Exception as e:
-            print(f"Error loading configuration: {e}")
-            self.config = {"app_name": "VNG", "window_title": "VNG Application"}
-            self.setWindowTitle("VNG Application")
-
     def setupUi(self):
         """Configurar la interfaz de usuario"""
         try:
@@ -130,7 +128,6 @@ class MainWindow(QMainWindow):
                 print("UI cargada desde ui.main_ui")
             except ImportError:
                 print("ERROR: No se pudo cargar la UI")
-
 
     def init_video_system(self):
         """Inicializar sistema de video"""
@@ -413,32 +410,31 @@ class MainWindow(QMainWindow):
         
         # Iniciar calibración
         QTimer.singleShot(500, self.start_calibration)
-
+        
     def save_slider_configuration(self):
-        """Guardar configuración de sliders en config.json"""
+        """Guardar configuración de sliders usando ConfigManager"""
         try:
-            slider_config = {
+            slider_values = {
                 "slider_th_right": self.ui.slider_th_right.value(),
                 "slider_th_left": self.ui.slider_th_left.value(), 
                 "slider_erode_right": self.ui.slider_erode_right.value(),
                 "slider_erode_left": self.ui.slider_erode_left.value(),
-                "slider_nose_width": self.ui.slider_nose_width.value()
+                "slider_nose_width": self.ui.slider_nose_width.value(),
+                "slider_height": getattr(self.ui, 'slider_height', type('obj', (object,), {'value': lambda: 50})).value(),
+                "brightness": getattr(self.ui, 'slider_brightness', type('obj', (object,), {'value': lambda: 50})).value(),
+                "contrast": getattr(self.ui, 'slider_contrast', type('obj', (object,), {'value': lambda: 50})).value()
             }
             
-            self.config["slider_settings"] = slider_config
+            success = self.config_manager.update_slider_settings(slider_values)
             
-            config_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
-                "config", "config.json"
-            )
-            
-            with open(config_path, "w") as f:
-                json.dump(self.config, f, indent=4)
-            
-            print(f"Configuración de sliders guardada: {slider_config}")
-            
+            if success:
+                print(f"Configuración de sliders guardada: {slider_values}")
+            else:
+                print("Error guardando configuración de sliders")
+                
         except Exception as e:
-            print(f"Error guardando configuración de sliders: {e}")
+            print(f"Error en save_slider_configuration: {e}")
+
 
     def handle_serial_data(self, data):
         """Procesar datos seriales del IMU"""
@@ -752,18 +748,28 @@ class MainWindow(QMainWindow):
         return action
 
     def load_slider_configuration(self):
-        """Cargar configuración de sliders"""
+        """Cargar configuración de sliders usando ConfigManager"""
         try:
-            if "slider_settings" in self.config:
-                settings = self.config["slider_settings"]
-                self.ui.slider_th_right.setValue(settings.get("slider_th_right", 0))
-                self.ui.slider_th_left.setValue(settings.get("slider_th_left", 0))
-                self.ui.slider_erode_right.setValue(settings.get("slider_erode_right", 0))
-                self.ui.slider_erode_left.setValue(settings.get("slider_erode_left", 0))
-                self.ui.slider_nose_width.setValue(settings.get("slider_nose_width", 25))
-                print("Configuración de sliders cargada")
+            settings = self.config_manager.get_slider_settings()
+            
+            self.ui.slider_th_right.setValue(settings.get("slider_th_right", 0))
+            self.ui.slider_th_left.setValue(settings.get("slider_th_left", 0))
+            self.ui.slider_erode_right.setValue(settings.get("slider_erode_right", 0))
+            self.ui.slider_erode_left.setValue(settings.get("slider_erode_left", 0))
+            self.ui.slider_nose_width.setValue(settings.get("slider_nose_width", 25))
+            
+            # Cargar nuevos sliders si existen
+            if hasattr(self.ui, 'slider_height'):
+                self.ui.slider_height.setValue(settings.get("slider_height", 50))
+            if hasattr(self.ui, 'slider_brightness'):
+                self.ui.slider_brightness.setValue(settings.get("brightness", 50))
+            if hasattr(self.ui, 'slider_contrast'):
+                self.ui.slider_contrast.setValue(settings.get("contrast", 50))
+                
+            print("Configuración de sliders cargada")
+            
         except Exception as e:
-            print(f"Error cargando sliders: {e}")
+            print(f"Error en load_slider_configuration: {e}")
 
     def closeEvent(self, event):
         """Manejar cierre de aplicación"""

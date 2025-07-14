@@ -13,13 +13,24 @@ class DataStorage:
     Separa completamente el almacenamiento de la visualización.
     """
     
-    def __init__(self, auto_save_interval=5.0, buffer_size=1000):
+    def __init__(self, auto_save_interval=5.0, buffer_size=1000, data_path=None):
         # Almacenamiento completo de todos los datos
         self.complete_dataset = []
         
         # Buffer para escritura asíncrona
         self.write_buffer = deque()
         self.buffer_size = buffer_size
+        
+        # Configurar rutas - usar data_path si se proporciona, sino usar por defecto
+        if data_path is None:
+            data_path = "./siev"
+        
+        self.data_path = data_path
+        self.data_dir = os.path.join(data_path, "data")
+        self.logs_dir = os.path.join(data_path, "logs")
+        
+        # Crear directorios si no existen
+        self._ensure_directories()
         
         # Control de archivos
         self.recording_filename = None
@@ -41,6 +52,23 @@ class DataStorage:
         
         # Lock para thread safety
         self.data_lock = threading.Lock()
+
+    def _ensure_directories(self):
+        """Crear directorios necesarios si no existen"""
+        try:
+            os.makedirs(self.data_dir, exist_ok=True)
+            os.makedirs(self.logs_dir, exist_ok=True)
+            print(f"Directorios de datos asegurados en: {self.data_path}")
+        except Exception as e:
+            print(f"Error creando directorios de datos: {e}")
+    
+    def get_full_data_path(self, filename):
+        """Obtener ruta completa para archivo de datos"""
+        return os.path.join(self.data_dir, filename)
+    
+    def get_full_logs_path(self, filename):
+        """Obtener ruta completa para archivo de logs"""
+        return os.path.join(self.logs_dir, filename)
     
     def start_recording(self, filename: str = None):
         """
