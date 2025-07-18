@@ -105,36 +105,11 @@
               </sizepolicy>
              </property>
              <property name="currentText">
-              <string>960x540@120</string>
+              <string/>
              </property>
              <property name="currentIndex">
-              <number>1</number>
+              <number>-1</number>
              </property>
-             <item>
-              <property name="text">
-               <string notr="true">1028x720@120</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string notr="true">960x540@120</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string notr="true">640x360@210</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string notr="true">420x240@210</string>
-              </property>
-             </item>
-             <item>
-              <property name="text">
-               <string notr="true">320x240@210</string>
-              </property>
-             </item>
             </widget>
            </item>
            <item>
@@ -259,9 +234,50 @@
              </spacer>
             </item>
             <item>
-             <widget class="QSlider" name="verticalSlider">
+             <widget class="QSlider" name="slider_vertical_cut_up">
+              <property name="minimum">
+               <number>-50</number>
+              </property>
+              <property name="maximum">
+               <number>50</number>
+              </property>
+              <property name="tracking">
+               <bool>true</bool>
+              </property>
               <property name="orientation">
                <enum>Qt::Orientation::Vertical</enum>
+              </property>
+              <property name="invertedAppearance">
+               <bool>true</bool>
+              </property>
+              <property name="tickPosition">
+               <enum>QSlider::TickPosition::TicksBelow</enum>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSlider" name="slider_vertical_cut_down">
+              <property name="minimum">
+               <number>-50</number>
+              </property>
+              <property name="maximum">
+               <number>50</number>
+              </property>
+              <property name="orientation">
+               <enum>Qt::Orientation::Vertical</enum>
+              </property>
+              <property name="tickPosition">
+               <enum>QSlider::TickPosition::TicksBelow</enum>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QCheckBox" name="check_simultaneo">
+              <property name="text">
+               <string/>
+              </property>
+              <property name="checked">
+               <bool>true</bool>
               </property>
              </widget>
             </item>

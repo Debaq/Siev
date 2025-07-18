@@ -32,7 +32,11 @@ class VideoProcesses:
         
         # Configuración de cámara compartida
         self.nose_width = Value(ctypes.c_float, 0.25)
+        self.eye_heigh = Value(ctypes.c_float, 0.25)
+
         self.changed_nose = Value(ctypes.c_bool, False)
+        self.changed_eye_height = Value(ctypes.c_bool, False)
+
         self.threslhold = Array('i', [0, 0])
         self.erode = Array('i', [0, 0])
         self.cap_error = Value(ctypes.c_bool, False)
@@ -204,16 +208,30 @@ class VideoProcesses:
                 roi_nose = int(w * self.nose_width.value)
             else:
                 roi_nose = int(w * self.nose_width.value)
+
+
+            if self.changed_eye_height.value:
+                self.changed_eye_height.value = False
+                roi_nose_height = int(h * self.eye_heigh.value)
+            else:
+                roi_nose_height = int(h * self.eye_heigh.value)
+
+
             
             # Extraer ROIs
             roi_y = frame_info['roi_y']
             roi_height = frame_info['roi_height']
             eyes_width = w - roi_nose
             roi_eye_width = int(eyes_width / 2)
+
+
             
             roi_right_eye = frame[roi_y:roi_y+roi_height, :roi_eye_width]
             roi_left_eye = frame[roi_y:roi_y+roi_height, roi_eye_width+roi_nose:]
             
+            #roi_right_eye = frame[0:roi_y+roi_height, :roi_eye_width]
+            #roi_left_eye = frame[0:roi_y+roi_height, roi_eye_width+roi_nose:]
+
             # Verificar ROIs
             if roi_right_eye.size == 0 or roi_left_eye.size == 0:
                 continue
@@ -725,6 +743,9 @@ class VideoThread(QThread):
             self.nose_width = threshold[0]/100
             self.vp.nose_width.value = threshold[0]/100
             self.vp.changed_nose.value = True
+        elif threshold[1] == 5:
+            self.vp.eye_heigh.value = threshold[0]/100
+            self.vp.changed_eye_height.value = True
         else:
             print(f"Error: Índice de threshold incorrecto: {threshold[1]}")
     
@@ -962,9 +983,18 @@ class VideoWidget(QObject):
             slider.valueChanged.connect(lambda value, i=i: self.video_thread.set_threshold([value, i]))
             slider.sliderPressed.connect(self.on_slider_pressed)
             slider.sliderReleased.connect(self.on_slider_released)
+            if slider.objectName() == "slider_vertical_cut_up" or slider.objectName()=="slider_vertical_cut_down":
+                slider.valueChanged.connect(lambda value, i=i: self.config_slider_cut_vertical([value, i]))
+            
         
         # Marcar como conectados
         self._sliders_connected = True
+    
+    def config_slider_cut_vertical(self, value):
+
+        print(f"este es el valor ::: {value}")
+
+
     def on_slider_pressed(self):
         """Maneja el evento cuando un slider es presionado"""
         self.video_thread.slider_th_pressed = True

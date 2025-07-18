@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'MainWindowEWLDEV.ui'
+## Form generated from reading UI file 'MainWindowqLakBk.ui'
 ##
 ## Created by: Qt User Interface Compiler version 6.9.1
 ##
@@ -16,11 +16,11 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QIcon, QImage, QKeySequence, QLinearGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
-from PySide6.QtWidgets import (QApplication, QComboBox, QFrame, QHBoxLayout,
-    QLabel, QListWidget, QListWidgetItem, QMainWindow,
-    QMenu, QMenuBar, QPushButton, QSizePolicy,
-    QSlider, QSpacerItem, QStatusBar, QToolButton,
-    QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
+    QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+    QMainWindow, QMenu, QMenuBar, QPushButton,
+    QSizePolicy, QSlider, QSpacerItem, QStatusBar,
+    QToolButton, QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -179,11 +179,31 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_7.addItem(self.verticalSpacer_2)
 
-        self.verticalSlider = QSlider(self.centralwidget)
-        self.verticalSlider.setObjectName(u"verticalSlider")
-        self.verticalSlider.setOrientation(Qt.Orientation.Vertical)
+        self.slider_vertical_cut_up = QSlider(self.centralwidget)
+        self.slider_vertical_cut_up.setObjectName(u"slider_vertical_cut_up")
+        self.slider_vertical_cut_up.setMinimum(-50)
+        self.slider_vertical_cut_up.setMaximum(50)
+        self.slider_vertical_cut_up.setTracking(True)
+        self.slider_vertical_cut_up.setOrientation(Qt.Orientation.Vertical)
+        self.slider_vertical_cut_up.setInvertedAppearance(True)
+        self.slider_vertical_cut_up.setTickPosition(QSlider.TickPosition.TicksBelow)
 
-        self.verticalLayout_7.addWidget(self.verticalSlider)
+        self.verticalLayout_7.addWidget(self.slider_vertical_cut_up)
+
+        self.slider_vertical_cut_down = QSlider(self.centralwidget)
+        self.slider_vertical_cut_down.setObjectName(u"slider_vertical_cut_down")
+        self.slider_vertical_cut_down.setMinimum(-50)
+        self.slider_vertical_cut_down.setMaximum(50)
+        self.slider_vertical_cut_down.setOrientation(Qt.Orientation.Vertical)
+        self.slider_vertical_cut_down.setTickPosition(QSlider.TickPosition.TicksBelow)
+
+        self.verticalLayout_7.addWidget(self.slider_vertical_cut_down)
+
+        self.check_simultaneo = QCheckBox(self.centralwidget)
+        self.check_simultaneo.setObjectName(u"check_simultaneo")
+        self.check_simultaneo.setChecked(True)
+
+        self.verticalLayout_7.addWidget(self.check_simultaneo)
 
         self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
@@ -322,6 +342,7 @@ class Ui_MainWindow(object):
         self.cb_resolution.setCurrentText(QCoreApplication.translate("MainWindow", u"960x540@120", None))
         self.toolButton.setText(QCoreApplication.translate("MainWindow", u"...", None))
         self.CameraFrame.setText("")
+        self.check_simultaneo.setText("")
         self.btn_start.setText(QCoreApplication.translate("MainWindow", u"Start", None))
 #if QT_CONFIG(shortcut)
         self.btn_start.setShortcut(QCoreApplication.translate("MainWindow", u"Space", None))

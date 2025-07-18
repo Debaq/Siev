@@ -31,7 +31,7 @@ class ConfigManager:
                 "width": 800,
                 "height": 600
             },
-            "data_path": "./siev",
+            "data_path": "~/siev",  # Cambiado para usar home del usuario
             "slider_settings": {
                 "slider_th_right": 16,
                 "slider_th_left": 19,
@@ -66,6 +66,7 @@ class ConfigManager:
             self._ensure_data_directories()
             
             print(f"Configuración cargada desde: {self.config_path}")
+            print(f"Ruta de datos: {self.get_data_path()}")
             
         except FileNotFoundError:
             print(f"Archivo de configuración no encontrado: {self.config_path}")
@@ -134,8 +135,9 @@ class ConfigManager:
             print(f"Error creando directorios de datos: {e}")
     
     def get_data_path(self):
-        """Obtener la ruta de datos configurada"""
-        return self.config.get("data_path", "./siev")
+        """Obtener la ruta de datos configurada expandiendo ~ si es necesario"""
+        data_path = self.config.get("data_path", "~/siev")
+        return os.path.expanduser(data_path)  # Expande ~ al home del usuario
     
     def get_data_dir(self):
         """Obtener el directorio de datos CSV"""
