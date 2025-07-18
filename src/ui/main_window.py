@@ -22,6 +22,7 @@ from utils.CalibrationManager import CalibrationManager
 from utils.data_storage import DataStorage
 from utils.graphing.triple_plot_widget import TriplePlotWidget, PlotConfigurations
 from utils.config_manager import ConfigManager
+from utils.CameraResolutionDetector import CameraResolutionDetector
     
 
 
@@ -33,6 +34,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         
         # === CONFIGURACIÓN BÁSICA ===
+        self.config_manager = ConfigManager()
+
         self.setupUi()
         self.load_config()
         
@@ -40,7 +43,9 @@ class MainWindow(QMainWindow):
         self.pos_eye = []
         self.pos_hit = [0.0, 0.0, 0.0]  # IMU data
         self.camera_index = 2
-        
+        res_video = CameraResolutionDetector()
+        self.resolution_video =res_video.listar_resoluciones(self.camera_index)
+        self.llenar_combobox_resoluciones(self, self.ui.cb_resolution, self.resolution_video)
         # === SISTEMA DE GRABACIÓN ===
         self.is_recording = False
         self.is_calibrating = False
@@ -74,6 +79,21 @@ class MainWindow(QMainWindow):
         
         self.showMaximized()
         print("=== SISTEMA VNG INICIADO CORRECTAMENTE ===")
+                # Conectar todos los sliders
+
+    def llenar_combobox_resoluciones(self, cb_resolution, resoluciones):
+        """
+        Llena un combobox con las resoluciones disponibles
+        
+        Args:
+            cb_resolution: QComboBox a llenar
+            resoluciones: Lista de tuplas (width, height)
+        """
+        cb_resolution.clear()
+        
+        for width, height in resoluciones:
+            texto = f"{width}x{height}"
+            cb_resolution.addItem(texto, (width, height))
 
     def load_config(self):
         """Cargar configuración usando ConfigManager"""
@@ -83,13 +103,17 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(window_config["title"])
             self.resize(window_config["size"]["width"], window_config["size"]["height"])
             
-            # Obtener ruta de datos
+            # Obtener ruta de datos expandida
             self.data_path = self.config_manager.get_data_path()
             
             print(f"Configuración cargada. Ruta de datos: {self.data_path}")
             
         except Exception as e:
-            print(f"Error en load_config: {e}")
+            print(f"Error cargando configuración: {e}")
+            # Valores por defecto
+            self.setWindowTitle("VNG Application")
+            self.resize(800, 600)
+            self.data_path = os.path.expanduser("~/siev")
 
     def init_stimulus_system(self):
         """Inicializar sistema de estímulos"""
@@ -135,7 +159,8 @@ class MainWindow(QMainWindow):
             slider_list = [
                 self.ui.slider_th_right, self.ui.slider_th_left,
                 self.ui.slider_erode_right, self.ui.slider_erode_left,
-                self.ui.slider_nose_width
+                self.ui.slider_nose_width, self.ui.slider_vertical_cut_up,
+                self.ui.slider_vertical_cut_down
             ]
             
             self.video_widget = VideoWidget(
@@ -145,6 +170,13 @@ class MainWindow(QMainWindow):
                 camera_id=self.camera_index
             )
             
+
+
+            for i, slider in enumerate(slider_list):
+                #slider.valueChanged.connect(lambda value, i=i: self.video_thread.set_threshold([value, i]))
+                slider.sliderPressed.connect(self.save_slider_configuration)
+                slider.sliderReleased.connect(self.save_slider_configuration)
+
             self.video_widget.sig_pos.connect(self.handle_eye_positions)
             print("Sistema de video inicializado")
             
@@ -193,9 +225,11 @@ class MainWindow(QMainWindow):
     def init_recording_system(self):
         """Inicializar sistema de grabación"""
         try:
+            # Usar la ruta de datos del ConfigManager
             self.data_storage = DataStorage(
                 auto_save_interval=2.0,
-                buffer_size=500
+                buffer_size=500,
+                data_path=self.data_path  # Usar ruta del config
             )
             
             # Variables de control de envío a gráficos
@@ -410,30 +444,6 @@ class MainWindow(QMainWindow):
         
         # Iniciar calibración
         QTimer.singleShot(500, self.start_calibration)
-        
-    def save_slider_configuration(self):
-        """Guardar configuración de sliders usando ConfigManager"""
-        try:
-            slider_values = {
-                "slider_th_right": self.ui.slider_th_right.value(),
-                "slider_th_left": self.ui.slider_th_left.value(), 
-                "slider_erode_right": self.ui.slider_erode_right.value(),
-                "slider_erode_left": self.ui.slider_erode_left.value(),
-                "slider_nose_width": self.ui.slider_nose_width.value(),
-                "slider_height": getattr(self.ui, 'slider_height', type('obj', (object,), {'value': lambda: 50})).value(),
-                "brightness": getattr(self.ui, 'slider_brightness', type('obj', (object,), {'value': lambda: 50})).value(),
-                "contrast": getattr(self.ui, 'slider_contrast', type('obj', (object,), {'value': lambda: 50})).value()
-            }
-            
-            success = self.config_manager.update_slider_settings(slider_values)
-            
-            if success:
-                print(f"Configuración de sliders guardada: {slider_values}")
-            else:
-                print("Error guardando configuración de sliders")
-                
-        except Exception as e:
-            print(f"Error en save_slider_configuration: {e}")
 
 
     def handle_serial_data(self, data):
@@ -748,28 +758,95 @@ class MainWindow(QMainWindow):
         return action
 
     def load_slider_configuration(self):
-        """Cargar configuración de sliders usando ConfigManager"""
+        """Cargar configuraciones de sliders desde config.json"""
         try:
-            settings = self.config_manager.get_slider_settings()
+            slider_settings = self.config_manager.get_slider_settings()
+            print("se carga setting")
+
+            # Mapeo de nombres de configuración a sliders de UI
+            slider_mapping = {
+                'slider_th_right': 'slider_th_right',
+                'slider_th_left': 'slider_th_left',
+                'slider_erode_right': 'slider_erode_right',
+                'slider_erode_left': 'slider_erode_left',
+                'slider_nose_width': 'slider_nose_width',
+                'slider_vertical_cut_up': 'slider_vertical_cut_up',
+                'slider_vertical_cut_down': 'slider_vertical_cut_down',
+                'brightness': 'slider_brightness',
+                'contrast': 'slider_contrast'
+            }
             
-            self.ui.slider_th_right.setValue(settings.get("slider_th_right", 0))
-            self.ui.slider_th_left.setValue(settings.get("slider_th_left", 0))
-            self.ui.slider_erode_right.setValue(settings.get("slider_erode_right", 0))
-            self.ui.slider_erode_left.setValue(settings.get("slider_erode_left", 0))
-            self.ui.slider_nose_width.setValue(settings.get("slider_nose_width", 25))
+            # Aplicar valores a los sliders
+            loaded_count = 0
+            for config_name, ui_name in slider_mapping.items():
+                if hasattr(self.ui, ui_name) and config_name in slider_settings:
+                    slider = getattr(self.ui, ui_name)
+                    value = slider_settings[config_name]
+                    
+                    # Validar que el valor esté en el rango del slider
+                    if slider.minimum() <= value <= slider.maximum():
+                        slider.setValue(value)
+                        loaded_count += 1
+                        print(f"Slider {ui_name} configurado a {value}")
+                    else:
+                        print(f"Valor {value} fuera de rango para {ui_name} ({slider.minimum()}-{slider.maximum()})")
             
-            # Cargar nuevos sliders si existen
-            if hasattr(self.ui, 'slider_height'):
-                self.ui.slider_height.setValue(settings.get("slider_height", 50))
-            if hasattr(self.ui, 'slider_brightness'):
-                self.ui.slider_brightness.setValue(settings.get("brightness", 50))
-            if hasattr(self.ui, 'slider_contrast'):
-                self.ui.slider_contrast.setValue(settings.get("contrast", 50))
+            print(f"Configuración de sliders cargada: {loaded_count} sliders configurados")
+            
+            # Actualizar video widget si existe
+            if hasattr(self, 'video_widget') and self.video_widget:
+                self.update_video_parameters()
                 
-            print("Configuración de sliders cargada")
+        except Exception as e:
+            print(f"Error cargando configuración de sliders: {e}")
+        
+    def save_slider_configuration(self):
+        """Guardar configuraciones actuales de sliders"""
+        try:
+            slider_mapping = {
+                'slider_th_right': 'slider_th_right',
+                'slider_th_left': 'slider_th_left',
+                'slider_erode_right': 'slider_erode_right',
+                'slider_erode_left': 'slider_erode_left',
+                'slider_nose_width': 'slider_nose_width',
+                'slider_vertical_cut_up': 'slider_vertical_cut_up',
+                'slider_vertical_cut_down': 'slider_vertical_cut_down',
+                'brightness': 'slider_brightness',
+                'contrast': 'slider_contrast'
+            }
+            
+            current_values = {}
+            for config_name, ui_name in slider_mapping.items():
+                if hasattr(self.ui, ui_name):
+                    slider = getattr(self.ui, ui_name)
+                    current_values[config_name] = slider.value()
+            
+            # Guardar en ConfigManager
+            if self.config_manager.update_slider_settings(current_values):
+                print("Configuración de sliders guardada")
+            else:
+                print("Error guardando configuración de sliders")
+                
+        except Exception as e:
+            print(f"Error guardando configuración de sliders: {e}")
+
+
+    def update_video_parameters(self):
+        """Actualizar parámetros del video widget según sliders"""
+        if not hasattr(self, 'video_widget') or not self.video_widget:
+            return
+            
+        try:
+            # Obtener valores de sliders
+            brightness = self.ui.slider_brightness.value() if hasattr(self.ui, 'slider_brightness') else 50
+            contrast = self.ui.slider_contrast.value() if hasattr(self.ui, 'slider_contrast') else 50
+            
+            # Aplicar al video widget
+            self.video_widget.set_brightness(brightness)
+            self.video_widget.set_contrast(contrast)
             
         except Exception as e:
-            print(f"Error en load_slider_configuration: {e}")
+            print(f"Error actualizando parámetros de video: {e}")
 
     def closeEvent(self, event):
         """Manejar cierre de aplicación"""
