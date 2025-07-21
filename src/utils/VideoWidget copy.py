@@ -8,6 +8,7 @@ import multiprocessing as mp
 from multiprocessing import Process, Queue, Value, Array
 import time
 import ctypes
+from utils.SimpleTracker import  PrecisionTracker
 
 class SimulatedBox:
     """Clase para simular las detecciones de YOLO cuando se usa ROI fija"""
