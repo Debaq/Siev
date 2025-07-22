@@ -5,20 +5,20 @@ import cv2
 
 
 class CameraResolutionDetector:
-    """Detecta resoluciones disponibles de cámara según el OS"""
+    """Detecta resoluciones y FPS disponibles de cámara según el OS"""
     
     def __init__(self):
         self.sistema = platform.system()
     
     def listar_resoluciones(self, device_id=0):
         """
-        Lista resoluciones disponibles para el dispositivo especificado
+        Lista resoluciones con FPS máximos disponibles
         
         Args:
             device_id: ID del dispositivo (int para Windows/macOS, se convierte a /dev/video{id} en Linux)
         
         Returns:
-            list: Lista de tuplas (width, height) con resoluciones soportadas
+            list: Lista de strings con formato "widthxheight@fps"
         """
         if self.sistema == "Linux":
             return self._listar_v4l2(device_id)
@@ -40,17 +40,26 @@ class CameraResolutionDetector:
                 print(f"Error ejecutando v4l2-ctl: {result.stderr}")
                 return self._listar_opencv(device_id)
             
-            resoluciones = set()
+            resoluciones_fps = []
             lines = result.stdout.split('\n')
             
+            current_resolution = None
             for line in lines:
-                match = re.search(r'Size: Discrete (\d+)x(\d+)', line)
-                if match:
-                    width, height = int(match.group(1)), int(match.group(2))
-                    resoluciones.add((width, height))
+                # Buscar resolución
+                res_match = re.search(r'Size: Discrete (\d+)x(\d+)', line)
+                if res_match:
+                    current_resolution = (int(res_match.group(1)), int(res_match.group(2)))
+                
+                # Buscar FPS para la resolución actual
+                if current_resolution:
+                    fps_match = re.search(r'(\d+\.?\d*) fps', line)
+                    if fps_match:
+                        fps = int(float(fps_match.group(1)))
+                        formato = f"{current_resolution[0]}x{current_resolution[1]}@{fps}"
+                        if formato not in resoluciones_fps:
+                            resoluciones_fps.append(formato)
             
-            
-            return sorted(list(resoluciones))
+            return sorted(resoluciones_fps)
             
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
             print(f"Error con V4L2: {e}, usando OpenCV como fallback")
@@ -92,7 +101,10 @@ class CameraResolutionDetector:
             (1280, 720), (1280, 960), (1920, 1080), (2560, 1440)
         ]
         
-        resoluciones_soportadas = []
+        # FPS comunes a probar
+        fps_prueba = [15, 30, 60, 120]
+        
+        resoluciones_fps = []
         
         for ancho, alto in resoluciones_prueba:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, ancho)
@@ -101,11 +113,24 @@ class CameraResolutionDetector:
             ancho_real = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             alto_real = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             
-            if (ancho_real, alto_real) not in resoluciones_soportadas:
-                resoluciones_soportadas.append((ancho_real, alto_real))
+            # Si la resolución se configuró correctamente
+            if ancho_real > 0 and alto_real > 0:
+                max_fps = 30  # FPS por defecto
+                
+                # Probar diferentes FPS para encontrar el máximo
+                for fps in fps_prueba:
+                    cap.set(cv2.CAP_PROP_FPS, fps)
+                    fps_real = cap.get(cv2.CAP_PROP_FPS)
+                    
+                    if fps_real >= fps * 0.9:  # Tolerancia del 10%
+                        max_fps = fps
+                
+                formato = f"{ancho_real}x{alto_real}@{max_fps}"
+                if formato not in resoluciones_fps:
+                    resoluciones_fps.append(formato)
         
         cap.release()
-        return resoluciones_soportadas
+        return resoluciones_fps
     
     def obtener_info_sistema(self):
         """Retorna información del sistema detectado"""

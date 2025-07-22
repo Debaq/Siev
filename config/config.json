@@ -1,6 +1,6 @@
 {
     "app_name": "vng",
-    "window_title": "VNG Application",
+    "window_title": "SIEV",
     "version": "0.0.2",
     "author": {
         "name": "Nicolás Baier",
@@ -15,15 +15,15 @@
     },
     "data_path": "~/siev",
     "slider_settings": {
-        "slider_th_right": 18,
-        "slider_th_left": 40,
-        "slider_erode_right": 0,
-        "slider_erode_left": 1,
-        "slider_nose_width": 21,
-        "brightness": 50,
-        "contrast": 50,
-        "slider_vertical_cut_up": 12,
-        "slider_vertical_cut_down": -14,
-        "slider_height": 50
+        "slider_th_right": 34,
+        "slider_th_left": 33,
+        "slider_erode_right": 3,
+        "slider_erode_left": 4,
+        "slider_nose_width": 13,
+        "slider_brightness": 27,
+        "slider_contrast": 31,
+        "slider_vertical_cut_up": 8,
+        "slider_vertical_cut_down": -13,
+        "slider_height": 10
     }
 }

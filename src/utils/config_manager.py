@@ -39,8 +39,8 @@ class ConfigManager:
                 "slider_erode_left": 1,
                 "slider_nose_width": 25,
                 "slider_height": 50,
-                "brightness": 50,
-                "contrast": 50
+                "slider_brightness": 50,
+                "slider_contrast": 50
             }
         }
         
@@ -96,7 +96,7 @@ class ConfigManager:
             with open(self.config_path, "w", encoding='utf-8') as f:
                 json.dump(self.config, f, indent=4, ensure_ascii=False)
             
-            print(f"Configuración guardada en: {self.config_path}")
+            #print(f"Configuración guardada en: {self.config_path}")
             return True
             
         except Exception as e:

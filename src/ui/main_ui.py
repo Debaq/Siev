@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'MainWindowqLakBk.ui'
+## Form generated from reading UI file 'MainWindowBIndSo.ui'
 ##
 ## Created by: Qt User Interface Compiler version 6.9.1
 ##
@@ -90,11 +90,6 @@ class Ui_MainWindow(object):
         self.layout_toolbar_video.addWidget(self.btn_FullScreen)
 
         self.cb_resolution = QComboBox(self.frame_toolbar_video)
-        self.cb_resolution.addItem(u"1028x720@120")
-        self.cb_resolution.addItem(u"960x540@120")
-        self.cb_resolution.addItem(u"640x360@210")
-        self.cb_resolution.addItem(u"420x240@210")
-        self.cb_resolution.addItem(u"320x240@210")
         self.cb_resolution.setObjectName(u"cb_resolution")
         sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
         sizePolicy2.setHorizontalStretch(0)
@@ -320,7 +315,7 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
 
-        self.cb_resolution.setCurrentIndex(1)
+        self.cb_resolution.setCurrentIndex(-1)
 
 
         QMetaObject.connectSlotsByName(MainWindow)
@@ -338,8 +333,7 @@ class Ui_MainWindow(object):
 #if QT_CONFIG(shortcut)
         self.btn_FullScreen.setShortcut(QCoreApplication.translate("MainWindow", u"F", None))
 #endif // QT_CONFIG(shortcut)
-
-        self.cb_resolution.setCurrentText(QCoreApplication.translate("MainWindow", u"960x540@120", None))
+        self.cb_resolution.setCurrentText("")
         self.toolButton.setText(QCoreApplication.translate("MainWindow", u"...", None))
         self.CameraFrame.setText("")
         self.check_simultaneo.setText("")

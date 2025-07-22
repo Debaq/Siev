@@ -136,7 +136,6 @@ class VideoProcesses:
                     cap.set(cv2.CAP_PROP_BRIGHTNESS, self.brightness.value)
                     cap.set(cv2.CAP_PROP_CONTRAST, self.contrast.value)
                     self.color_changed.value = False
-                    print(f"Aplicados nuevos valores: Brillo={self.brightness.value}, Contraste={self.contrast.value}")
                 
                 ret, frame = cap.read()
                 if not ret:
@@ -756,8 +755,11 @@ class VideoThread(QThread):
             self.vp.nose_width.value = threshold[0]/100
             self.vp.changed_nose.value = True
         elif threshold[1] == 5:
-            self.vp.eye_heigh.value = threshold[0]/100
-            self.vp.changed_eye_height.value = True
+            pass        
+            #self.vp.eye_heigh.value = threshold[0]/100
+            #self.vp.changed_eye_height.value = True
+        elif threshold[1] == 6:
+            pass
         else:
             print(f"Error: Índice de threshold incorrecto: {threshold[1]}")
     

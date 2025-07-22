@@ -16,7 +16,9 @@ class SimulatedBox:
 
 
 class VideoProcesses:
-    def __init__(self, camera_id=2, cap_width=960, cap_height=540, cap_fps=120):
+    def __init__(self, camera_id=2, cap_width=960, 
+                 cap_height=540, cap_fps=120, 
+                 brightness=-21, contrast=50):
         # Configuración de la cámara
         self.camera_id = camera_id
         self.cap_width = cap_width
@@ -42,8 +44,8 @@ class VideoProcesses:
         self.slider_th_pressed = Value(ctypes.c_bool, False)
         
         # Variables compartidas para control de color
-        self.brightness = Value(ctypes.c_int, -21) 
-        self.contrast = Value(ctypes.c_int, 50)    
+        self.brightness = Value(ctypes.c_int, brightness) 
+        self.contrast = Value(ctypes.c_int, contrast)    
         self.color_changed = Value(ctypes.c_bool, False)  
         
         # Variables para toggle YOLO/ROI fija
@@ -135,7 +137,6 @@ class VideoProcesses:
                     cap.set(cv2.CAP_PROP_BRIGHTNESS, self.brightness.value)
                     cap.set(cv2.CAP_PROP_CONTRAST, self.contrast.value)
                     self.color_changed.value = False
-                    print(f"Aplicados nuevos valores: Brillo={self.brightness.value}, Contraste={self.contrast.value}")
                 
                 ret, frame = cap.read()
                 if not ret:
@@ -514,15 +515,15 @@ class VideoProcesses:
             # Filtrar por área para eliminar ruido
             valid_contours = []
             for c in contours:
-                #area = cv2.contourArea(c)
+                area = cv2.contourArea(c)
                 # Ajustar estos umbrales según la resolución
-                #if area > 20 and area < (ew * eh * 0.5):  # Pupila no debería ser más del 50% del ojo
-                #    valid_contours.append(c)
+                if area > 20 and area < (ew * eh * 0.5):  # Pupila no debería ser más del 50% del ojo
+                    valid_contours.append(c)
             
 
-                areas = np.array([cv2.contourArea(c) for c in contours])
-                valid_mask = (areas > 20) & (areas < (ew * eh * 0.5))
-                valid_contours = [contours[i] for i in np.where(valid_mask)[0]]
+                #areas = np.array([cv2.contourArea(c) for c in contours])
+                #valid_mask = (areas > 20) & (areas < (ew * eh * 0.5))
+                #valid_contours = [contours[i] for i in np.where(valid_mask)[0]]
 
             if not valid_contours:
                 return None
@@ -548,17 +549,17 @@ class VideoProcesses:
             # Obtener todos los puntos del contorno y calcular la distancia al centro
             distances = []
             
-            #for point in largest_contour.reshape(-1, 2):
-            #    dx = point[0] - center_x
-            #    dy = point[1] - center_y
-            #    distance = np.sqrt(dx*dx + dy*dy)
-            #    distances.append(distance)
+            for point in largest_contour.reshape(-1, 2):
+                dx = point[0] - center_x
+                dy = point[1] - center_y
+                distance = np.sqrt(dx*dx + dy*dy)
+                distances.append(distance)
 
             # ESTO es rápido - operación vectorizada:
-            points = largest_contour.reshape(-1, 2)
-            dx = points[:, 0] - center_x
-            dy = points[:, 1] - center_y
-            distances = np.sqrt(dx*dx + dy*dy)
+            #points = largest_contour.reshape(-1, 2)
+            #dx = points[:, 0] - center_x
+            #dy = points[:, 1] - center_y
+            #distances = np.sqrt(dx*dx + dy*dy)
             
             # Calcular radio como la mediana de las distancias (más estable que la media)
             if distances:
@@ -657,7 +658,11 @@ class VideoProcesses:
 class VideoThread(QThread):
     frame_ready = Signal(np.ndarray, object)
     
-    def __init__(self, camera_id=2, cap_width=960, cap_height=540, cap_fps=120):
+    def __init__(self, camera_id=2, cap_width=960, 
+                 cap_height=540, cap_fps=120, 
+                 brightness=-21, contrast=50):
+        
+
         super().__init__()
         self.running = True
         
@@ -672,7 +677,9 @@ class VideoThread(QThread):
             camera_id=camera_id,
             cap_width=self.cap_width,
             cap_height=self.cap_height,
-            cap_fps=self.cap_fps
+            cap_fps=self.cap_fps, 
+            brightness=brightness, 
+            contrast=contrast
         )
         
         # Variables de configuración
@@ -733,51 +740,41 @@ class VideoThread(QThread):
         print("Señales reiniciadas")
 
 
-    def set_threshold(self, threshold):
-        if len(threshold) != 2:
-            print("Error: Se requieren dos valores de threshold")
-            return
-        
-        if threshold[1] == 0:
-            self.threslhold[0] = threshold[0]
-            self.vp.threslhold[0] = threshold[0]
-        elif threshold[1] == 1:
-            self.threslhold[1] = threshold[0]
-            self.vp.threslhold[1] = threshold[0]
-        elif threshold[1] == 2:
-            self.erode[0] = threshold[0]
-            self.vp.erode[0] = threshold[0]
-        elif threshold[1] == 3:
-            self.erode[1] = threshold[0]
-            self.vp.erode[1] = threshold[0]
-        elif threshold[1] == 4:
-            self.nose_width = threshold[0]/100
-            self.vp.nose_width.value = threshold[0]/100
+    def set_threshold(self, value, slider_name):
+        if slider_name == "slider_th_right":
+            self.threslhold[0] = value
+            self.vp.threslhold[0] = value
+        elif slider_name == "slider_th_left":
+            self.threslhold[1] = value
+            self.vp.threslhold[1] = value
+        elif slider_name == "slider_erode_right":
+            self.erode[0] = value
+            self.vp.erode[0] = value
+        elif slider_name == "slider_erode_left":
+            self.erode[1] = value
+            self.vp.erode[1] = value
+        elif slider_name == "slider_nose_width":
+            self.nose_width = value/100
+            self.vp.nose_width.value = value/100
             self.vp.changed_nose.value = True
-        elif threshold[1] == 5:
-            self.vp.eye_heigh.value = threshold[0]/100
+        elif slider_name == "slider_height":  # Asumiendo que index 5 era height
+            self.vp.eye_heigh.value = value/100
             self.vp.changed_eye_height.value = True
+        elif slider_name == "slider_brightness":
+            self.vp.brightness.value = value
+            self.vp.color_changed.value = True
+        elif slider_name == "slider_contrast":
+            self.vp.contrast.value = value
+            self.vp.color_changed.value = True
+        elif slider_name == "slider_vertical_cut_up":
+            pass
+        elif slider_name == "slider_vertical_cut_down":
+            pass
+
         else:
-            print(f"Error: Índice de threshold incorrecto: {threshold[1]}")
+            print(f"Error: Slider no reconocido: {slider_name}")
     
-    def set_video_color(self, text_label, value):
-            """Método para cambiar el brillo o contraste de la cámara"""
-            try:
-                # Quitar el ":" del texto si existe
-                text_label = text_label.rstrip(':')
-                
-                if text_label == "Brightness":
-                    self.vp.brightness.value = value
-                    self.vp.color_changed.value = True
-                    print(f"Cambiando brillo a: {value}")
-                elif text_label == "Contrast":
-                    self.vp.contrast.value = value
-                    self.vp.color_changed.value = True
-                    print(f"Cambiando contraste a: {value}")
-                else:
-                    print(f"Etiqueta de control de color desconocida: {text_label}")
-            except Exception as e:
-                print(f"Error al cambiar configuración de color: {e}")
+
 
     def run(self):
         # Iniciar procesos
@@ -848,25 +845,38 @@ class VideoWidget(QObject):
         self.sliders = sliders
         self.camera_frame = camera_frame
         self.pos_eye = []
+        
+        slider_contrast = next((slider for slider in self.sliders if slider.objectName() == "slider_contrast"), None)
+        slider_brightness = next((slider for slider in self.sliders if slider.objectName() == "slider_brightness"), None)
+
+        #brightness = sliders[]
 
         # Conectar señales
         self.resolution_changed()
         self.sliders_changed()
-        
+        resolucion = self.cbres.currentText()
         # Crear el hilo de video
-        self.video_thread = VideoThread(camera_id=camera_id)
+        res_partes = resolucion.split('@')
+        width, height = map(int, res_partes[0].split('x'))
+        fps = int(res_partes[1])
+        
+        self.video_thread = VideoThread(camera_id=camera_id, 
+                                        cap_width=width, 
+                                        cap_height=height, 
+                                        cap_fps=fps, brightness=slider_brightness.value(), 
+                                        contrast=slider_contrast.value())
         self.video_thread.frame_ready.connect(self.update_frame)
                 
         self.current_fps = 0
         self.video_thread.start(QThread.HighPriority)
 
-    def set_video_color(self, text_label, value):
+    #def set_video_color(self, text_label, value):
         """Método para cambiar el brillo o contraste de la cámara"""
-        try:
+    #    try:
             # Llamar al método correspondiente en el hilo de video
-            self.video_thread.set_video_color(text_label, value)
-        except Exception as e:
-            print(f"Error al cambiar configuración de color: {e}")
+    #        self.video_thread.set_video_color(text_label, value)
+    #    except Exception as e:
+    #        print(f"Error al cambiar configuración de color: {e}")
 
     def resolution_changed(self):
         """Conecta el cambio de resolución"""
@@ -923,22 +933,26 @@ class VideoWidget(QObject):
             # Esperar un momento para liberar recursos
             time.sleep(1.0)
             
+            slider_contrast = next((slider for slider in self.sliders if slider.objectName() == "slider_contrast"), None)
+            slider_brightness = next((slider for slider in self.sliders if slider.objectName() == "slider_brightness"), None)
+
+
             # Crear un nuevo VideoThread con la nueva resolución
             print("Creando nuevo hilo de video...")
             self.video_thread = VideoThread(
                 camera_id=camera_id,
                 cap_width=new_width,
                 cap_height=new_height,
-                cap_fps=new_fps
+                cap_fps=new_fps,
+                brightness=slider_brightness.value(),
+                contrast=slider_contrast.value()
             )
             
             # Transferir otras configuraciones
             self.video_thread.threslhold = threslhold
             self.video_thread.erode = erode
             self.video_thread.nose_width = nose_width
-            print(f"Restaurando valores: Brillo={brightness_value}, Contraste={contrast_value}")
-            self.video_thread.set_video_color("Brightness", brightness_value)
-            self.video_thread.set_video_color("Contrast", contrast_value)
+
         
             # Conectar señales al nuevo hilo
             self.video_thread.frame_ready.connect(self.update_frame)
@@ -956,54 +970,37 @@ class VideoWidget(QObject):
             print(f"Error durante el cambio de resolución: {e}")
             import traceback
             traceback.print_exc()
-
     def sliders_changed(self):
-        """Conecta los deslizadores de umbral"""
-        # Desconectar los sliders primero por si ya estaban conectados
-        first_time = not hasattr(self, '_sliders_connected') or not self._sliders_connected
-        # Lista para almacenar las conexiones
-        if not hasattr(self, '_slider_connections'):    
-            self._slider_connections = [None] * len(self.sliders)
-
-         
-        # Para cada slider
-        for i, slider in enumerate(self.sliders):
-            # Desconectar las señales anteriores solo si no es la primera vez
-            if not first_time:
-                # Desconectar valueChanged
-                try:
-                    if self._slider_connections[i]:
-                        slider.valueChanged.disconnect(self._slider_connections[i])
-                except Exception:
-                    pass
-                
-                # Desconectar sliderPressed
-                try:
-                    slider.sliderPressed.disconnect()
-                except Exception:
-                    pass
-                
-                # Desconectar sliderReleased
-                try:
-                    slider.sliderReleased.disconnect()
-                except Exception:
-                    pass 
+        """Conecta los deslizadores al thread actual"""
         
-        # Conectar todos los sliders
-        for i, slider in enumerate(self.sliders):
-            slider.valueChanged.connect(lambda value, i=i: self.video_thread.set_threshold([value, i]))
-            slider.sliderPressed.connect(self.on_slider_pressed)
-            slider.sliderReleased.connect(self.on_slider_released)
-            if slider.objectName() == "slider_vertical_cut_up" or slider.objectName()=="slider_vertical_cut_down":
-                slider.valueChanged.connect(lambda value, i=i: self.config_slider_cut_vertical([value, i]))
+        # Desconectar solo las conexiones al video_thread anterior
+        for slider in self.sliders:
+            try:
+                # Desconectar solo valueChanged que va al video_thread
+                slider.valueChanged.disconnect()
+            except Exception:
+                pass
+            # Mantener sliderPressed y sliderReleased conectados
+        
+        # Reconectar al nuevo video_thread
+        for slider in self.sliders:
+            slider_name = slider.objectName()
             
+            # Conectar al nuevo thread
+            slider.valueChanged.connect(lambda value, name=slider_name: self.video_thread.set_threshold(value, name))
+            
+            # Solo conectar estos si no estaban conectados antes
+            if not hasattr(self, '_ui_connections_done'):
+                slider.sliderPressed.connect(self.on_slider_pressed)
+                slider.sliderReleased.connect(self.on_slider_released)
+                
+                if slider_name in ["slider_vertical_cut_up", "slider_vertical_cut_down"]:
+                    slider.valueChanged.connect(lambda value, name=slider_name: self.config_slider_cut_vertical(value, name))
         
-        # Marcar como conectados
-        self._sliders_connected = True
+        self._ui_connections_done = True
     
-    def config_slider_cut_vertical(self, value):
-
-        print(f"este es el valor ::: {value}")
+    def config_slider_cut_vertical(self, value, name):
+        pass
 
 
     def on_slider_pressed(self):
@@ -1021,10 +1018,11 @@ class VideoWidget(QObject):
         # Reconectar los deslizadores de umbral
         self.sliders_changed()
         
-        # Aplicar los valores actuales de los sliders
-        for i, slider in enumerate(self.sliders):
+        # Aplicar los valores actuales de los sliders al nuevo thread
+        for slider in self.sliders:
+            slider_name = slider.objectName()
             current_value = slider.value()
-            self.video_thread.set_threshold([current_value, i])
+            self.video_thread.set_threshold(current_value, slider_name)
     
    
 

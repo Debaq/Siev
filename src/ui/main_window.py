@@ -23,7 +23,7 @@ from utils.data_storage import DataStorage
 from utils.graphing.triple_plot_widget import TriplePlotWidget, PlotConfigurations
 from utils.config_manager import ConfigManager
 from utils.CameraResolutionDetector import CameraResolutionDetector
-    
+from utils.utils import select_max_resolution
 
 
 
@@ -44,8 +44,10 @@ class MainWindow(QMainWindow):
         self.pos_hit = [0.0, 0.0, 0.0]  # IMU data
         self.camera_index = 2
         res_video = CameraResolutionDetector()
-        self.resolution_video =res_video.listar_resoluciones(self.camera_index)
-        self.llenar_combobox_resoluciones(self, self.ui.cb_resolution, self.resolution_video)
+        resolution_video =res_video.listar_resoluciones(self.camera_index)
+        #aca vamos a seleccionar la mejor resolución
+        max_res = select_max_resolution(resolution_video)
+        self.fill_cmbres(self.ui.cb_resolution, resolution_video, max_res)
         # === SISTEMA DE GRABACIÓN ===
         self.is_recording = False
         self.is_calibrating = False
@@ -54,7 +56,11 @@ class MainWindow(QMainWindow):
         self.last_update_time = None
         self.MAX_RECORDING_TIME = 5 * 60  # 5 minutos
         self.CALIBRATION_TIME = 1  # 1 segundo
-        
+        # === CONFIGURAR UI ===
+        self.setup_menu_and_controls()
+        self.connect_events()
+        self.load_slider_configuration()
+
         # === INICIALIZAR COMPONENTES ===
         self.init_video_system()
         self.init_serial_system()
@@ -63,14 +69,10 @@ class MainWindow(QMainWindow):
         self.init_recording_system()
         self.init_processing_system()
         
-        # === CONFIGURAR UI ===
-        self.setup_menu_and_controls()
-        self.connect_events()
-        self.load_slider_configuration()
+   
         
         # === TIMERS ===
         self.setup_timers()
-
         self.init_stimulus_system()
         self.setup_right_click_trigger()
         
@@ -81,7 +83,7 @@ class MainWindow(QMainWindow):
         print("=== SISTEMA VNG INICIADO CORRECTAMENTE ===")
                 # Conectar todos los sliders
 
-    def llenar_combobox_resoluciones(self, cb_resolution, resoluciones):
+    def fill_cmbres(self, cb_resolution, resoluciones, max_res):
         """
         Llena un combobox con las resoluciones disponibles
         
@@ -90,10 +92,18 @@ class MainWindow(QMainWindow):
             resoluciones: Lista de tuplas (width, height)
         """
         cb_resolution.clear()
-        
-        for width, height in resoluciones:
-            texto = f"{width}x{height}"
-            cb_resolution.addItem(texto, (width, height))
+        try:
+            for width, height in resoluciones:
+                texto = f"{width}x{height}"
+                cb_resolution.addItem(texto, (width, height))
+        except:
+            for i in resoluciones:
+                _, fps = i.split("@")
+                if int(fps) >= 60:
+                    cb_resolution.addItem(i)
+
+        cb_resolution.setCurrentText(max_res)
+            
 
     def load_config(self):
         """Cargar configuración usando ConfigManager"""
@@ -111,7 +121,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error cargando configuración: {e}")
             # Valores por defecto
-            self.setWindowTitle("VNG Application")
+            self.setWindowTitle("SIEV")
             self.resize(800, 600)
             self.data_path = os.path.expanduser("~/siev")
 
@@ -156,11 +166,15 @@ class MainWindow(QMainWindow):
     def init_video_system(self):
         """Inicializar sistema de video"""
         try:
+            slider_brightness = self.findChild(QSlider, "slider_brightness")
+            slider_contrast = self.findChild(QSlider, "slider_contrast")
+
             slider_list = [
                 self.ui.slider_th_right, self.ui.slider_th_left,
                 self.ui.slider_erode_right, self.ui.slider_erode_left,
                 self.ui.slider_nose_width, self.ui.slider_vertical_cut_up,
-                self.ui.slider_vertical_cut_down
+                self.ui.slider_vertical_cut_down, slider_brightness, 
+                slider_contrast
             ]
             
             self.video_widget = VideoWidget(
@@ -169,13 +183,12 @@ class MainWindow(QMainWindow):
                 self.ui.cb_resolution,
                 camera_id=self.camera_index
             )
-            
-
 
             for i, slider in enumerate(slider_list):
                 #slider.valueChanged.connect(lambda value, i=i: self.video_thread.set_threshold([value, i]))
-                slider.sliderPressed.connect(self.save_slider_configuration)
-                slider.sliderReleased.connect(self.save_slider_configuration)
+                slider.valueChanged.connect(self.save_slider_configuration)
+                #slider.sliderPressed.connect(self.save_slider_configuration)
+                #slider.sliderReleased.connect(self.save_slider_configuration)
 
             self.video_widget.sig_pos.connect(self.handle_eye_positions)
             print("Sistema de video inicializado")
@@ -297,8 +310,8 @@ class MainWindow(QMainWindow):
             menu = QMenu(self)
             
             # Controles de cámara
-            brightness_slider = self.create_labeled_slider("Brightness:", -64, 64, -21)
-            contrast_slider = self.create_labeled_slider("Contrast:", 0, 100, 50)
+            brightness_slider = self.create_labeled_slider("slider_brightness","Brightness:", -64, 64, -21)
+            contrast_slider = self.create_labeled_slider("slider_contrast","Contrast:", 0, 100, 50)
             
             # Checkbox YOLO
             checkbox_container = QWidget()
@@ -730,7 +743,7 @@ class MainWindow(QMainWindow):
         if self.video_widget:
             self.video_widget.set_yolo_enabled(checked)
 
-    def create_labeled_slider(self, label_text, min_val, max_val, initial_val):
+    def create_labeled_slider(self, nameobj, label_text, min_val, max_val, initial_val):
         """Crear slider con etiqueta"""
         container = QWidget()
         layout = QHBoxLayout()
@@ -738,15 +751,13 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel(label_text))
         
         slider = QSlider(Qt.Horizontal)
+        slider.setObjectName(nameobj)
         slider.setMinimum(min_val)
         slider.setMaximum(max_val)
         slider.setValue(initial_val)
-        
-        if self.video_widget:
-            slider.valueChanged.connect(
-                lambda value: self.video_widget.set_video_color(label_text, value)
-            )
-        
+        slider.valueChanged.connect(self.save_slider_configuration)
+
+
         layout.addWidget(slider)
         container.setLayout(layout)
         return container
@@ -763,7 +774,6 @@ class MainWindow(QMainWindow):
             slider_settings = self.config_manager.get_slider_settings()
             print("se carga setting")
 
-            # Mapeo de nombres de configuración a sliders de UI
             slider_mapping = {
                 'slider_th_right': 'slider_th_right',
                 'slider_th_left': 'slider_th_left',
@@ -772,81 +782,49 @@ class MainWindow(QMainWindow):
                 'slider_nose_width': 'slider_nose_width',
                 'slider_vertical_cut_up': 'slider_vertical_cut_up',
                 'slider_vertical_cut_down': 'slider_vertical_cut_down',
-                'brightness': 'slider_brightness',
-                'contrast': 'slider_contrast'
+                'slider_brightness': 'slider_brightness',
+                'slider_contrast': 'slider_contrast'
             }
             
-            # Aplicar valores a los sliders
             loaded_count = 0
             for config_name, ui_name in slider_mapping.items():
-                if hasattr(self.ui, ui_name) and config_name in slider_settings:
-                    slider = getattr(self.ui, ui_name)
-                    value = slider_settings[config_name]
+                if config_name in slider_settings:
+                    value = slider_settings[config_name]  # ✅ Mover aquí
                     
-                    # Validar que el valor esté en el rango del slider
-                    if slider.minimum() <= value <= slider.maximum():
+                    if hasattr(self.ui, ui_name):
+                        slider = getattr(self.ui, ui_name)
+                    else:
+                        slider = self.findChild(QSlider, config_name)
+                    
+                    if slider and slider.minimum() <= value <= slider.maximum():
                         slider.setValue(value)
                         loaded_count += 1
-                        print(f"Slider {ui_name} configurado a {value}")
+                        #print(f"Slider {ui_name} configurado a {value}")
                     else:
-                        print(f"Valor {value} fuera de rango para {ui_name} ({slider.minimum()}-{slider.maximum()})")
+                        print(f"Valor {value} fuera de rango para {ui_name}")
             
             print(f"Configuración de sliders cargada: {loaded_count} sliders configurados")
-            
-            # Actualizar video widget si existe
-            if hasattr(self, 'video_widget') and self.video_widget:
-                self.update_video_parameters()
-                
         except Exception as e:
             print(f"Error cargando configuración de sliders: {e}")
         
     def save_slider_configuration(self):
         """Guardar configuraciones actuales de sliders"""
+
+        sender_name = self.sender().objectName()
+        sender_value = self.sender().value()
+        #print(f"Me ha llamado {sender_name} con valor {sender_value}")
+
         try:
-            slider_mapping = {
-                'slider_th_right': 'slider_th_right',
-                'slider_th_left': 'slider_th_left',
-                'slider_erode_right': 'slider_erode_right',
-                'slider_erode_left': 'slider_erode_left',
-                'slider_nose_width': 'slider_nose_width',
-                'slider_vertical_cut_up': 'slider_vertical_cut_up',
-                'slider_vertical_cut_down': 'slider_vertical_cut_down',
-                'brightness': 'slider_brightness',
-                'contrast': 'slider_contrast'
-            }
-            
-            current_values = {}
-            for config_name, ui_name in slider_mapping.items():
-                if hasattr(self.ui, ui_name):
-                    slider = getattr(self.ui, ui_name)
-                    current_values[config_name] = slider.value()
-            
-            # Guardar en ConfigManager
-            if self.config_manager.update_slider_settings(current_values):
-                print("Configuración de sliders guardada")
+            if self.config_manager.set_slider_value(sender_name, sender_value):
+                pass
+                #print(f"Configuración de {sender_name} guardada")
             else:
-                print("Error guardando configuración de sliders")
+                print(f"Error guardando configuración de {sender_name}")
                 
         except Exception as e:
             print(f"Error guardando configuración de sliders: {e}")
 
 
-    def update_video_parameters(self):
-        """Actualizar parámetros del video widget según sliders"""
-        if not hasattr(self, 'video_widget') or not self.video_widget:
-            return
-            
-        try:
-            # Obtener valores de sliders
-            brightness = self.ui.slider_brightness.value() if hasattr(self.ui, 'slider_brightness') else 50
-            contrast = self.ui.slider_contrast.value() if hasattr(self.ui, 'slider_contrast') else 50
-            
-            # Aplicar al video widget
-            self.video_widget.set_brightness(brightness)
-            self.video_widget.set_contrast(contrast)
-            
-        except Exception as e:
-            print(f"Error actualizando parámetros de video: {e}")
 
     def closeEvent(self, event):
         """Manejar cierre de aplicación"""
