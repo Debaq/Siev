@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'MainWindowBIndSo.ui'
+## Form generated from reading UI file 'MainWindowmpBOhC.ui'
 ##
 ## Created by: Qt User Interface Compiler version 6.9.1
 ##
@@ -37,6 +37,22 @@ class Ui_MainWindow(object):
         self.actionEspontaneo.setObjectName(u"actionEspontaneo")
         self.actionPosicional = QAction(MainWindow)
         self.actionPosicional.setObjectName(u"actionPosicional")
+        self.actionOD_44 = QAction(MainWindow)
+        self.actionOD_44.setObjectName(u"actionOD_44")
+        self.actionOI_44 = QAction(MainWindow)
+        self.actionOI_44.setObjectName(u"actionOI_44")
+        self.actionOD_37 = QAction(MainWindow)
+        self.actionOD_37.setObjectName(u"actionOD_37")
+        self.actionOI37 = QAction(MainWindow)
+        self.actionOI37.setObjectName(u"actionOI37")
+        self.actionEspont_neo = QAction(MainWindow)
+        self.actionEspont_neo.setObjectName(u"actionEspont_neo")
+        self.actionSeguimiento_Lento = QAction(MainWindow)
+        self.actionSeguimiento_Lento.setObjectName(u"actionSeguimiento_Lento")
+        self.actionOptoquinetico = QAction(MainWindow)
+        self.actionOptoquinetico.setObjectName(u"actionOptoquinetico")
+        self.actionSacadas = QAction(MainWindow)
+        self.actionSacadas.setObjectName(u"actionSacadas")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
         self.verticalLayout_4 = QVBoxLayout(self.centralwidget)
@@ -299,12 +315,23 @@ class Ui_MainWindow(object):
         self.menuArchivo.setObjectName(u"menuArchivo")
         self.menuNuevo = QMenu(self.menuArchivo)
         self.menuNuevo.setObjectName(u"menuNuevo")
+        self.menuCalofrica = QMenu(self.menubar)
+        self.menuCalofrica.setObjectName(u"menuCalofrica")
+        self.menuPruebas_Calor_cas = QMenu(self.menuCalofrica)
+        self.menuPruebas_Calor_cas.setObjectName(u"menuPruebas_Calor_cas")
+        self.menuPosicionales = QMenu(self.menubar)
+        self.menuPosicionales.setObjectName(u"menuPosicionales")
+        self.menuOculomotoras = QMenu(self.menubar)
+        self.menuOculomotoras.setObjectName(u"menuOculomotoras")
         MainWindow.setMenuBar(self.menubar)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")
         MainWindow.setStatusBar(self.statusbar)
 
         self.menubar.addAction(self.menuArchivo.menuAction())
+        self.menubar.addAction(self.menuCalofrica.menuAction())
+        self.menubar.addAction(self.menuPosicionales.menuAction())
+        self.menubar.addAction(self.menuOculomotoras.menuAction())
         self.menuArchivo.addAction(self.menuNuevo.menuAction())
         self.menuArchivo.addSeparator()
         self.menuArchivo.addAction(self.actionSalir)
@@ -312,6 +339,15 @@ class Ui_MainWindow(object):
         self.menuNuevo.addAction(self.actionOculomotora)
         self.menuNuevo.addAction(self.actionEspontaneo)
         self.menuNuevo.addAction(self.actionPosicional)
+        self.menuCalofrica.addAction(self.actionEspont_neo)
+        self.menuCalofrica.addAction(self.menuPruebas_Calor_cas.menuAction())
+        self.menuPruebas_Calor_cas.addAction(self.actionOD_44)
+        self.menuPruebas_Calor_cas.addAction(self.actionOI_44)
+        self.menuPruebas_Calor_cas.addAction(self.actionOD_37)
+        self.menuPruebas_Calor_cas.addAction(self.actionOI37)
+        self.menuOculomotoras.addAction(self.actionSeguimiento_Lento)
+        self.menuOculomotoras.addAction(self.actionOptoquinetico)
+        self.menuOculomotoras.addAction(self.actionSacadas)
 
         self.retranslateUi(MainWindow)
 
@@ -328,6 +364,14 @@ class Ui_MainWindow(object):
         self.actionOculomotora.setText(QCoreApplication.translate("MainWindow", u"Oculomotora", None))
         self.actionEspontaneo.setText(QCoreApplication.translate("MainWindow", u"Espontaneo", None))
         self.actionPosicional.setText(QCoreApplication.translate("MainWindow", u"Posicional", None))
+        self.actionOD_44.setText(QCoreApplication.translate("MainWindow", u"OD 44", None))
+        self.actionOI_44.setText(QCoreApplication.translate("MainWindow", u"OI 44", None))
+        self.actionOD_37.setText(QCoreApplication.translate("MainWindow", u"OD 37", None))
+        self.actionOI37.setText(QCoreApplication.translate("MainWindow", u"OI 37", None))
+        self.actionEspont_neo.setText(QCoreApplication.translate("MainWindow", u"Espont\u00e1neo", None))
+        self.actionSeguimiento_Lento.setText(QCoreApplication.translate("MainWindow", u"Seguimiento Lento", None))
+        self.actionOptoquinetico.setText(QCoreApplication.translate("MainWindow", u"Optoquinetico", None))
+        self.actionSacadas.setText(QCoreApplication.translate("MainWindow", u"Sacadas", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"Pruebas Previas", None))
         self.btn_FullScreen.setText(QCoreApplication.translate("MainWindow", u"FullScreen", None))
 #if QT_CONFIG(shortcut)
@@ -346,5 +390,9 @@ class Ui_MainWindow(object):
         self.lbl_text_temp.setText("")
         self.menuArchivo.setTitle(QCoreApplication.translate("MainWindow", u"Archivo", None))
         self.menuNuevo.setTitle(QCoreApplication.translate("MainWindow", u"Nuevo..", None))
+        self.menuCalofrica.setTitle(QCoreApplication.translate("MainWindow", u"VNG", None))
+        self.menuPruebas_Calor_cas.setTitle(QCoreApplication.translate("MainWindow", u"Pruebas Calor\u00edcas", None))
+        self.menuPosicionales.setTitle(QCoreApplication.translate("MainWindow", u"Posicionales", None))
+        self.menuOculomotoras.setTitle(QCoreApplication.translate("MainWindow", u"Oculomotoras", None))
     # retranslateUi
 

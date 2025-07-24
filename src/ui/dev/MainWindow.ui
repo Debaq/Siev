@@ -444,7 +444,39 @@
     <addaction name="separator"/>
     <addaction name="actionSalir"/>
    </widget>
+   <widget class="QMenu" name="menuCalofrica">
+    <property name="title">
+     <string>VNG</string>
+    </property>
+    <widget class="QMenu" name="menuPruebas_Calor_cas">
+     <property name="title">
+      <string>Pruebas Calorícas</string>
+     </property>
+     <addaction name="actionOD_44"/>
+     <addaction name="actionOI_44"/>
+     <addaction name="actionOD_37"/>
+     <addaction name="actionOI37"/>
+    </widget>
+    <addaction name="actionEspont_neo"/>
+    <addaction name="menuPruebas_Calor_cas"/>
+   </widget>
+   <widget class="QMenu" name="menuPosicionales">
+    <property name="title">
+     <string>Posicionales</string>
+    </property>
+   </widget>
+   <widget class="QMenu" name="menuOculomotoras">
+    <property name="title">
+     <string>Oculomotoras</string>
+    </property>
+    <addaction name="actionSeguimiento_Lento"/>
+    <addaction name="actionOptoquinetico"/>
+    <addaction name="actionSacadas"/>
+   </widget>
    <addaction name="menuArchivo"/>
+   <addaction name="menuCalofrica"/>
+   <addaction name="menuPosicionales"/>
+   <addaction name="menuOculomotoras"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <action name="actionSalir">
@@ -470,6 +502,46 @@
   <action name="actionPosicional">
    <property name="text">
     <string>Posicional</string>
+   </property>
+  </action>
+  <action name="actionOD_44">
+   <property name="text">
+    <string>OD 44</string>
+   </property>
+  </action>
+  <action name="actionOI_44">
+   <property name="text">
+    <string>OI 44</string>
+   </property>
+  </action>
+  <action name="actionOD_37">
+   <property name="text">
+    <string>OD 37</string>
+   </property>
+  </action>
+  <action name="actionOI37">
+   <property name="text">
+    <string>OI 37</string>
+   </property>
+  </action>
+  <action name="actionEspont_neo">
+   <property name="text">
+    <string>Espontáneo</string>
+   </property>
+  </action>
+  <action name="actionSeguimiento_Lento">
+   <property name="text">
+    <string>Seguimiento Lento</string>
+   </property>
+  </action>
+  <action name="actionOptoquinetico">
+   <property name="text">
+    <string>Optoquinetico</string>
+   </property>
+  </action>
+  <action name="actionSacadas">
+   <property name="text">
+    <string>Sacadas</string>
    </property>
   </action>
  </widget>
