@@ -15,15 +15,15 @@
     },
     "data_path": "~/siev",
     "slider_settings": {
-        "slider_th_right": 34,
-        "slider_th_left": 33,
-        "slider_erode_right": 3,
-        "slider_erode_left": 4,
-        "slider_nose_width": 13,
-        "slider_brightness": 27,
-        "slider_contrast": 31,
-        "slider_vertical_cut_up": 8,
-        "slider_vertical_cut_down": -13,
+        "slider_th_right": 99,
+        "slider_th_left": 99,
+        "slider_erode_right": 6,
+        "slider_erode_left": 6,
+        "slider_nose_width": 0,
+        "slider_brightness": 64,
+        "slider_contrast": 100,
+        "slider_vertical_cut_up": 50,
+        "slider_vertical_cut_down": 50,
         "slider_height": 10
     }
 }

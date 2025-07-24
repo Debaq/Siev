@@ -35,8 +35,9 @@ class MainWindow(QMainWindow):
         
         # === CONFIGURACIÓN BÁSICA ===
         self.config_manager = ConfigManager()
-
-        self.setupUi()
+        
+        
+        self.setupUi() #==> crea a self.ui
         self.load_config()
         
         # === VARIABLES DE ESTADO ===
