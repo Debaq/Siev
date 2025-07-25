@@ -13,7 +13,9 @@ class ConfigManager:
         self.config_filename = config_filename
         self.config = {}
         self.base_path = self._get_base_path()
-        self.config_path = os.path.join(self.base_path, "config", self.config_filename)
+        data_path = self.get_data_path()
+
+        self.config_path = os.path.join(data_path, "config", self.config_filename)
         
         # Configuración por defecto
         self.default_config = {
@@ -31,7 +33,7 @@ class ConfigManager:
                 "width": 800,
                 "height": 600
             },
-            "data_path": "~/siev",  # Cambiado para usar home del usuario
+            "data_path": "~/siev_data",  # Cambiado para usar home del usuario
             "slider_settings": {
                 "slider_th_right": 16,
                 "slider_th_left": 19,
@@ -136,7 +138,7 @@ class ConfigManager:
     
     def get_data_path(self):
         """Obtener la ruta de datos configurada expandiendo ~ si es necesario"""
-        data_path = self.config.get("data_path", "~/siev")
+        data_path = self.config.get("data_path", "~/siev_data")
         return os.path.expanduser(data_path)  # Expande ~ al home del usuario
     
     def get_data_dir(self):

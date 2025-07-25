@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
         self.setup_right_click_trigger()
         
         # === MOSTRAR PROTOCOLO ===
-        QTimer.singleShot(500, self.show_protocol_selection)
+        #QTimer.singleShot(500, self.show_protocol_selection)
         
         self.showMaximized()
         print("=== SISTEMA VNG INICIADO CORRECTAMENTE ===")
@@ -98,10 +98,27 @@ class MainWindow(QMainWindow):
                 texto = f"{width}x{height}"
                 cb_resolution.addItem(texto, (width, height))
         except:
+            # Filtrar resoluciones con ancho >= 640 y FPS >= 60
+            resoluciones_filtradas = []
             for i in resoluciones:
-                _, fps = i.split("@")
-                if int(fps) >= 60:
-                    cb_resolution.addItem(i)
+                res, fps = i.split("@")
+                width, height = res.split("x")
+                
+                if int(width) >= 640 and int(fps) >= 60:
+                    resoluciones_filtradas.append((res, int(fps), i))
+            
+            # Obtener la resolución con mayor FPS para cada resolución única
+            resoluciones_unicas = {}
+            for res, fps, item_completo in resoluciones_filtradas:
+                if res not in resoluciones_unicas or fps > resoluciones_unicas[res][0]:
+                    resoluciones_unicas[res] = (fps, item_completo)
+            
+            # Agregar al combo box en orden inverso
+            items_ordenados = list(resoluciones_unicas.items())
+            items_ordenados.reverse()
+            
+            for res, (fps, item_completo) in items_ordenados:
+                cb_resolution.addItem(item_completo)
 
         cb_resolution.setCurrentText(max_res)
             

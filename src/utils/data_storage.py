@@ -23,7 +23,7 @@ class DataStorage:
         
         # Configurar rutas - usar data_path si se proporciona, sino usar por defecto
         if data_path is None:
-            data_path = os.path.expanduser("~/siev")  # Expandir ~ al home
+            data_path = os.path.expanduser("~/siev_data")  # Expandir ~ al home
         else:
             data_path = os.path.expanduser(data_path)  # Expandir ~ si está presente
         

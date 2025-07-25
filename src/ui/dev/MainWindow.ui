@@ -88,11 +88,24 @@
            </item>
            <item>
             <widget class="QPushButton" name="btn_FullScreen">
+             <property name="enabled">
+              <bool>false</bool>
+             </property>
              <property name="text">
               <string>FullScreen</string>
              </property>
              <property name="shortcut">
               <string>F</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btn_refresh_vng">
+             <property name="enabled">
+              <bool>false</bool>
+             </property>
+             <property name="text">
+              <string>Buscar VNG</string>
              </property>
             </widget>
            </item>
@@ -316,7 +329,7 @@
           <item>
            <widget class="QPushButton" name="btn_start">
             <property name="text">
-             <string>Start</string>
+             <string>Iniciar</string>
             </property>
             <property name="shortcut">
              <string>Space</string>
@@ -329,7 +342,7 @@
              <locale language="English" country="UnitedStates"/>
             </property>
             <property name="text">
-             <string>Fixed</string>
+             <string>Fijar</string>
             </property>
             <property name="checkable">
              <bool>true</bool>
@@ -418,6 +431,7 @@
     </item>
    </layout>
   </widget>
+  <widget class="QStatusBar" name="statusbar"/>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
     <rect>
@@ -427,28 +441,14 @@
      <height>30</height>
     </rect>
    </property>
-   <widget class="QMenu" name="menuArchivo">
-    <property name="title">
-     <string>Archivo</string>
-    </property>
-    <widget class="QMenu" name="menuNuevo">
-     <property name="title">
-      <string>Nuevo..</string>
-     </property>
-     <addaction name="actionCalorica"/>
-     <addaction name="actionOculomotora"/>
-     <addaction name="actionEspontaneo"/>
-     <addaction name="actionPosicional"/>
-    </widget>
-    <addaction name="menuNuevo"/>
-    <addaction name="separator"/>
-    <addaction name="actionSalir"/>
-   </widget>
    <widget class="QMenu" name="menuCalofrica">
     <property name="title">
      <string>VNG</string>
     </property>
     <widget class="QMenu" name="menuPruebas_Calor_cas">
+     <property name="enabled">
+      <bool>false</bool>
+     </property>
      <property name="title">
       <string>Pruebas Calorícas</string>
      </property>
@@ -461,6 +461,9 @@
     <addaction name="menuPruebas_Calor_cas"/>
    </widget>
    <widget class="QMenu" name="menuPosicionales">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
     <property name="title">
      <string>Posicionales</string>
     </property>
@@ -473,12 +476,26 @@
     <addaction name="actionOptoquinetico"/>
     <addaction name="actionSacadas"/>
    </widget>
+   <widget class="QMenu" name="menuArchivo">
+    <property name="title">
+     <string>Archivo</string>
+    </property>
+    <addaction name="actionAbrir"/>
+    <addaction name="actionNewUser"/>
+    <addaction name="actionExit"/>
+   </widget>
+   <widget class="QMenu" name="menuConfiguraci_n">
+    <property name="title">
+     <string>Configuración</string>
+    </property>
+    <addaction name="actionCalibrar"/>
+   </widget>
    <addaction name="menuArchivo"/>
    <addaction name="menuCalofrica"/>
    <addaction name="menuPosicionales"/>
    <addaction name="menuOculomotoras"/>
+   <addaction name="menuConfiguraci_n"/>
   </widget>
-  <widget class="QStatusBar" name="statusbar"/>
   <action name="actionSalir">
    <property name="text">
     <string>Salir</string>
@@ -525,23 +542,58 @@
    </property>
   </action>
   <action name="actionEspont_neo">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>Espontáneo</string>
    </property>
   </action>
   <action name="actionSeguimiento_Lento">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>Seguimiento Lento</string>
    </property>
   </action>
   <action name="actionOptoquinetico">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>Optoquinetico</string>
    </property>
   </action>
   <action name="actionSacadas">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>Sacadas</string>
+   </property>
+  </action>
+  <action name="actionExit">
+   <property name="text">
+    <string>Salir</string>
+   </property>
+  </action>
+  <action name="actionNewUser">
+   <property name="text">
+    <string>Nuevo Usuario...</string>
+   </property>
+  </action>
+  <action name="actionCalibrar">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Calibrar</string>
+   </property>
+  </action>
+  <action name="actionAbrir">
+   <property name="text">
+    <string>Abrir...</string>
    </property>
   </action>
  </widget>
