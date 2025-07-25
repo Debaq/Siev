@@ -154,6 +154,7 @@ class MainWindow(QMainWindow):
 
 
 
+
     def on_test_selection_changed(self, current_item, previous_item):
         """MODIFICAR método existente para manejar alternancia de video"""
         try:
@@ -168,8 +169,14 @@ class MainWindow(QMainWindow):
                 test_data = selected_test_data['test_data']
                 test_estado = test_data.get('estado', '').lower()
                 test_id = selected_test_data['test_id']
+                hora_fin = test_data.get('hora_fin')
                 
-                if test_estado == 'completada':
+                # === USAR LA MISMA LÓGICA QUE update_graph_for_selection ===
+                is_completed = (test_estado in ['completada', 'completado'] or hora_fin is not None)
+                
+                print(f"Evaluando prueba {test_id}: estado='{test_estado}', hora_fin={hora_fin}, is_completed={is_completed}")
+                
+                if is_completed:
                     # Cargar video para reproducción
                     print(f"Cargando video para prueba completada: {test_id}")
                     video_data = self.load_video_for_test(test_id)
@@ -194,12 +201,38 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error en cambio de selección: {e}")
             
-    
+
+
+    def is_test_completed(self, test_data):
+        """
+        Evaluar si una prueba está completada usando lógica unificada
+        
+        Args:
+            test_data: Datos de la prueba
+            
+        Returns:
+            bool: True si está completada, False si no
+        """
+        test_estado = test_data.get('estado', '').lower()
+        hora_fin = test_data.get('hora_fin')
+        
+        # Una prueba está completada si:
+        # 1. Tiene estado "completada" o "completado", O
+        # 2. Tiene hora_fin (aunque el estado esté vacío)
+        return (test_estado in ['completada', 'completado'] or hora_fin is not None)
+
     def load_video_for_test(self, test_id):
         """Cargar video desde archivo .siev para una prueba específica"""
         try:
             if not self.siev_manager or not self.current_user_siev:
                 print("Sistema de archivos no disponible")
+                return None
+            
+            # === AGREGAR VERIFICACIÓN PREVIA ===
+            if self.siev_manager.has_test_video(self.current_user_siev, test_id):
+                print(f"Video confirmado en .siev para {test_id}")
+            else:
+                print(f"ADVERTENCIA: No se detectó video en .siev para {test_id}")
                 return None
             
             # Extraer datos de video del archivo .siev
@@ -223,9 +256,6 @@ class MainWindow(QMainWindow):
     def update_graph_for_selection(self, current_item):
         """
         Actualizar gráfico según la selección del tree
-        
-        Args:
-            current_item: Item seleccionado en el tree
         """
         try:
             if not hasattr(self, 'plot_widget') or not self.plot_widget:
@@ -247,27 +277,22 @@ class MainWindow(QMainWindow):
             
             test_data = item_data.get('test_data')
             test_id = item_data.get('test_id')
-            test_estado = test_data.get('estado', '').lower()
             
-            # Determinar si la prueba está completada
-            # Una prueba está completada si:
-            # 1. Tiene estado "completada" o "completado", O
-            # 2. Tiene hora_fin (aunque el estado esté vacío)
-            hora_fin = test_data.get('hora_fin')
-            is_completed = (test_estado in ['completada', 'completado'] or hora_fin is not None)
+            # === USAR MÉTODO HELPER UNIFICADO ===
+            is_completed = self.is_test_completed(test_data)
             
             if is_completed:
                 # Prueba completada: cargar datos CSV
-                print(f"Cargando datos de prueba completada: {test_id} (estado: '{test_estado}', hora_fin: {hora_fin})")
+                print(f"Cargando datos de prueba completada: {test_id} (estado: '{test_data.get('estado')}', hora_fin: {test_data.get('hora_fin')})")
                 self.load_test_data_to_graph(test_id, test_data)
             else:
                 # Prueba pendiente/en progreso: limpiar gráfico
-                print(f"Prueba no completada (estado: '{test_estado}', hora_fin: {hora_fin}) - limpiando gráfico")
+                print(f"Prueba no completada (estado: '{test_data.get('estado')}', hora_fin: {test_data.get('hora_fin')}) - limpiando gráfico")
                 self.plot_widget.clearPlots()
                 
         except Exception as e:
             print(f"Error actualizando gráfico para selección: {e}")
-
+            
     def load_test_data_to_graph(self, test_id, test_data):
         """
         Cargar datos CSV de una prueba completada al gráfico
@@ -1966,6 +1991,39 @@ class MainWindow(QMainWindow):
             print(f"Texto botón: {self.ui.btn_start.text()}")
             print("========================")
 
+
+
+    def debug_siev_content(self, test_id):
+        """Debug: Mostrar contenido del .siev para una prueba"""
+        try:
+            import tarfile
+            
+            if not self.current_user_siev:
+                print("No hay archivo .siev cargado")
+                return
+            
+            print(f"=== DEBUG .SIEV PARA {test_id} ===")
+            
+            with tarfile.open(self.current_user_siev, 'r:gz') as tar:
+                # Listar todos los archivos
+                members = tar.getnames()
+                print(f"Archivos en .siev: {members}")
+                
+                # Buscar archivos relacionados con la prueba
+                test_files = [m for m in members if test_id in m]
+                print(f"Archivos de la prueba {test_id}: {test_files}")
+                
+                # Verificar específicamente el video
+                video_path = f"videos/{test_id}.mp4"
+                if video_path in members:
+                    video_member = tar.getmember(video_path)
+                    print(f"Video encontrado: {video_path} ({video_member.size} bytes)")
+                else:
+                    print(f"Video NO encontrado: {video_path}")
+                    
+        except Exception as e:
+            print(f"Error en debug .siev: {e}")
+            
 
     def keyPressEvent(self, event):
         """Manejar teclas de acceso rápido"""
