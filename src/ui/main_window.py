@@ -16,7 +16,7 @@ from ui.dialogs.tracking_dialog import TrackingCalibrationDialog
 from utils.serial_thread import SerialReadThread
 from utils.stimulus_system import StimulusManager
 from utils.SerialHandler import SerialHandler
-from utils.VideoWidget import VideoWidget
+from utils.video.video_widget import VideoWidget
 from utils.DetectorNistagmo import DetectorNistagmo
 from utils.EyeDataProcessor import EyeDataProcessor
 from utils.CalibrationManager import CalibrationManager
