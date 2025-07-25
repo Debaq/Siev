@@ -19,7 +19,7 @@ class DeploymentWorker(QThread):
         self.project_path = Path(project_path)
         
     def run(self):
-        """Ejecuta el deployment de old_version -> alpha_version"""
+        """Ejecuta el deployment de development -> alpha_version"""
         try:
             self.status_changed.emit("Verificando repositorio...")
             self.progress_changed.emit(10)
@@ -29,20 +29,20 @@ class DeploymentWorker(QThread):
                 self.finished.emit(False, "No es un repositorio Git válido")
                 return
             
-            self.status_changed.emit("Verificando rama old_version...")
+            self.status_changed.emit("Verificando rama development...")
             self.progress_changed.emit(20)
             
-            # Verificar que existe rama old_version
-            if not self._branch_exists("old_version"):
-                self.finished.emit(False, "La rama 'old_version' no existe")
+            # Verificar que existe rama development
+            if not self._branch_exists("development"):
+                self.finished.emit(False, "La rama 'development' no existe")
                 return
             
-            self.status_changed.emit("Cambiando a rama old_version...")
+            self.status_changed.emit("Cambiando a rama development...")
             self.progress_changed.emit(30)
             
-            # Checkout a old_version
-            if not self._checkout_branch("old_version"):
-                self.finished.emit(False, "Error al cambiar a rama old_version")
+            # Checkout a development
+            if not self._checkout_branch("development"):
+                self.finished.emit(False, "Error al cambiar a rama development")
                 return
             
             self.status_changed.emit("Descartando cambios locales...")
@@ -72,7 +72,7 @@ class DeploymentWorker(QThread):
             self.status_changed.emit("Deployment completado exitosamente")
             self.progress_changed.emit(100)
             
-            self.finished.emit(True, "Deployment realizado correctamente:\nold_version → alpha_version")
+            self.finished.emit(True, "Deployment realizado correctamente:\ndevelopment → alpha_version")
             
         except Exception as e:
             self.finished.emit(False, f"Error inesperado: {str(e)}")
@@ -134,7 +134,7 @@ class DeploymentWorker(QThread):
             return False
     
     def _create_or_reset_alpha(self):
-        """Crea o resetea la rama alpha_version con el contenido de old_version"""
+        """Crea o resetea la rama alpha_version con el contenido de development"""
         try:
             # Si alpha_version existe, la eliminamos
             subprocess.run(
@@ -144,7 +144,7 @@ class DeploymentWorker(QThread):
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             )
             
-            # Crear nueva rama alpha_version desde old_version actual
+            # Crear nueva rama alpha_version desde development actual
             result = subprocess.run(
                 ["git", "checkout", "-b", "alpha_version"],
                 cwd=self.project_path,
@@ -183,7 +183,7 @@ class DeploymentDialog(QDialog):
         
     def setup_ui(self):
         """Configura la interfaz de usuario"""
-        self.setWindowTitle("Deployment - old_version → alpha_version")
+        self.setWindowTitle("Deployment - development → alpha_version")
         self.setFixedSize(450, 250)
         self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint)
         
@@ -201,7 +201,7 @@ class DeploymentDialog(QDialog):
         layout.addWidget(title)
         
         # Mensaje
-        self.message_label = QLabel("¿Desea hacer deployment de old_version → alpha_version?\n\n"
+        self.message_label = QLabel("¿Desea hacer deployment de development → alpha_version?\n\n"
                                   "⚠️ ADVERTENCIA: Se perderá todo el contenido actual de alpha_version")
         self.message_label.setWordWrap(True)
         self.message_label.setAlignment(Qt.AlignCenter)
