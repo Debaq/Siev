@@ -558,51 +558,37 @@ class ProtocolManager:
             test_data: Datos de la prueba desde data_storage
             
         Returns:
-            str: Datos en formato CSV
+            List[Dict]: Lista de diccionarios con los datos (formato esperado por SievManager)
         """
         try:
-            import io
-            import csv
+            # Preparar lista de diccionarios en lugar de cadena CSV
+            csv_data = []
             
-            # Crear buffer para CSV
-            csv_buffer = io.StringIO()
-            
-            # Headers CSV
-            headers = [
-                'timestamp', 'recording_time', 
-                'left_eye_x', 'left_eye_y', 'left_eye_detected',
-                'right_eye_x', 'right_eye_y', 'right_eye_detected',
-                'imu_x', 'imu_y', 'imu_z'
-            ]
-            
-            writer = csv.writer(csv_buffer)
-            writer.writerow(headers)
-            
-            # Escribir datos
+            # Procesar cada muestra - usar estructura real de data_storage
             for sample in test_data.get('data', []):
-                eye_data = sample.get('eye_data', {})
-                imu_data = sample.get('imu_data', {})
+                # Los datos vienen directamente del data_storage sin anidamiento
+                row_dict = {
+                    'timestamp': sample.get('timestamp', 0),
+                    'recording_time': sample.get('timestamp', 0),  # usar timestamp como recording_time
+                    'left_eye_x': sample.get('left_eye_x', 0),
+                    'left_eye_y': sample.get('left_eye_y', 0),
+                    'left_eye_detected': sample.get('left_eye_detected', False),
+                    'right_eye_x': sample.get('right_eye_x', 0),
+                    'right_eye_y': sample.get('right_eye_y', 0),
+                    'right_eye_detected': sample.get('right_eye_detected', False),
+                    'imu_x': sample.get('imu_x', 0),
+                    'imu_y': sample.get('imu_y', 0),
+                    'imu_z': 0  # No hay imu_z en data_storage, usar 0
+                }
                 
-                row = [
-                    sample.get('timestamp', 0),
-                    sample.get('recording_time', 0),
-                    eye_data.get('left_eye_x', 0),
-                    eye_data.get('left_eye_y', 0),
-                    eye_data.get('left_eye_detected', False),
-                    eye_data.get('right_eye_x', 0),
-                    eye_data.get('right_eye_y', 0),
-                    eye_data.get('right_eye_detected', False),
-                    imu_data.get('x', 0),
-                    imu_data.get('y', 0),
-                    imu_data.get('z', 0)
-                ]
-                writer.writerow(row)
+                csv_data.append(row_dict)
             
-            return csv_buffer.getvalue()
+            print(f"Datos CSV preparados: {len(csv_data)} muestras")
+            return csv_data
             
         except Exception as e:
             print(f"Error preparando datos CSV: {e}")
-            return ""
+            return []
 
     def _get_test_metadata(self, test_id):
         """

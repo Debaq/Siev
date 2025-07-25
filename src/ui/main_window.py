@@ -51,7 +51,7 @@ class MainWindow(QMainWindow):
         res_video = CameraResolutionDetector()
         resolution_video =res_video.listar_resoluciones(self.camera_index)
         #aca vamos a seleccionar la mejor resolución
-        max_res = select_max_resolution(resolution_video)
+        max_res = select_max_resolution(resolution_video, True)
         self.fill_cmbres(self.ui.cb_resolution, resolution_video, max_res)
         # === SISTEMA DE GRABACIÓN ===
         self.is_recording = False

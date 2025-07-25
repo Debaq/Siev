@@ -369,28 +369,49 @@ class SievManager:
     def _add_csv_to_tar(self, tar: tarfile.TarFile, csv_data: List[Dict], filename: str):
         """Agrega datos CSV al tar"""
         import csv
+        import io
         
         if not csv_data:
             return
         
-        # Crear CSV en memoria
-        csv_buffer = BytesIO()
-        csv_text = BytesIO()
-        
-        # Escribir CSV como texto
-        fieldnames = csv_data[0].keys() if csv_data else []
-        writer = csv.DictWriter(csv_text, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(csv_data)
-        
-        # Convertir a bytes
-        csv_bytes = csv_text.getvalue().encode('utf-8')
-        
-        tarinfo = tarfile.TarInfo(name=filename)
-        tarinfo.size = len(csv_bytes)
-        tarinfo.mtime = int(time.time())
-        
-        tar.addfile(tarinfo, BytesIO(csv_bytes))
+        try:
+            # Convertir numpy types a tipos nativos de Python si es necesario
+            processed_data = []
+            for row in csv_data:
+                processed_row = {}
+                for key, value in row.items():
+                    # Convertir numpy types a tipos nativos
+                    if hasattr(value, 'item'):  # numpy types tienen el método .item()
+                        processed_row[key] = value.item()
+                    else:
+                        processed_row[key] = value
+                processed_data.append(processed_row)
+            
+            # Usar StringIO para escribir texto CSV
+            csv_text_buffer = io.StringIO()
+            
+            # Escribir CSV como texto
+            fieldnames = processed_data[0].keys() if processed_data else []
+            writer = csv.DictWriter(csv_text_buffer, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(processed_data)
+            
+            # Obtener el texto CSV y convertir a bytes
+            csv_text = csv_text_buffer.getvalue()
+            csv_bytes = csv_text.encode('utf-8')
+            
+            # Crear TarInfo y agregar al tar
+            tarinfo = tarfile.TarInfo(name=filename)
+            tarinfo.size = len(csv_bytes)
+            tarinfo.mtime = int(time.time())
+            
+            tar.addfile(tarinfo, BytesIO(csv_bytes))
+            
+            print(f"CSV agregado al tar: {filename} ({len(processed_data)} filas)")
+            
+        except Exception as e:
+            print(f"Error agregando CSV al tar: {e}")
+            raise
     
     def _add_file_to_tar(self, tar: tarfile.TarFile, file_path: str, archive_name: str):
         """Agrega un archivo existente al tar"""
