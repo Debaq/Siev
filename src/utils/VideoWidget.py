@@ -260,7 +260,8 @@ class VideoProcesses:
             y_offset = (new_h - new_height) // 2
             x_offset = (w - new_width) // 2
             final_frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = resized_combined
-            
+
+
             # Convertir a gris para detección
             gray = cv2.cvtColor(final_frame, cv2.COLOR_BGR2GRAY)
             
@@ -451,7 +452,8 @@ class VideoProcesses:
             # Publicar resultado final para la UI
             output = {
                 'frame': final_frame,
-                'pupil_positions': pupil_positions
+                'pupil_positions': pupil_positions,
+                'gray' : gray
             }
             
             self.ui_queue.put(output)
@@ -659,7 +661,7 @@ class VideoProcesses:
 
     
 class VideoThread(QThread):
-    frame_ready = Signal(np.ndarray, object)
+    frame_ready = Signal(np.ndarray, object, object)  
     
     def __init__(self, camera_id=2, cap_width=960, 
                  cap_height=540, cap_fps=120, 
@@ -789,12 +791,12 @@ class VideoThread(QThread):
                     output = self.vp.ui_queue.get()
                     frame = output['frame']
                     pupil_positions = output['pupil_positions']
-                    
+                    gray = output.get('gray', None)  # Obtener gray del output
                     # Aquí está el problema - necesitamos usar .value para acceder a la variable compartida
                     self.vp.slider_th_pressed.value = self.slider_th_pressed
                     
                     # Emitir frame y posiciones
-                    self.frame_ready.emit(frame, pupil_positions)
+                    self.frame_ready.emit(frame, pupil_positions, gray)
                 else:
                     # Dormir un poco para no sobrecargar la CPU
                     time.sleep(0.001)
@@ -840,8 +842,10 @@ class VideoThread(QThread):
 class VideoWidget(QObject):
     sig_pos = Signal(list)
 
-    def __init__(self, camera_frame, sliders, cbres, camera_id=2):
+    def __init__(self, camera_frame, sliders, cbres, camera_id=2, video_callback=None):
         super().__init__()
+
+        self.video_callback = video_callback
 
         # Guardar referencias a los widgets de UI
         self.cbres = cbres        
@@ -1029,7 +1033,7 @@ class VideoWidget(QObject):
     
    
 
-    def update_frame(self, frame, pupil_positions):
+    def update_frame(self, frame, pupil_positions, gray_frame=None):
         """Actualiza el frame de video y las posiciones de las pupilas"""
         try:          
             # Actualizar la imagen
@@ -1054,7 +1058,10 @@ class VideoWidget(QObject):
                     if current_size.width() != width or current_size.height() != height:
                         print(f"Ajustando tamaño del widget a {width}x{height}")
                         self.camera_frame.setFixedSize(width, height)
-            
+
+            if gray_frame is not None and self.video_callback:
+                self.video_callback(gray_frame)  # main_window decide si procesar o no
+
             # Actualizar posiciones de ojos
             self.pos_eye = pupil_positions
             

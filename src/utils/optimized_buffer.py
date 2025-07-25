@@ -110,9 +110,9 @@ class OptimizedBuffer:
                 visible_indices.append(i)
         
         if not visible_indices:
-            print(f"DEBUG: No hay datos visibles. start_time={start_time}, current_time={current_time}")
-            print(f"       Primer timestamp: {self.timestamps[0] if self.timestamps else 'N/A'}")
-            print(f"       Último timestamp: {self.timestamps[-1] if self.timestamps else 'N/A'}")
+            #print(f"DEBUG: No hay datos visibles. start_time={start_time}, current_time={current_time}")
+            #print(f"       Primer timestamp: {self.timestamps[0] if self.timestamps else 'N/A'}")
+            #print(f"       Último timestamp: {self.timestamps[-1] if self.timestamps else 'N/A'}")
             return self._empty_data()
         
         # Extraer datos visibles

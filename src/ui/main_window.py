@@ -84,6 +84,8 @@ class MainWindow(QMainWindow):
         self.init_calibration_system()
         self.init_graphics_system()
         self.init_recording_system()
+        self.init_video_recorder()
+
         self.init_processing_system()
         self.init_user_system()
 
@@ -103,6 +105,22 @@ class MainWindow(QMainWindow):
                 # Conectar todos los sliders
 
 
+    def handle_gray_frame_for_video(self, gray_frame):
+        """Callback para manejar frames gray para grabación"""
+        if (self.video_recorder and 
+            self.video_recorder.is_recording and 
+            self.is_recording):
+            self.video_recorder.add_frame(gray_frame)
+                
+    def init_video_recorder(self):
+        """Inicializar grabador de video"""
+        try:
+            from utils.VideoRecorder import VideoRecorder
+            self.video_recorder = VideoRecorder(self)
+            print("VideoRecorder inicializado")
+        except Exception as e:
+            print(f"Error inicializando VideoRecorder: {e}")
+            self.video_recorder = None
 
     def init_test_selection_system(self):
         """
@@ -470,7 +488,9 @@ class MainWindow(QMainWindow):
                 self.ui.CameraFrame, 
                 slider_list,
                 self.ui.cb_resolution,
-                camera_id=self.camera_index
+                camera_id=self.camera_index,
+                video_callback=self.handle_gray_frame_for_video
+
             )
 
             for i, slider in enumerate(slider_list):
@@ -1164,7 +1184,7 @@ class MainWindow(QMainWindow):
         """
         MODIFICAR EL MÉTODO EXISTENTE - Iniciar grabación real
         """
-        print("=== INICIANDO GRABACIÓN ===")
+        print("=== INICIANDO GRABACIÓN ENTRAMOS A START_RECORDING ===")
         self.is_calibrating = False
         self.is_recording = True
         self.recording_start_time = time.time()
@@ -1181,9 +1201,18 @@ class MainWindow(QMainWindow):
             self.plot_widget.clear_data()
             self.plot_widget.set_recording_state(True)
         
+        # === INICIAR GRABACIÓN DE VIDEO ===
+        if self.video_recorder:
+            # Obtener protocolo de la prueba actual
+            current_test_data = self.get_selected_test_data()
+            if current_test_data:
+                protocol = current_test_data['test_data'].get('tipo', 'desconocido')
+                test_id = f"test_{int(time.time())}"
+                print(f"DEBUG: Iniciando video para protocolo: {protocol}")
+                self.video_recorder.start_recording(test_id)
+        
         # Actualizar UI usando el nuevo sistema
         self.update_test_ui_state()
-
 
     def stop_recording(self):
         """
@@ -1191,24 +1220,54 @@ class MainWindow(QMainWindow):
         """
         print("=== DETENIENDO GRABACIÓN ===")
         
-        # Lógica de detención existente
+        was_recording = self.is_recording
+        
+        # Estados
         self.is_recording = False
         self.is_calibrating = False
+        self.recording_start_time = None
+        self.last_update_time = None
+        self.graph_time = 0.0
         self.send_to_graph = False
         
-        if self.data_storage:
-            recording_data = self.data_storage.stop_recording()
+        # Detener almacenamiento de datos
+        if was_recording:
+            self.data_storage.stop_recording()
             
-            if recording_data:
-                current_test_id = self.protocol_manager.get_current_test_id()
-                if current_test_id:
-                    self.protocol_manager.finalize_test(current_test_id, recording_data, stopped_manually=True)
+            # Mostrar estadísticas finales
+            stats = self.data_storage.get_statistics()
+            print(f"Grabación completada:")
+            print(f"  - Total de muestras: {stats.get('total_samples', 0)}")
+            print(f"  - Duración: {stats.get('duration_seconds', 0):.1f}s")
+            print(f"  - Tasa de muestreo: {stats.get('sample_rate', 0):.1f} Hz")
+            print(f"  - Detección ojo izq: {stats.get('left_eye_detection_rate', 0):.1f}%")
+            print(f"  - Detección ojo der: {stats.get('right_eye_detection_rate', 0):.1f}%")
         
+        # === DETENER Y GUARDAR VIDEO ===
+        if self.video_recorder and self.video_recorder.is_recording:
+            video_path = self.video_recorder.stop_recording()
+            if video_path:
+                # Guardar en .siev
+                success = self.video_recorder.save_to_siev(video_path)
+                if success:
+                    print("Video guardado exitosamente en archivo .siev")
+                else:
+                    print("Error guardando video en archivo .siev")
+            else:
+                print("Error: No se pudo obtener el archivo de video")
+        
+        # Configurar gráfica para exploración
         if self.plot_widget:
             self.plot_widget.set_recording_state(False)
         
-        # Restaurar display normal de la prueba
+        # UI
+        self.ui.btn_start.setText("Iniciar")
+        self.ui.lbl_time.setText("00:00 / 05:00")
+        
+        # Actualizar estado del sistema de pruebas
         self.update_test_ui_state()
+        
+        print("Grabación detenida")
 
 
     def update_recording_time(self):
