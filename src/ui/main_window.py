@@ -92,6 +92,8 @@ class MainWindow(QMainWindow):
         self.setup_timers()
         self.init_stimulus_system()
         self.setup_right_click_trigger()
+        self.init_test_selection_system()
+
         
         # === MOSTRAR PROTOCOLO ===
         #QTimer.singleShot(500, self.show_protocol_selection)
@@ -99,6 +101,259 @@ class MainWindow(QMainWindow):
         self.showMaximized()
         print("=== SISTEMA VNG INICIADO CORRECTAMENTE ===")
                 # Conectar todos los sliders
+
+
+
+    def init_test_selection_system(self):
+        """
+        Inicializar sistema de selección de pruebas
+        AGREGAR AL FINAL DE __init__ en MainWindow
+        """
+        try:
+            # Variables de estado
+            self.is_reproducing = False
+            
+            # Conectar señal de selección del tree
+            self.ui.listTestWidget.currentItemChanged.connect(self.on_test_selection_changed)
+            
+            # Inicializar estado del botón
+            self.update_test_ui_state()
+            
+            print("Sistema de selección de pruebas inicializado")
+            
+        except Exception as e:
+            print(f"Error inicializando sistema de selección: {e}")
+
+
+
+    # ========================================
+    # MANEJO DE SELECCIÓN DE PRUEBAS
+    # ========================================
+
+    def on_test_selection_changed(self, current_item, previous_item):
+        """Manejar cambio de selección en el tree de pruebas"""
+        try:
+            self.update_test_ui_state()
+        except Exception as e:
+            print(f"Error en cambio de selección: {e}")
+
+    def get_selected_test_data(self):
+        """Obtener datos de la prueba seleccionada"""
+        try:
+            current_item = self.ui.listTestWidget.currentItem()
+            
+            if current_item and current_item.parent():  # Es un item de prueba
+                item_data = current_item.data(0, Qt.UserRole)
+                if item_data:
+                    return item_data
+                    
+            return None
+            
+        except Exception as e:
+            print(f"Error obteniendo datos de prueba seleccionada: {e}")
+            return None
+        
+    # ========================================
+    # ACTUALIZACIÓN DE ESTADO DE UI
+    # ========================================
+
+    def update_test_ui_state(self):
+        """Actualizar estado de UI según la prueba seleccionada"""
+        try:
+            selected_test_data = self.get_selected_test_data()
+            
+            if not selected_test_data:
+                # Sin selección
+                self._set_no_selection_state()
+            else:
+                test_data = selected_test_data['test_data']
+                test_name = test_data.get('tipo', 'Prueba')
+                test_estado = test_data.get('estado', '').lower()
+                
+                # Actualizar label de prueba
+                self._set_test_name_display(test_name)
+                
+                # Configurar botón según estado
+                if test_estado == 'completada':
+                    self._set_reproduction_button_state()
+                elif test_estado in ['pendiente', 'ejecutando']:
+                    self._set_recording_button_state()
+                else:
+                    self._set_unknown_state()
+                    
+        except Exception as e:
+            print(f"Error actualizando estado de UI: {e}")
+
+    def _set_no_selection_state(self):
+        """Estado: Sin prueba seleccionada"""
+        self.ui.lbl_test.setText("Selecciona una prueba")
+        self.ui.lbl_test.setStyleSheet("")
+        self.ui.btn_start.setText("Iniciar")
+        self.ui.btn_start.setEnabled(False)
+
+    def _set_test_name_display(self, test_name):
+        """Mostrar nombre de prueba con formato mejorado"""
+        self.ui.lbl_test.setText(test_name)
+        self.ui.lbl_test.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                font-weight: bold;
+                color: #2196F3;
+                padding: 5px;
+            }
+        """)
+
+    def _set_reproduction_button_state(self):
+        """Estado: Prueba completada - botón de reproducción"""
+        if self.is_reproducing:
+            self.ui.btn_start.setText("Pausar")
+            self.ui.btn_start.setStyleSheet("""
+                QPushButton {
+                    background-color: #FF9800; 
+                    color: white; 
+                    font-weight: bold;
+                    font-size: 14px; 
+                    padding: 10px; 
+                    border: none; 
+                    border-radius: 5px;
+                }
+                QPushButton:hover { background-color: #F57C00; }
+            """)
+        else:
+            self.ui.btn_start.setText("Reproducir")
+            self.ui.btn_start.setStyleSheet("""
+                QPushButton {
+                    background-color: #9C27B0; 
+                    color: white; 
+                    font-weight: bold;
+                    font-size: 14px; 
+                    padding: 10px; 
+                    border: none; 
+                    border-radius: 5px;
+                }
+                QPushButton:hover { background-color: #7B1FA2; }
+            """)
+        self.ui.btn_start.setEnabled(True)
+
+    def _set_recording_button_state(self):
+        """Estado: Prueba nueva/en ejecución - botón de grabación"""
+        if self.is_recording or self.is_calibrating:
+            self.ui.btn_start.setText("Detener")
+            self.ui.btn_start.setStyleSheet("""
+                QPushButton {
+                    background-color: #f44336; 
+                    color: white; 
+                    font-weight: bold;
+                    font-size: 14px; 
+                    padding: 10px; 
+                    border: none; 
+                    border-radius: 5px;
+                }
+                QPushButton:hover { background-color: #da190b; }
+            """)
+        else:
+            self.ui.btn_start.setText("Iniciar")
+            self.ui.btn_start.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50; 
+                    color: white; 
+                    font-weight: bold;
+                    font-size: 14px; 
+                    padding: 10px; 
+                    border: none; 
+                    border-radius: 5px;
+                }
+                QPushButton:hover { background-color: #45a049; }
+            """)
+        self.ui.btn_start.setEnabled(True)
+
+    def _set_unknown_state(self):
+        """Estado: Prueba con estado desconocido"""
+        self.ui.btn_start.setText("Iniciar")
+        self.ui.btn_start.setEnabled(False)
+
+
+    # ========================================
+    # 4. DISPLAY DE TIEMPO EN LBL_TEST
+    # ========================================
+
+    def update_time_display_in_test_label(self, time_text):
+        """Actualizar display de tiempo en el label de prueba durante ejecución/reproducción"""
+        try:
+            selected_test_data = self.get_selected_test_data()
+            
+            if selected_test_data:
+                test_name = selected_test_data['test_data'].get('tipo', 'Prueba')
+                
+                # Mostrar nombre y tiempo con formato grande y visible
+                display_text = f"{test_name}\n{time_text}"
+                
+                self.ui.lbl_test.setText(display_text)
+                self.ui.lbl_test.setStyleSheet("""
+                    QLabel {
+                        font-size: 18px;
+                        font-weight: bold;
+                        color: #1976D2;
+                        background-color: #E3F2FD;
+                        border: 2px solid #2196F3;
+                        border-radius: 8px;
+                        padding: 10px;
+                        text-align: center;
+                    }
+                """)
+                
+        except Exception as e:
+            print(f"Error actualizando display de tiempo: {e}")
+
+    def update_recording_display(self):
+        """Actualizar display de tiempo durante grabación"""
+        try:
+            if not (self.is_recording or self.is_calibrating):
+                return
+                
+            current_time = time.time()
+            
+            if self.is_calibrating:
+                # Durante calibración
+                elapsed = current_time - self.recording_start_time
+                remaining = max(0, self.CALIBRATION_TIME - elapsed)
+                time_text = f"Calibrando: {remaining:.1f}s"
+                
+            elif self.is_recording:
+                # Durante grabación
+                elapsed = current_time - self.recording_start_time
+                time_text = f"Grabando: {elapsed:.1f}s"
+                
+                # Agregar duración total si está disponible
+                if hasattr(self, 'total_recording_time') and self.total_recording_time:
+                    progress = (elapsed / self.total_recording_time) * 100
+                    time_text += f" ({progress:.1f}%)"
+            
+            # Actualizar display en lbl_test
+            self.update_time_display_in_test_label(time_text)
+            
+        except Exception as e:
+            print(f"Error actualizando display de grabación: {e}")
+
+    def update_reproduction_display(self, current_time, total_time):
+        """Actualizar display durante reproducción"""
+        try:
+            if not self.is_reproducing:
+                return
+                
+            progress = (current_time / total_time) * 100 if total_time > 0 else 0
+            time_text = f"Reproduciendo: {current_time:.1f}s / {total_time:.1f}s ({progress:.1f}%)"
+            
+            self.update_time_display_in_test_label(time_text)
+            
+        except Exception as e:
+            print(f"Error actualizando display de reproducción: {e}")
+
+
+
+
+
+
 
     def fill_cmbres(self, cb_resolution, resoluciones, max_res):
         """
@@ -629,23 +884,114 @@ class MainWindow(QMainWindow):
 
     def toggle_recording(self):
         """
-        Manejo completo del botón Iniciar/Detener con integración de protocol_manager
+        Manejo completo del botón Iniciar/Detener/Reproducir/Pausar
+        REEMPLAZA EL MÉTODO EXISTENTE
         """
         try:
-            # Estado: Iniciar nueva prueba
-            if not self.is_recording and not self.is_calibrating and self.ui.btn_start.text() == "Iniciar":
-                self.start_test_recording()
+            selected_test_data = self.get_selected_test_data()
+            
+            if not selected_test_data:
+                print("No hay prueba seleccionada")
+                return
                 
-            # Estado: Detener prueba en curso
-            elif (self.is_recording or self.is_calibrating) and self.ui.btn_start.text() == "Detener":
-                self.stop_test_recording()
-                
-            # Estado: Prueba finalizada - no hacer nada
-            elif self.ui.btn_start.text() == "Finalizado":
-                print("Prueba ya finalizada. Crear nueva prueba para continuar.")
-                
+            test_data = selected_test_data['test_data']
+            test_estado = test_data.get('estado', '').lower()
+            button_text = self.ui.btn_start.text()
+            
+            # Manejar reproducción de pruebas completadas
+            if test_estado == 'completada':
+                if button_text == "Reproducir":
+                    self.iniciar_reproduccion()
+                elif button_text == "Pausar":
+                    self.pausar_reproduccion()
+                    
+            # Manejar grabación de pruebas nuevas
+            elif test_estado in ['pendiente', 'ejecutando']:
+                if button_text == "Iniciar":
+                    self.start_test_recording()
+                elif button_text == "Detener":
+                    self.stop_test_recording()
+                    
         except Exception as e:
             print(f"Error en toggle_recording: {e}")
+
+
+
+
+    # ========================================
+    # 6. FUNCIONES DE REPRODUCCIÓN
+    # ========================================
+
+    def iniciar_reproduccion(self):
+        """Iniciar reproducción de una prueba completada"""
+        try:
+            selected_test_data = self.get_selected_test_data()
+            
+            if not selected_test_data:
+                print("No hay prueba seleccionada para reproducir")
+                return
+                
+            test_data = selected_test_data['test_data']
+            test_id = selected_test_data['test_id']
+            
+            print(f"Iniciando reproducción de prueba: {test_data.get('tipo', 'Desconocida')}")
+            
+            # Llamar al método reproducir
+            self.reproducir()
+            
+            # Actualizar estado
+            self.is_reproducing = True
+            self.update_test_ui_state()
+            
+        except Exception as e:
+            print(f"Error iniciando reproducción: {e}")
+
+    def pausar_reproduccion(self):
+        """Pausar reproducción actual"""
+        try:
+            print("Pausando reproducción")
+            
+            # Pausar la reproducción (implementar según necesidades)
+            
+            self.is_reproducing = False
+            self.update_test_ui_state()
+            
+        except Exception as e:
+            print(f"Error pausando reproducción: {e}")
+
+    def reproducir(self):
+        """
+        Método para reproducir una prueba completada
+        IMPLEMENTACIÓN PENDIENTE - estructura base
+        """
+        try:
+            selected_test_data = self.get_selected_test_data()
+            
+            if not selected_test_data:
+                print("No hay prueba seleccionada para reproducir")
+                return
+                
+            test_data = selected_test_data['test_data']
+            test_id = selected_test_data['test_id']
+            
+            print(f"=== REPRODUCIENDO PRUEBA ===")
+            print(f"ID: {test_id}")
+            print(f"Tipo: {test_data.get('tipo', 'Desconocida')}")
+            print(f"Fecha: {test_data.get('fecha', 'Sin fecha')}")
+            print(f"Evaluador: {test_data.get('evaluador', 'Desconocido')}")
+            
+            # TODO: Implementar lógica específica de reproducción
+            # - Cargar datos CSV de la prueba
+            # - Configurar gráficos para mostrar datos grabados
+            # - Implementar controles de reproducción
+            # - Mostrar progreso en el display de tiempo
+            
+            print("Método reproducir() - estructura lista para implementación")
+            
+        except Exception as e:
+            print(f"Error en método reproducir: {e}")
+
+
 
     def start_test_recording(self):
         """Iniciar grabación con integración de protocolo"""
@@ -748,16 +1094,18 @@ class MainWindow(QMainWindow):
 
     def reset_button_for_new_test(self):
         """
-        Resetear botón para nueva prueba (llamar desde protocol_manager al crear prueba)
+        MODIFICAR EL MÉTODO EXISTENTE - Resetear botón para nueva prueba
         """
         try:
-            self.ui.btn_start.setText("Iniciar")
-            self.ui.btn_start.setEnabled(True)
-            
             # Resetear estados
             if hasattr(self, 'test_preparation_mode'):
                 self.test_preparation_mode = False
                 self.test_ready_to_start = False
+            
+            self.is_reproducing = False
+            
+            # Actualizar UI usando el nuevo sistema
+            self.update_test_ui_state()
             
             print("Botón reseteado para nueva prueba")
             
@@ -766,9 +1114,37 @@ class MainWindow(QMainWindow):
 
 
 
+    def update_time_displays(self):
+        """
+        Método unificado para actualizar displays de tiempo
+        USAR EN TIMERS EXISTENTES en lugar de actualizar lbl_time directamente
+        """
+        try:
+            # Durante calibración o grabación
+            if self.is_recording or self.is_calibrating:
+                self.update_recording_display()
+            
+            # Durante reproducción
+            elif self.is_reproducing:
+                # Integrar con sistema de reproducción cuando esté implementado
+                # self.update_reproduction_display(current_time, total_time)
+                pass
+                
+            # Otras actualizaciones de tiempo (nistagmo timer, etc.)
+            # pueden continuar normalmente
+            
+        except Exception as e:
+            print(f"Error actualizando displays de tiempo: {e}")
+
+
+    # ========================================
+    # 7. MODIFICACIONES A MÉTODOS EXISTENTES
+    # ========================================
 
     def start_calibration_phase(self):
-        """Iniciar fase de calibración"""
+        """
+        MODIFICAR EL MÉTODO EXISTENTE - Iniciar fase de calibración
+        """
         print("=== INICIANDO CALIBRACIÓN ===")
         self.is_calibrating = True
         self.eye_processor.reset_calibration()
@@ -777,15 +1153,17 @@ class MainWindow(QMainWindow):
         self.last_update_time = time.time()
         self.graph_time = -self.CALIBRATION_TIME
         
-        self.ui.btn_start.setText("Calibrando...")
-        self.ui.btn_start.setEnabled(False)
-        self.ui.lbl_time.setText(f"Calibrando: {self.CALIBRATION_TIME}s")
+        # Actualizar UI con nuevo sistema
+        self.update_test_ui_state()
+        self.update_time_display_in_test_label(f"Calibrando: {self.CALIBRATION_TIME}s")
         
         self.send_to_graph = True
         QTimer.singleShot(self.CALIBRATION_TIME * 1000, self.start_recording)
 
     def start_recording(self):
-        """Iniciar grabación real"""
+        """
+        MODIFICAR EL MÉTODO EXISTENTE - Iniciar grabación real
+        """
         print("=== INICIANDO GRABACIÓN ===")
         self.is_calibrating = False
         self.is_recording = True
@@ -803,34 +1181,35 @@ class MainWindow(QMainWindow):
             self.plot_widget.clear_data()
             self.plot_widget.set_recording_state(True)
         
-        self.ui.btn_start.setText("Detener")
-        self.ui.btn_start.setEnabled(True)
-        
-        self.total_data_points = 0
-        print(f"Grabación iniciada: {filename}")
+        # Actualizar UI usando el nuevo sistema
+        self.update_test_ui_state()
+
 
     def stop_recording(self):
-        """Detener grabación"""
+        """
+        MODIFICAR EL MÉTODO EXISTENTE - Detener grabación
+        """
         print("=== DETENIENDO GRABACIÓN ===")
-        was_recording = self.is_recording
         
+        # Lógica de detención existente
         self.is_recording = False
         self.is_calibrating = False
-        self.recording_start_time = None
-        self.last_update_time = None
-        self.graph_time = 0.0
         self.send_to_graph = False
         
-        if was_recording:
-            self.data_storage.stop_recording()
-            stats = self.data_storage.get_statistics()
-            print(f"Grabación completada: {stats.get('total_samples', 0)} muestras")
+        if self.data_storage:
+            recording_data = self.data_storage.stop_recording()
+            
+            if recording_data:
+                current_test_id = self.protocol_manager.get_current_test_id()
+                if current_test_id:
+                    self.protocol_manager.finalize_test(current_test_id, recording_data, stopped_manually=True)
         
         if self.plot_widget:
             self.plot_widget.set_recording_state(False)
         
-        self.ui.btn_start.setText("Iniciar")
-        self.ui.lbl_time.setText("00:00 / 05:00")
+        # Restaurar display normal de la prueba
+        self.update_test_ui_state()
+
 
     def update_recording_time(self):
         """Actualizar tiempo de grabación"""
