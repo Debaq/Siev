@@ -121,10 +121,25 @@ class GitUpdateWorker(QThread):
         except:
             return False
     
+
     def _git_pull(self):
-        """Realiza git pull para actualizar el repositorio"""
+        """Realiza git pull para actualizar el repositorio, descartando cambios locales"""
         try:
-            result = subprocess.run(
+            # Primero descartar cualquier cambio local
+            reset_result = subprocess.run(
+                ["git", "reset", "--hard", "HEAD"],
+                cwd=self.project_path,
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+                timeout=30
+            )
+            
+            if reset_result.returncode != 0:
+                return False
+            
+            # Luego hacer pull para aplicar solo los cambios nuevos
+            pull_result = subprocess.run(
                 ["git", "pull"],
                 cwd=self.project_path,
                 capture_output=True,
@@ -132,7 +147,11 @@ class GitUpdateWorker(QThread):
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
                 timeout=60
             )
-            return result.returncode == 0
+            
+            return pull_result.returncode == 0
+            
+        except subprocess.TimeoutExpired:
+            return False
         except:
             return False
     
