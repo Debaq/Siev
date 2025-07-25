@@ -148,12 +148,118 @@ class MainWindow(QMainWindow):
     # MANEJO DE SELECCIÓN DE PRUEBAS
     # ========================================
 
+
     def on_test_selection_changed(self, current_item, previous_item):
         """Manejar cambio de selección en el tree de pruebas"""
         try:
+            # Actualizar estado de UI existente
             self.update_test_ui_state()
+            
+            # *** NUEVA LÓGICA: Actualizar gráfico automáticamente ***
+            self.update_graph_for_selection(current_item)
+            
         except Exception as e:
             print(f"Error en cambio de selección: {e}")
+
+    def update_graph_for_selection(self, current_item):
+        """
+        Actualizar gráfico según la selección del tree
+        
+        Args:
+            current_item: Item seleccionado en el tree
+        """
+        try:
+            if not hasattr(self, 'plot_widget') or not self.plot_widget:
+                print("Widget de gráfico no disponible")
+                return
+            
+            # Si no hay selección o es un item de fecha, limpiar gráfico
+            if not current_item or not current_item.parent():
+                print("Sin selección válida - limpiando gráfico")
+                self.plot_widget.clearPlots()
+                return
+            
+            # Obtener datos de la prueba seleccionada
+            item_data = current_item.data(0, Qt.UserRole)
+            if not item_data:
+                print("Sin datos de prueba - limpiando gráfico")
+                self.plot_widget.clearPlots()
+                return
+            
+            test_data = item_data.get('test_data')
+            test_id = item_data.get('test_id')
+            test_estado = test_data.get('estado', '').lower()
+            
+            # Determinar si la prueba está completada
+            # Una prueba está completada si:
+            # 1. Tiene estado "completada" o "completado", O
+            # 2. Tiene hora_fin (aunque el estado esté vacío)
+            hora_fin = test_data.get('hora_fin')
+            is_completed = (test_estado in ['completada', 'completado'] or hora_fin is not None)
+            
+            if is_completed:
+                # Prueba completada: cargar datos CSV
+                print(f"Cargando datos de prueba completada: {test_id} (estado: '{test_estado}', hora_fin: {hora_fin})")
+                self.load_test_data_to_graph(test_id, test_data)
+            else:
+                # Prueba pendiente/en progreso: limpiar gráfico
+                print(f"Prueba no completada (estado: '{test_estado}', hora_fin: {hora_fin}) - limpiando gráfico")
+                self.plot_widget.clearPlots()
+                
+        except Exception as e:
+            print(f"Error actualizando gráfico para selección: {e}")
+
+    def load_test_data_to_graph(self, test_id, test_data):
+        """
+        Cargar datos CSV de una prueba completada al gráfico
+        
+        Args:
+            test_id: ID de la prueba
+            test_data: Metadatos de la prueba
+        """
+        try:
+            if not self.siev_manager or not self.current_user_siev:
+                print("Sistema de archivos no disponible")
+                return
+            
+            # Limpiar gráfico primero
+            self.plot_widget.clearPlots()
+            
+            # Extraer datos CSV del archivo .siev
+            csv_data = self.siev_manager.extract_test_csv_data(
+                self.current_user_siev, 
+                test_id
+            )
+            
+            if not csv_data:
+                print(f"No se encontraron datos CSV para prueba {test_id}")
+                return
+            
+            print(f"Cargando {len(csv_data)} puntos de datos al gráfico")
+            
+            # Cargar datos punto por punto al gráfico
+            for row in csv_data:
+                try:
+                    # Extraer datos según formato esperado por GraphHandler
+                    left_eye = [row.get('left_eye_x', 0), row.get('left_eye_y', 0)] if row.get('left_eye_detected', False) else None
+                    right_eye = [row.get('right_eye_x', 0), row.get('right_eye_y', 0)] if row.get('right_eye_detected', False) else None
+                    imu_x = row.get('imu_x', 0)
+                    imu_y = row.get('imu_y', 0)
+                    timestamp = row.get('timestamp', 0)
+                    
+                    # Enviar datos al gráfico en formato esperado
+                    data_point = [right_eye, left_eye, imu_x, imu_y, timestamp]
+                    self.plot_widget.updatePlots(data_point)
+                    
+                except Exception as e:
+                    print(f"Error procesando punto de datos: {e}")
+                    continue
+            
+            print(f"Datos de prueba {test_id} cargados exitosamente al gráfico")
+            
+        except Exception as e:
+            print(f"Error cargando datos al gráfico: {e}")
+
 
     def get_selected_test_data(self):
         """Obtener datos de la prueba seleccionada"""
@@ -1607,6 +1713,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error abriendo diálogo de usuario: {e}")
 
+
     def create_new_user(self, user_data):
         """Crear nuevo usuario y archivo .siev"""
         try:
@@ -1626,6 +1733,11 @@ class MainWindow(QMainWindow):
             
             # Limpiar lista de pruebas (nuevo usuario, sin pruebas)
             self.ui.listTestWidget.clear()
+            
+            # *** NUEVA LÓGICA: Limpiar gráfico para nuevo usuario ***
+            if hasattr(self, 'plot_widget') and self.plot_widget:
+                print("Nuevo usuario - limpiando gráfico")
+                self.plot_widget.clearPlots()
             
             QMessageBox.information(
                 self, 

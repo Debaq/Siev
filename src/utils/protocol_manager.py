@@ -192,51 +192,39 @@ class ProtocolManager:
                 "Error",
                 f"Error cambiando evaluador: {e}"
             )
-    
-    def create_new_test(self, protocol_type):
-        """
-        Crear nueva prueba y agregarla al tree y al .siev
         
-        Args:
-            protocol_type: Tipo de protocolo
+    def create_new_test(self, protocol_name):
+        """
+        Crear nueva prueba con integración de gráfico
         """
         try:
-            # Generar datos de la prueba
-            test_id = f"test_{int(time.time())}"  
+            # Lógica existente de creación de prueba...
             test_data = {
-                "id": test_id,  
-                "tipo": self.protocol_names.get(protocol_type, protocol_type),
-                "protocolo_id": protocol_type,
-                "fecha": time.time(),
-                "hora_inicio": None,  # Se establecerá cuando inicie
-                "hora_fin": None,     # Se establecerá cuando termine
-                "evaluador": self.current_evaluator,
-                "comentarios": None,  # Se establecerá al final
-                "estado": "pendiente"
+                'id': f"test_{int(time.time())}",
+                'tipo': protocol_name,
+                'fecha': time.time(),
+                'evaluador': self.current_evaluator,
+                'estado': 'pendiente',
+                'comentarios': ''
             }
             
-            # Agregar al .siev
+            # Agregar al archivo .siev
             test_id = self.add_test_to_siev(test_data)
-            if not test_id:
-                return
             
-            # Agregar al tree widget
-            self.add_test_to_tree(test_data, test_id)
-            self.main_window.reset_button_for_new_test()
-
-            # Mensaje de confirmación
-            protocol_name = self.protocol_names.get(protocol_type, protocol_type)
-            QMessageBox.information(
-                self.main_window,
-                "Prueba Creada",
-                f"Prueba '{protocol_name}' creada exitosamente.\n\n"
-                f"Evaluador: {self.current_evaluator}\n"
-                f"Estado: Pendiente\n\n"
-                f"Presione 'Iniciar' para comenzar la grabación."
-            )
-            
-            print(f"Prueba creada: {protocol_name} por {self.current_evaluator}")
-            
+            if test_id:
+                # Agregar al tree widget
+                self.add_test_to_tree(test_data, test_id)
+                
+                # Actualizar prueba actual
+                self.current_test_id = test_id
+                
+                # *** NUEVA LÓGICA: Limpiar gráfico para nueva prueba ***
+                if hasattr(self.main_window, 'plot_widget') and self.main_window.plot_widget:
+                    print("Nueva prueba creada - limpiando gráfico")
+                    self.main_window.plot_widget.clearPlots()
+                
+                print(f"Prueba creada: {protocol_name} por {self.current_evaluator}")
+                
         except Exception as e:
             QMessageBox.critical(
                 self.main_window,
@@ -244,7 +232,7 @@ class ProtocolManager:
                 f"Error creando prueba: {e}"
             )
             print(f"Error en create_new_test: {e}")
-    
+ 
     def add_test_to_siev(self, test_data):
         """
         Agregar prueba al archivo .siev del usuario

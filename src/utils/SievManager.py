@@ -27,6 +27,71 @@ class SievManager:
         self.base_path = base_path
         os.makedirs(self.base_path, exist_ok=True)
     
+    
+
+    def extract_test_csv_data(self, siev_path: str, test_id: str) -> List[Dict]:
+        """
+        Extrae datos CSV de una prueba específica desde el archivo .siev
+        
+        Args:
+            siev_path: Ruta del archivo .siev
+            test_id: ID de la prueba
+            
+        Returns:
+            Lista de diccionarios con los datos CSV o lista vacía
+        """
+        try:
+            if not os.path.exists(siev_path):
+                print(f"Archivo .siev no encontrado: {siev_path}")
+                return []
+            
+            with tarfile.open(siev_path, 'r:gz') as tar:
+                # Buscar archivo CSV de la prueba
+                csv_filename = f"data/{test_id}.csv"
+                
+                try:
+                    # Extraer archivo CSV
+                    csv_member = tar.getmember(csv_filename)
+                    csv_file = tar.extractfile(csv_member)
+                    
+                    if csv_file:
+                        import csv
+                        import io
+                        
+                        # Leer contenido CSV
+                        csv_content = csv_file.read().decode('utf-8')
+                        csv_reader = csv.DictReader(io.StringIO(csv_content))
+                        
+                        # Convertir a lista de diccionarios
+                        csv_data = []
+                        for row in csv_reader:
+                            # Convertir valores numéricos
+                            processed_row = {}
+                            for key, value in row.items():
+                                try:
+                                    if key in ['timestamp', 'recording_time', 'left_eye_x', 'left_eye_y', 
+                                            'right_eye_x', 'right_eye_y', 'imu_x', 'imu_y', 'imu_z']:
+                                        processed_row[key] = float(value)
+                                    elif key in ['left_eye_detected', 'right_eye_detected']:
+                                        processed_row[key] = value.lower() == 'true'
+                                    else:
+                                        processed_row[key] = value
+                                except ValueError:
+                                    processed_row[key] = value
+                            
+                            csv_data.append(processed_row)
+                        
+                        print(f"Datos CSV extraídos: {len(csv_data)} registros para prueba {test_id}")
+                        return csv_data
+                        
+                except KeyError:
+                    print(f"Archivo CSV no encontrado para prueba {test_id}")
+                    return []
+                    
+        except Exception as e:
+            print(f"Error extrayendo datos CSV: {e}")
+            return []   
+    
     def create_user_siev(self, user_data: Dict, siev_path: str = None) -> str:
         """
         Crea un nuevo archivo .siev para un usuario
