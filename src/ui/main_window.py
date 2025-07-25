@@ -4,7 +4,8 @@ import sys
 import time
 from PySide6.QtWidgets import (QMainWindow, QMenu, QWidgetAction, QSlider, 
                             QHBoxLayout, QWidget, QLabel, QCheckBox, 
-                            QMessageBox, QPushButton, QDialog)
+                            QMessageBox, QPushButton, QDialog, QFileDialog)
+
 from PySide6.QtCore import Qt, QTimer
 
 # Diálogos
@@ -24,7 +25,8 @@ from utils.graphing.triple_plot_widget import TriplePlotWidget, PlotConfiguratio
 from utils.config_manager import ConfigManager
 from utils.CameraResolutionDetector import CameraResolutionDetector
 from utils.utils import select_max_resolution
-
+from ui.dialogs.user_dialog import NewUserDialog
+from utils.SievManager import SievManager
 
 
 class MainWindow(QMainWindow):
@@ -57,6 +59,14 @@ class MainWindow(QMainWindow):
         self.last_update_time = None
         self.MAX_RECORDING_TIME = 5 * 60  # 5 minutos
         self.CALIBRATION_TIME = 1  # 1 segundo
+        # === GESTOR DE USUARIOS ===
+        self.siev_manager = None
+        self.current_user_siev = None
+        self.current_user_data = None
+
+        self.enable_test_functions(False)
+
+
         # === CONFIGURAR UI ===
         self.setup_menu_and_controls()
         self.connect_events()
@@ -69,8 +79,8 @@ class MainWindow(QMainWindow):
         self.init_graphics_system()
         self.init_recording_system()
         self.init_processing_system()
-        
-   
+        self.init_user_system()
+
         
         # === TIMERS ===
         self.setup_timers()
@@ -274,6 +284,17 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error inicializando grabación: {e}")
 
+    def init_user_system(self):
+        """Inicializar sistema de usuarios"""
+        try:
+            # Crear directorio de usuarios si no existe
+            users_path = os.path.join(self.data_path, "users")
+            self.siev_manager = SievManager(users_path)
+            print(f"Sistema de usuarios inicializado: {users_path}")
+        except Exception as e:
+            print(f"Error inicializando sistema de usuarios: {e}")
+            self.siev_manager = None
+
     def init_processing_system(self):
         """Inicializar sistema de procesamiento de datos"""
         try:
@@ -347,12 +368,7 @@ class MainWindow(QMainWindow):
             
             if hasattr(self.ui, 'toolButton'):
                 self.ui.toolButton.setMenu(menu)
-            
-            # Botón de calibración
-            #if hasattr(self.ui, 'layout_toolbar'):
-            #    self.btn_calibrate = QPushButton("Calibrar Sistema")
-            #    self.btn_calibrate.clicked.connect(self.start_calibration)
-            #    self.ui.layout_toolbar.addWidget(self.btn_calibrate)
+
                 
         except Exception as e:
             print(f"Error configurando menú: {e}")
@@ -361,13 +377,28 @@ class MainWindow(QMainWindow):
         """Conectar eventos principales"""
         try:
             # Botón de grabación
-            if hasattr(self.ui, 'btn_start'):
-                self.ui.btn_start.clicked.connect(self.toggle_recording)
+            self.ui.btn_start.clicked.connect(self.toggle_recording)
             
-            # Menú archivo
-            if hasattr(self.ui, 'actionSalir'):
-                self.ui.actionSalir.triggered.connect(self.close)
-                
+            # Conectar acciones del menú
+            self.ui.actionNewUser.triggered.connect(self.open_new_user_dialog)
+            self.ui.actionExit.triggered.connect(self.close)
+            self.ui.actionAbrir.triggered.connect(self.open_user_file)
+
+            
+            # Conectar otros protocolos si están disponibles
+            if hasattr(self.ui, 'actionOD_44'):
+                self.ui.actionOD_44.triggered.connect(lambda: self.open_protocol_dialog("OD_44"))
+            if hasattr(self.ui, 'actionOI_44'):
+                self.ui.actionOI_44.triggered.connect(lambda: self.open_protocol_dialog("OI_44"))
+            if hasattr(self.ui, 'actionOD_37'):
+                self.ui.actionOD_37.triggered.connect(lambda: self.open_protocol_dialog("OD_37"))
+            if hasattr(self.ui, 'actionOI37'):
+                self.ui.actionOI37.triggered.connect(lambda: self.open_protocol_dialog("OI_37"))
+
+
+            if hasattr(self.ui, 'actionCalibrar'):
+                self.ui.actionCalibrar.triggered.connect(self.start_calibration)
+                    
         except Exception as e:
             print(f"Error conectando eventos: {e}")
 
@@ -841,6 +872,235 @@ class MainWindow(QMainWindow):
                 
         except Exception as e:
             print(f"Error guardando configuración de sliders: {e}")
+
+
+
+    def open_user_file(self):
+        """Abrir archivo de usuario existente (.siev)"""
+        try:
+            # Directorio inicial - ruta de usuarios predeterminada
+            if self.siev_manager:
+                initial_dir = self.siev_manager.base_path
+            else:
+                initial_dir = os.path.expanduser("~/siev_data/users")
+            
+            # Asegurar que el directorio existe
+            os.makedirs(initial_dir, exist_ok=True)
+            
+            # Abrir diálogo de archivo
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Abrir Usuario - Sistema VNG",
+                initial_dir,
+                "Archivos SIEV (*.siev);;Todos los archivos (*.*)"
+            )
+            
+            if file_path:
+                self.load_user_from_file(file_path)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error abriendo archivo de usuario: {e}")
+
+    def load_user_from_file(self, file_path):
+        """Cargar usuario desde archivo .siev"""
+        try:
+            if not self.siev_manager:
+                QMessageBox.critical(self, "Error", "Sistema de usuarios no inicializado")
+                return
+            
+            # Validar archivo .siev
+            validation = self.siev_manager.validate_siev(file_path)
+            
+            if not validation["valid"]:
+                error_msg = "Archivo .siev inválido:\n\n" + "\n".join(validation["errors"])
+                if validation["warnings"]:
+                    error_msg += "\n\nAdvertencias:\n" + "\n".join(validation["warnings"])
+                
+                QMessageBox.warning(self, "Archivo Inválido", error_msg)
+                return
+            
+            # Mostrar advertencias si las hay
+            if validation["warnings"]:
+                warning_msg = "El archivo se puede abrir pero tiene advertencias:\n\n" + "\n".join(validation["warnings"])
+                QMessageBox.warning(self, "Advertencias", warning_msg)
+            
+            # Cargar datos del usuario
+            user_data = self.siev_manager.get_user_info(file_path)
+            
+            if not user_data:
+                QMessageBox.warning(self, "Error", "No se pudieron cargar los datos del usuario")
+                return
+            
+            # Cerrar usuario anterior si existe
+            self.close_current_user()
+            
+            # Establecer nuevo usuario
+            self.current_user_siev = file_path
+            self.current_user_data = user_data
+            
+            # Actualizar interfaz
+            self.update_ui_for_user(user_data)
+            
+            # Cargar pruebas del usuario
+            self.load_user_tests()
+            
+            # Mensaje de confirmación
+            user_name = user_data.get('nombre', 'Usuario')
+            file_name = os.path.basename(file_path)
+            
+            QMessageBox.information(
+                self, 
+                "Usuario Cargado", 
+                f"Usuario '{user_name}' cargado exitosamente.\n\n"
+                f"Archivo: {file_name}\n"
+                f"Total de pruebas: {len(self.siev_manager.get_user_tests(file_path))}"
+            )
+            
+            print(f"Usuario cargado: {user_name} desde {file_path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error cargando usuario: {e}")
+            print(f"Error detallado cargando usuario: {e}")
+
+    def close_current_user(self):
+        """Cerrar usuario actual y limpiar interfaz"""
+        try:
+            if self.current_user_siev:
+                print(f"Cerrando usuario: {self.current_user_data.get('nombre', 'Desconocido')}")
+            
+            # Limpiar variables
+            self.current_user_siev = None
+            self.current_user_data = None
+            
+            # Limpiar interfaz
+            self.ui.listWidget.clear()
+            self.setWindowTitle("Sistema VNG")
+            
+            # Deshabilitar funciones que requieren usuario
+            self.enable_test_functions(False)
+            
+        except Exception as e:
+            print(f"Error cerrando usuario actual: {e}")
+
+    def get_current_user_info(self):
+        """Obtener información del usuario actual para mostrar en la interfaz"""
+        try:
+            if not self.current_user_data:
+                return "Sin usuario seleccionado"
+            
+            user_name = self.current_user_data.get('nombre', 'Desconocido')
+            user_id = self.current_user_data.get('rut_id', '')
+            
+            if user_id:
+                return f"{user_name} ({user_id})"
+            else:
+                return user_name
+                
+        except Exception as e:
+            print(f"Error obteniendo info de usuario: {e}")
+            return "Error obteniendo usuario"
+
+
+
+    def open_new_user_dialog(self):
+        """Abrir diálogo para crear nuevo usuario"""
+        try:
+            dialog = NewUserDialog(self)
+            if dialog.exec() == QDialog.Accepted:
+                user_data = dialog.get_user_data()
+                if user_data:
+                    self.create_new_user(user_data)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error abriendo diálogo de usuario: {e}")
+
+    def create_new_user(self, user_data):
+        """Crear nuevo usuario y archivo .siev"""
+        try:
+            if not self.siev_manager:
+                QMessageBox.critical(self, "Error", "Sistema de usuarios no inicializado")
+                return
+            
+            # Crear archivo .siev para el usuario
+            siev_path = self.siev_manager.create_user_siev(user_data)
+            
+            # Establecer como usuario actual
+            self.current_user_siev = siev_path
+            self.current_user_data = user_data
+            
+            # Actualizar interfaz
+            self.update_ui_for_user(user_data)
+            
+            # Limpiar lista de pruebas (nuevo usuario, sin pruebas)
+            self.ui.listTestWidget.clear()
+            
+            QMessageBox.information(
+                self, 
+                "Usuario Creado", 
+                f"Usuario '{user_data['nombre']}' creado exitosamente.\n\n"
+                f"Archivo: {os.path.basename(siev_path)}"
+            )
+            
+            print(f"Nuevo usuario creado: {user_data['nombre']}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error creando usuario: {e}")
+
+    def update_ui_for_user(self, user_data):
+        """Actualizar interfaz con información del usuario actual"""
+        try:
+            # Actualizar título de ventana
+            user_name = user_data.get('nombre', 'Usuario')
+            self.setWindowTitle(f"Sistema VNG - {user_name}")
+            
+            # Habilitar funciones que requieren usuario
+            self.enable_test_functions(True)
+            
+        except Exception as e:
+            print(f"Error actualizando UI para usuario: {e}")
+
+    def enable_test_functions(self, enabled):
+        """Habilitar/deshabilitar funciones que requieren usuario"""
+        try:
+            # Habilitar botón de iniciar
+            self.ui.btn_start.setEnabled(enabled)
+            
+            # Habilitar menús de pruebas
+            if hasattr(self.ui, 'actionOD_44'):
+                self.ui.actionOD_44.setEnabled(enabled)
+            if hasattr(self.ui, 'actionOI_44'):
+                self.ui.actionOI_44.setEnabled(enabled)
+            if hasattr(self.ui, 'actionOD_37'):
+                self.ui.actionOD_37.setEnabled(enabled)
+            if hasattr(self.ui, 'actionOI37'):
+                self.ui.actionOI37.setEnabled(enabled)
+            
+        except Exception as e:
+            print(f"Error habilitando funciones de prueba: {e}")
+
+    def load_user_tests(self):
+        """Cargar y mostrar las pruebas del usuario actual"""
+        try:
+            if not self.current_user_siev or not self.siev_manager:
+                return
+            
+            # Obtener lista de pruebas
+            tests = self.siev_manager.get_user_tests(self.current_user_siev)
+            
+            # Limpiar lista
+            self.ui.listTestWidget.clear()
+            
+            # Agregar pruebas a la lista
+            for test in tests:
+                test_name = f"{test.get('tipo', 'Desconocido')} - {time.strftime('%d/%m/%Y %H:%M', time.localtime(test.get('fecha', 0)))}"
+                self.ui.listTestWidget.addItem(test_name)
+            
+            print(f"Cargadas {len(tests)} pruebas del usuario")
+            
+        except Exception as e:
+            print(f"Error cargando pruebas del usuario: {e}")
+
+
+
 
 
 

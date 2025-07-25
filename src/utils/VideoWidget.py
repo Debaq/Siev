@@ -8,6 +8,8 @@ import multiprocessing as mp
 from multiprocessing import Process, Queue, Value, Array
 import time
 import ctypes
+from utils.path_utils import get_model_file_path
+
 
 class SimulatedBox:
     """Clase para simular las detecciones de YOLO cuando se usa ROI fija"""
@@ -168,8 +170,9 @@ class VideoProcesses:
         print("Iniciando proceso de detección")
         
         # Cargar modelo YOLO
-        model = YOLO('best_color.pt')
-    
+        model_path = get_model_file_path('siev_vng_r01.pt')
+        model = YOLO(model_path)
+        
         # Optimizaciones para CPU
         if not torch.cuda.is_available():
             torch.set_num_threads(1)

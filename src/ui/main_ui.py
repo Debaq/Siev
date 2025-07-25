@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'MainWindowFRqDng.ui'
+## Form generated from reading UI file 'MainWindowLXmUti.ui'
 ##
 ## Created by: Qt User Interface Compiler version 6.9.1
 ##
@@ -87,15 +87,15 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_3.addWidget(self.label)
 
-        self.listWidget = QListWidget(self.centralwidget)
-        self.listWidget.setObjectName(u"listWidget")
+        self.listTestWidget = QListWidget(self.centralwidget)
+        self.listTestWidget.setObjectName(u"listTestWidget")
         sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         sizePolicy1.setHorizontalStretch(0)
         sizePolicy1.setVerticalStretch(0)
-        sizePolicy1.setHeightForWidth(self.listWidget.sizePolicy().hasHeightForWidth())
-        self.listWidget.setSizePolicy(sizePolicy1)
+        sizePolicy1.setHeightForWidth(self.listTestWidget.sizePolicy().hasHeightForWidth())
+        self.listTestWidget.setSizePolicy(sizePolicy1)
 
-        self.verticalLayout_3.addWidget(self.listWidget)
+        self.verticalLayout_3.addWidget(self.listTestWidget)
 
 
         self.horizontalLayout_2.addLayout(self.verticalLayout_3)
