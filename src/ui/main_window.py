@@ -4,7 +4,7 @@ import sys
 import time
 from PySide6.QtWidgets import (QMainWindow, QMenu, QWidgetAction, QSlider, 
                             QHBoxLayout, QWidget, QLabel, QCheckBox, 
-                            QMessageBox, QPushButton, QDialog, QFileDialog)
+                            QMessageBox, QPushButton, QDialog, QFileDialog, QTreeWidgetItem)
 
 from PySide6.QtCore import Qt, QTimer
 
@@ -27,6 +27,8 @@ from utils.CameraResolutionDetector import CameraResolutionDetector
 from utils.utils import select_max_resolution
 from ui.dialogs.user_dialog import NewUserDialog
 from utils.SievManager import SievManager
+from utils.protocol_manager import ProtocolManager
+from datetime import datetime
 
 
 class MainWindow(QMainWindow):
@@ -63,6 +65,9 @@ class MainWindow(QMainWindow):
         self.siev_manager = None
         self.current_user_siev = None
         self.current_user_data = None
+        # === GESTOR DE PROTOCOLOS ===
+        self.protocol_manager = ProtocolManager(self)
+        self.current_evaluator = None  # Por compatibilidad, aunque se maneja en protocol_manager
 
         self.enable_test_functions(False)
 
@@ -379,29 +384,41 @@ class MainWindow(QMainWindow):
             # Botón de grabación
             self.ui.btn_start.clicked.connect(self.toggle_recording)
             
-            # Conectar acciones del menú
+            # Conectar acciones del menú archivo
             self.ui.actionNewUser.triggered.connect(self.open_new_user_dialog)
             self.ui.actionExit.triggered.connect(self.close)
             self.ui.actionAbrir.triggered.connect(self.open_user_file)
-
             
-            # Conectar otros protocolos si están disponibles
+            # Conectar cambio de evaluador
+            if hasattr(self.ui, 'actionCambiar_evaluador'):
+                self.ui.actionCambiar_evaluador.triggered.connect(self.protocol_manager.change_evaluator)
+
+            # Conectar protocolos calóricos
             if hasattr(self.ui, 'actionOD_44'):
-                self.ui.actionOD_44.triggered.connect(lambda: self.open_protocol_dialog("OD_44"))
+                self.ui.actionOD_44.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OD_44"))
             if hasattr(self.ui, 'actionOI_44'):
-                self.ui.actionOI_44.triggered.connect(lambda: self.open_protocol_dialog("OI_44"))
+                self.ui.actionOI_44.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OI_44"))
             if hasattr(self.ui, 'actionOD_37'):
-                self.ui.actionOD_37.triggered.connect(lambda: self.open_protocol_dialog("OD_37"))
+                self.ui.actionOD_37.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OD_37"))
             if hasattr(self.ui, 'actionOI37'):
-                self.ui.actionOI37.triggered.connect(lambda: self.open_protocol_dialog("OI_37"))
+                self.ui.actionOI37.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OI_37"))
 
+            # Conectar protocolos oculomotores
+            if hasattr(self.ui, 'actionSeguimiento_Lento'):
+                self.ui.actionSeguimiento_Lento.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("seguimiento_lento"))
+            if hasattr(self.ui, 'actionOptoquinetico'):
+                self.ui.actionOptoquinetico.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("optoquinetico"))
+            if hasattr(self.ui, 'actionSacadas'):
+                self.ui.actionSacadas.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("sacadas"))
+            if hasattr(self.ui, 'actionEspont_neo'):
+                self.ui.actionEspont_neo.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("espontaneo"))
 
+            # Conectar calibración
             if hasattr(self.ui, 'actionCalibrar'):
                 self.ui.actionCalibrar.triggered.connect(self.start_calibration)
                     
         except Exception as e:
             print(f"Error conectando eventos: {e}")
-
 
     def show_protocol_selection(self):
         """Mostrar selección completa de protocolo - ACTUALIZADO"""
@@ -973,8 +990,13 @@ class MainWindow(QMainWindow):
             self.current_user_data = None
             
             # Limpiar interfaz
-            self.ui.listWidget.clear()
+            self.ui.listTestWidget.clear()
+            self.ui.listTestWidget.setHeaderLabel("Sin usuario seleccionado")
             self.setWindowTitle("Sistema VNG")
+            
+            # Limpiar datos de sesión del protocolo
+            if hasattr(self, 'protocol_manager'):
+                self.protocol_manager.clear_session_data()
             
             # Deshabilitar funciones que requieren usuario
             self.enable_test_functions(False)
@@ -1052,19 +1074,44 @@ class MainWindow(QMainWindow):
             user_name = user_data.get('nombre', 'Usuario')
             self.setWindowTitle(f"Sistema VNG - {user_name}")
             
+            # Actualizar header del tree widget
+            self.update_tree_header(user_data)
+            
             # Habilitar funciones que requieren usuario
             self.enable_test_functions(True)
             
         except Exception as e:
             print(f"Error actualizando UI para usuario: {e}")
 
+
+    def update_tree_header(self, user_data):
+        """Actualizar header del QTreeWidget con información del usuario"""
+        try:
+            if hasattr(self.ui, 'listTestWidget'):
+                user_name = user_data.get('nombre', 'Usuario')
+                user_id = user_data.get('rut_id', '')
+                
+                if user_id:
+                    header_text = f"{user_name} ({user_id})"
+                else:
+                    header_text = user_name
+                
+                self.ui.listTestWidget.setHeaderLabel(header_text)
+                print(f"Header del tree actualizado: {header_text}")
+            
+        except Exception as e:
+            print(f"Error actualizando header del tree: {e}")
+
     def enable_test_functions(self, enabled):
         """Habilitar/deshabilitar funciones que requieren usuario"""
         try:
+
+            print(f"=== DEBUG enable_test_functions: enabled={enabled} ===")
+
             # Habilitar botón de iniciar
             self.ui.btn_start.setEnabled(enabled)
             
-            # Habilitar menús de pruebas
+            # Habilitar menús de pruebas CALÓRICAS
             if hasattr(self.ui, 'actionOD_44'):
                 self.ui.actionOD_44.setEnabled(enabled)
             if hasattr(self.ui, 'actionOI_44'):
@@ -1074,27 +1121,93 @@ class MainWindow(QMainWindow):
             if hasattr(self.ui, 'actionOI37'):
                 self.ui.actionOI37.setEnabled(enabled)
             
+            # AGREGAR ESTAS LÍNEAS para habilitar pruebas OCULOMOTORAS:
+            if hasattr(self.ui, 'actionEspont_neo'):
+                self.ui.actionEspont_neo.setEnabled(enabled)
+            if hasattr(self.ui, 'actionSeguimiento_Lento'):
+                self.ui.actionSeguimiento_Lento.setEnabled(enabled)
+            if hasattr(self.ui, 'actionOptoquinetico'):
+                self.ui.actionOptoquinetico.setEnabled(enabled)
+            if hasattr(self.ui, 'actionSacadas'):
+                self.ui.actionSacadas.setEnabled(enabled)
+            
         except Exception as e:
             print(f"Error habilitando funciones de prueba: {e}")
 
+
     def load_user_tests(self):
-        """Cargar y mostrar las pruebas del usuario actual"""
+        """Cargar y mostrar las pruebas del usuario actual en el QTreeWidget"""
         try:
             if not self.current_user_siev or not self.siev_manager:
                 return
             
+            # Limpiar tree
+            self.ui.listTestWidget.clear()
+            
             # Obtener lista de pruebas
             tests = self.siev_manager.get_user_tests(self.current_user_siev)
             
-            # Limpiar lista
-            self.ui.listTestWidget.clear()
+            if not tests:
+                print("No hay pruebas para cargar")
+                return
             
-            # Agregar pruebas a la lista
+            # Organizar pruebas por fecha
+            tests_by_date = {}
             for test in tests:
-                test_name = f"{test.get('tipo', 'Desconocido')} - {time.strftime('%d/%m/%Y %H:%M', time.localtime(test.get('fecha', 0)))}"
-                self.ui.listTestWidget.addItem(test_name)
+                try:
+                    # Convertir timestamp a fecha
+                    test_date = datetime.fromtimestamp(test.get('fecha', 0))
+                    date_str = test_date.strftime("%d/%m/%Y")
+                    
+                    if date_str not in tests_by_date:
+                        tests_by_date[date_str] = []
+                    
+                    tests_by_date[date_str].append(test)
+                    
+                except Exception as e:
+                    print(f"Error procesando prueba: {e}")
+                    continue
             
-            print(f"Cargadas {len(tests)} pruebas del usuario")
+            # Crear estructura en el tree
+            for date_str in sorted(tests_by_date.keys(), reverse=True):  # Más reciente primero
+                # Crear item de fecha
+                date_item = QTreeWidgetItem(self.ui.listTestWidget)
+                date_item.setText(0, date_str)
+                
+                # Estilo para fecha
+                font = date_item.font(0)
+                font.setBold(True)
+                date_item.setFont(0, font)
+                
+                # Agregar pruebas de esta fecha
+                for test in tests_by_date[date_str]:
+                    try:
+                        test_date = datetime.fromtimestamp(test.get('fecha', 0))
+                        time_str = test_date.strftime("%H:%M")
+                        
+                        test_name = test.get('tipo', 'Desconocido')
+                        evaluator = test.get('evaluador', 'Sin evaluador')
+                        estado = test.get('estado', 'completada').upper()
+                        
+                        test_text = f"{test_name} - {time_str} ({evaluator}) [{estado}]"
+                        test_item = QTreeWidgetItem(date_item)
+                        test_item.setText(0, test_text)
+                        
+                        # Guardar datos para referencia
+                        test_item.setData(0, Qt.UserRole, {
+                            'test_id': test.get('id'),
+                            'test_data': test
+                        })
+                        
+                    except Exception as e:
+                        print(f"Error creando item de prueba: {e}")
+                        continue
+                
+                # Expandir fecha si tiene pocas pruebas
+                if len(tests_by_date[date_str]) <= 3:
+                    date_item.setExpanded(True)
+            
+            print(f"Cargadas {len(tests)} pruebas del usuario organizadas por fecha")
             
         except Exception as e:
             print(f"Error cargando pruebas del usuario: {e}")

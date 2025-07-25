@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'MainWindowLXmUti.ui'
+## Form generated from reading UI file 'MainWindowrXVrPC.ui'
 ##
 ## Created by: Qt User Interface Compiler version 6.9.1
 ##
@@ -17,10 +17,10 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
-    QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-    QMainWindow, QMenu, QMenuBar, QPushButton,
-    QSizePolicy, QSlider, QSpacerItem, QStatusBar,
-    QToolButton, QVBoxLayout, QWidget)
+    QHBoxLayout, QHeaderView, QLabel, QMainWindow,
+    QMenu, QMenuBar, QPushButton, QSizePolicy,
+    QSlider, QSpacerItem, QStatusBar, QToolButton,
+    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -39,12 +39,16 @@ class Ui_MainWindow(object):
         self.actionPosicional.setObjectName(u"actionPosicional")
         self.actionOD_44 = QAction(MainWindow)
         self.actionOD_44.setObjectName(u"actionOD_44")
+        self.actionOD_44.setEnabled(False)
         self.actionOI_44 = QAction(MainWindow)
         self.actionOI_44.setObjectName(u"actionOI_44")
+        self.actionOI_44.setEnabled(False)
         self.actionOD_37 = QAction(MainWindow)
         self.actionOD_37.setObjectName(u"actionOD_37")
+        self.actionOD_37.setEnabled(False)
         self.actionOI37 = QAction(MainWindow)
         self.actionOI37.setObjectName(u"actionOI37")
+        self.actionOI37.setEnabled(False)
         self.actionEspont_neo = QAction(MainWindow)
         self.actionEspont_neo.setObjectName(u"actionEspont_neo")
         self.actionEspont_neo.setEnabled(False)
@@ -66,6 +70,8 @@ class Ui_MainWindow(object):
         self.actionCalibrar.setEnabled(True)
         self.actionAbrir = QAction(MainWindow)
         self.actionAbrir.setObjectName(u"actionAbrir")
+        self.actionCambiar_evaluador = QAction(MainWindow)
+        self.actionCambiar_evaluador.setObjectName(u"actionCambiar_evaluador")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
         self.verticalLayout_4 = QVBoxLayout(self.centralwidget)
@@ -87,13 +93,9 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_3.addWidget(self.label)
 
-        self.listTestWidget = QListWidget(self.centralwidget)
+        self.listTestWidget = QTreeWidget(self.centralwidget)
+        self.listTestWidget.headerItem().setText(0, "")
         self.listTestWidget.setObjectName(u"listTestWidget")
-        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        sizePolicy1.setHorizontalStretch(0)
-        sizePolicy1.setVerticalStretch(0)
-        sizePolicy1.setHeightForWidth(self.listTestWidget.sizePolicy().hasHeightForWidth())
-        self.listTestWidget.setSizePolicy(sizePolicy1)
 
         self.verticalLayout_3.addWidget(self.listTestWidget)
 
@@ -127,11 +129,11 @@ class Ui_MainWindow(object):
 
         self.cb_resolution = QComboBox(self.frame_toolbar_video)
         self.cb_resolution.setObjectName(u"cb_resolution")
-        sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
-        sizePolicy2.setHorizontalStretch(0)
-        sizePolicy2.setVerticalStretch(0)
-        sizePolicy2.setHeightForWidth(self.cb_resolution.sizePolicy().hasHeightForWidth())
-        self.cb_resolution.setSizePolicy(sizePolicy2)
+        sizePolicy1 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        sizePolicy1.setHorizontalStretch(0)
+        sizePolicy1.setVerticalStretch(0)
+        sizePolicy1.setHeightForWidth(self.cb_resolution.sizePolicy().hasHeightForWidth())
+        self.cb_resolution.setSizePolicy(sizePolicy1)
 
         self.layout_toolbar_video.addWidget(self.cb_resolution)
 
@@ -190,11 +192,11 @@ class Ui_MainWindow(object):
 
         self.CameraFrame = QLabel(self.centralwidget)
         self.CameraFrame.setObjectName(u"CameraFrame")
-        sizePolicy3 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
-        sizePolicy3.setHorizontalStretch(0)
-        sizePolicy3.setVerticalStretch(0)
-        sizePolicy3.setHeightForWidth(self.CameraFrame.sizePolicy().hasHeightForWidth())
-        self.CameraFrame.setSizePolicy(sizePolicy3)
+        sizePolicy2 = QSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum)
+        sizePolicy2.setHorizontalStretch(0)
+        sizePolicy2.setVerticalStretch(0)
+        sizePolicy2.setHeightForWidth(self.CameraFrame.sizePolicy().hasHeightForWidth())
+        self.CameraFrame.setSizePolicy(sizePolicy2)
 
         self.horizontalLayout.addWidget(self.CameraFrame)
 
@@ -338,22 +340,22 @@ class Ui_MainWindow(object):
         self.menuCalofrica.setObjectName(u"menuCalofrica")
         self.menuPruebas_Calor_cas = QMenu(self.menuCalofrica)
         self.menuPruebas_Calor_cas.setObjectName(u"menuPruebas_Calor_cas")
-        self.menuPruebas_Calor_cas.setEnabled(False)
-        self.menuPosicionales = QMenu(self.menubar)
-        self.menuPosicionales.setObjectName(u"menuPosicionales")
-        self.menuPosicionales.setEnabled(False)
+        self.menuPruebas_Calor_cas.setEnabled(True)
         self.menuOculomotoras = QMenu(self.menubar)
         self.menuOculomotoras.setObjectName(u"menuOculomotoras")
         self.menuArchivo = QMenu(self.menubar)
         self.menuArchivo.setObjectName(u"menuArchivo")
         self.menuConfiguraci_n = QMenu(self.menubar)
         self.menuConfiguraci_n.setObjectName(u"menuConfiguraci_n")
+        self.menuPosicionales = QMenu(self.menubar)
+        self.menuPosicionales.setObjectName(u"menuPosicionales")
+        self.menuPosicionales.setEnabled(False)
         MainWindow.setMenuBar(self.menubar)
 
         self.menubar.addAction(self.menuArchivo.menuAction())
         self.menubar.addAction(self.menuCalofrica.menuAction())
-        self.menubar.addAction(self.menuPosicionales.menuAction())
         self.menubar.addAction(self.menuOculomotoras.menuAction())
+        self.menubar.addAction(self.menuPosicionales.menuAction())
         self.menubar.addAction(self.menuConfiguraci_n.menuAction())
         self.menuCalofrica.addAction(self.actionEspont_neo)
         self.menuCalofrica.addAction(self.menuPruebas_Calor_cas.menuAction())
@@ -368,6 +370,7 @@ class Ui_MainWindow(object):
         self.menuArchivo.addAction(self.actionNewUser)
         self.menuArchivo.addAction(self.actionExit)
         self.menuConfiguraci_n.addAction(self.actionCalibrar)
+        self.menuConfiguraci_n.addAction(self.actionCambiar_evaluador)
 
         self.retranslateUi(MainWindow)
 
@@ -396,7 +399,8 @@ class Ui_MainWindow(object):
         self.actionNewUser.setText(QCoreApplication.translate("MainWindow", u"Nuevo Usuario...", None))
         self.actionCalibrar.setText(QCoreApplication.translate("MainWindow", u"Calibrar", None))
         self.actionAbrir.setText(QCoreApplication.translate("MainWindow", u"Abrir...", None))
-        self.label.setText(QCoreApplication.translate("MainWindow", u"Pruebas Previas", None))
+        self.actionCambiar_evaluador.setText(QCoreApplication.translate("MainWindow", u"Cambiar evaluador", None))
+        self.label.setText(QCoreApplication.translate("MainWindow", u"Pruebas", None))
         self.btn_FullScreen.setText(QCoreApplication.translate("MainWindow", u"FullScreen", None))
 #if QT_CONFIG(shortcut)
         self.btn_FullScreen.setShortcut(QCoreApplication.translate("MainWindow", u"F", None))
@@ -415,9 +419,9 @@ class Ui_MainWindow(object):
         self.lbl_text_temp.setText("")
         self.menuCalofrica.setTitle(QCoreApplication.translate("MainWindow", u"VNG", None))
         self.menuPruebas_Calor_cas.setTitle(QCoreApplication.translate("MainWindow", u"Pruebas Calor\u00edcas", None))
-        self.menuPosicionales.setTitle(QCoreApplication.translate("MainWindow", u"Posicionales", None))
         self.menuOculomotoras.setTitle(QCoreApplication.translate("MainWindow", u"Oculomotoras", None))
         self.menuArchivo.setTitle(QCoreApplication.translate("MainWindow", u"Archivo", None))
         self.menuConfiguraci_n.setTitle(QCoreApplication.translate("MainWindow", u"Configuraci\u00f3n", None))
+        self.menuPosicionales.setTitle(QCoreApplication.translate("MainWindow", u"Posicionales", None))
     # retranslateUi
 

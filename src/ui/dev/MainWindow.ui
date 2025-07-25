@@ -34,7 +34,7 @@
            </sizepolicy>
           </property>
           <property name="text">
-           <string>Pruebas Previas</string>
+           <string>Pruebas</string>
           </property>
           <property name="alignment">
            <set>Qt::AlignmentFlag::AlignCenter</set>
@@ -42,13 +42,12 @@
          </widget>
         </item>
         <item>
-         <widget class="QListWidget" name="listTestWidget">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-            <horstretch>0</horstretch>
-            <verstretch>0</verstretch>
-           </sizepolicy>
-          </property>
+         <widget class="QTreeWidget" name="listTestWidget">
+          <column>
+           <property name="text">
+            <string> </string>
+           </property>
+          </column>
          </widget>
         </item>
        </layout>
@@ -447,7 +446,7 @@
     </property>
     <widget class="QMenu" name="menuPruebas_Calor_cas">
      <property name="enabled">
-      <bool>false</bool>
+      <bool>true</bool>
      </property>
      <property name="title">
       <string>Pruebas Calorícas</string>
@@ -459,14 +458,6 @@
     </widget>
     <addaction name="actionEspont_neo"/>
     <addaction name="menuPruebas_Calor_cas"/>
-   </widget>
-   <widget class="QMenu" name="menuPosicionales">
-    <property name="enabled">
-     <bool>false</bool>
-    </property>
-    <property name="title">
-     <string>Posicionales</string>
-    </property>
    </widget>
    <widget class="QMenu" name="menuOculomotoras">
     <property name="title">
@@ -489,11 +480,20 @@
      <string>Configuración</string>
     </property>
     <addaction name="actionCalibrar"/>
+    <addaction name="actionCambiar_evaluador"/>
+   </widget>
+   <widget class="QMenu" name="menuPosicionales">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
+    <property name="title">
+     <string>Posicionales</string>
+    </property>
    </widget>
    <addaction name="menuArchivo"/>
    <addaction name="menuCalofrica"/>
-   <addaction name="menuPosicionales"/>
    <addaction name="menuOculomotoras"/>
+   <addaction name="menuPosicionales"/>
    <addaction name="menuConfiguraci_n"/>
   </widget>
   <action name="actionSalir">
@@ -522,21 +522,33 @@
    </property>
   </action>
   <action name="actionOD_44">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>OD 44</string>
    </property>
   </action>
   <action name="actionOI_44">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>OI 44</string>
    </property>
   </action>
   <action name="actionOD_37">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>OD 37</string>
    </property>
   </action>
   <action name="actionOI37">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
    <property name="text">
     <string>OI 37</string>
    </property>
@@ -594,6 +606,11 @@
   <action name="actionAbrir">
    <property name="text">
     <string>Abrir...</string>
+   </property>
+  </action>
+  <action name="actionCambiar_evaluador">
+   <property name="text">
+    <string>Cambiar evaluador</string>
    </property>
   </action>
  </widget>
