@@ -1013,12 +1013,10 @@ class VideoWidget(QObject):
     def on_slider_pressed(self):
         """Maneja el evento cuando un slider es presionado"""
         self.video_thread.slider_th_pressed = True
-        print("Slider presionado - Debug:", self.video_thread.slider_th_pressed)
 
     def on_slider_released(self):
         """Maneja el evento cuando un slider es soltado"""
         self.video_thread.slider_th_pressed = False
-        print("Slider soltado - Debug:", self.video_thread.slider_th_pressed)
 
     def reconnect_sliders(self):
         """Reconecta los controles deslizantes al nuevo hilo de video"""

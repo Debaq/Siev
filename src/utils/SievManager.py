@@ -114,7 +114,7 @@ class SievManager:
             current_data = self._read_metadata_from_siev(siev_path)
             
             # Generar ID único para la prueba
-            test_id = f"test_{int(time.time())}"
+            test_id = test_data.get('id') or f"test_{int(time.time())}"
             
             # Preparar datos de la nueva prueba
             new_test = {

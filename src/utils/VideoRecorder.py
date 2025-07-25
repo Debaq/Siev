@@ -160,9 +160,6 @@ class VideoRecorder:
                         self.video_writer.write(frame_padded)
                         self.frames_written += 1
                         
-                        # Debug cada 50 frames
-                        if self.frames_written % 50 == 0:
-                            print(f"Frames escritos: {self.frames_written}")
                 
                 except Empty:
                     continue
@@ -190,13 +187,11 @@ class VideoRecorder:
                 return False
             
             # Obtener información de la prueba actual
+            current_test_id = self.main_window.protocol_manager.get_current_test_id()
             test_data = {
-                'id': self.current_test_id,
-                'tipo': getattr(self.main_window, 'current_protocol', 'desconocido'),
-                'fecha': time.time(),
-                'evaluador': getattr(self.main_window, 'current_evaluator', 'Sin evaluador'),
-                'estado': 'completado'
-            }
+                'id': current_test_id,  # USAR EL ID CORRECTO
+                'tipo': 'video_update',  # MARCAR COMO ACTUALIZACIÓN
+            }            
             
             # Agregar video al .siev
             success = siev_manager.add_test_to_siev(

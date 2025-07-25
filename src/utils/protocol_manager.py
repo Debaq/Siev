@@ -202,7 +202,9 @@ class ProtocolManager:
         """
         try:
             # Generar datos de la prueba
+            test_id = f"test_{int(time.time())}"  
             test_data = {
+                "id": test_id,  
                 "tipo": self.protocol_names.get(protocol_type, protocol_type),
                 "protocolo_id": protocol_type,
                 "fecha": time.time(),
@@ -264,9 +266,8 @@ class ProtocolManager:
             success = siev_manager.add_test_to_siev(siev_path, test_data)
             
             if success:
-                # Generar ID único basado en timestamp
-                test_id = f"test_{int(test_data['fecha'])}"
-                return test_id
+                return test_data.get('id')  
+
             else:
                 raise Exception("Error agregando prueba al archivo .siev")
                 

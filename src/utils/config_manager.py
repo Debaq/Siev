@@ -125,11 +125,11 @@ class ConfigManager:
             os.makedirs(data_path, exist_ok=True)
             
             # Crear subdirectorios
-            data_dir = os.path.join(data_path, "data")
-            logs_dir = os.path.join(data_path, "logs")
+            #data_dir = os.path.join(data_path, "data")
+            #logs_dir = os.path.join(data_path, "logs")
             
-            os.makedirs(data_dir, exist_ok=True)
-            os.makedirs(logs_dir, exist_ok=True)
+            #os.makedirs(data_dir, exist_ok=True)
+            #os.makedirs(logs_dir, exist_ok=True)
             
             print(f"Directorios de datos asegurados en: {data_path}")
             

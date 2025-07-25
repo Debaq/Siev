@@ -1207,8 +1207,7 @@ class MainWindow(QMainWindow):
             current_test_data = self.get_selected_test_data()
             if current_test_data:
                 protocol = current_test_data['test_data'].get('tipo', 'desconocido')
-                test_id = f"test_{int(time.time())}"
-                print(f"DEBUG: Iniciando video para protocolo: {protocol}")
+                test_id = self.protocol_manager.get_current_test_id()
                 self.video_recorder.start_recording(test_id)
         
         # Actualizar UI usando el nuevo sistema
