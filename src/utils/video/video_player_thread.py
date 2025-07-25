@@ -9,6 +9,7 @@ import time
 import tempfile
 import os
 from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QTimer
 
 
 class VideoPlayerThread(QThread):
@@ -44,12 +45,8 @@ class VideoPlayerThread(QThread):
         self.running = True
         
         # === PROCESAMIENTO DE PUPILA ===
-        from utils.VideoProcesses import PupilAnalyzer  # Importar si existe
-        try:
-            self.pupil_analyzer = PupilAnalyzer()
-        except:
-            self.pupil_analyzer = None
-            print("PupilAnalyzer no disponible - usando análisis básico")
+        # No usar PupilAnalyzer específico, usar análisis básico integrado
+        self.pupil_analyzer = None
     
     def load_video_from_data(self):
         """Cargar video desde datos binarios"""

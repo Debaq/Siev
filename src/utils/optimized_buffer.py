@@ -163,7 +163,7 @@ class OptimizedBuffer:
             else:
                 downsampled_data[key] = data
         
-        print(f"DEBUG: Downsampling de {len(visible_data['timestamps'])} a {len(downsampled_data['timestamps'])} puntos")
+        #print(f"DEBUG: Downsampling de {len(visible_data['timestamps'])} a {len(downsampled_data['timestamps'])} puntos")
         
         return downsampled_data
     

@@ -95,7 +95,11 @@ class MainWindow(QMainWindow):
         self.init_stimulus_system()
         self.setup_right_click_trigger()
         self.init_test_selection_system()
-
+        
+       # === CONFIGURAR REFERENCIAS UI PARA VIDEO WIDGET ===
+        if self.video_widget:
+            self.video_widget.set_ui_references(self.ui.slider_time, self.ui.btn_start)
+            print("Referencias UI configuradas para VideoWidget")
         
         # === MOSTRAR PROTOCOLO ===
         #QTimer.singleShot(500, self.show_protocol_selection)
@@ -149,17 +153,72 @@ class MainWindow(QMainWindow):
     # ========================================
 
 
+
     def on_test_selection_changed(self, current_item, previous_item):
-        """Manejar cambio de selección en el tree de pruebas"""
+        """MODIFICAR método existente para manejar alternancia de video"""
         try:
-            # Actualizar estado de UI existente
+            # === LÓGICA EXISTENTE ===
             self.update_test_ui_state()
-            
-            # *** NUEVA LÓGICA: Actualizar gráfico automáticamente ***
             self.update_graph_for_selection(current_item)
             
+            # === NUEVA LÓGICA: ALTERNANCIA DE VIDEO ===
+            selected_test_data = self.get_selected_test_data()
+            
+            if selected_test_data:
+                test_data = selected_test_data['test_data']
+                test_estado = test_data.get('estado', '').lower()
+                test_id = selected_test_data['test_id']
+                
+                if test_estado == 'completada':
+                    # Cargar video para reproducción
+                    print(f"Cargando video para prueba completada: {test_id}")
+                    video_data = self.load_video_for_test(test_id)
+                    if video_data and self.video_widget:
+                        self.video_widget.switch_to_player_mode(video_data)
+                    else:
+                        print("No se encontró video para la prueba o no hay VideoWidget")
+                        # Cambiar a modo live como fallback
+                        if self.video_widget:
+                            self.video_widget.switch_to_live_mode(self.camera_index)
+                else:
+                    # Prueba nueva/pendiente - cambiar a modo live
+                    print("Prueba no completada - cambiando a modo live")
+                    if self.video_widget:
+                        self.video_widget.switch_to_live_mode(self.camera_index)
+            else:
+                # Sin selección - modo live
+                print("Sin selección - cambiando a modo live")
+                if self.video_widget:
+                    self.video_widget.switch_to_live_mode(self.camera_index)
+                    
         except Exception as e:
             print(f"Error en cambio de selección: {e}")
+            
+    
+    def load_video_for_test(self, test_id):
+        """Cargar video desde archivo .siev para una prueba específica"""
+        try:
+            if not self.siev_manager or not self.current_user_siev:
+                print("Sistema de archivos no disponible")
+                return None
+            
+            # Extraer datos de video del archivo .siev
+            video_data = self.siev_manager.extract_test_video_data(
+                self.current_user_siev, 
+                test_id
+            )
+            
+            if video_data:
+                print(f"Video cargado para prueba {test_id}: {len(video_data)} bytes")
+                return video_data
+            else:
+                print(f"No se encontró video para prueba {test_id}")
+                return None
+                
+        except Exception as e:
+            print(f"Error cargando video para prueba {test_id}: {e}")
+            return None
+        
 
     def update_graph_for_selection(self, current_item):
         """
@@ -1009,37 +1068,23 @@ class MainWindow(QMainWindow):
 
 
     def toggle_recording(self):
-        """
-        Manejo completo del botón Iniciar/Detener/Reproducir/Pausar
-        REEMPLAZA EL MÉTODO EXISTENTE
-        """
+        """MODIFICAR método existente para manejar ambos modos"""
+        
+        # === NUEVA LÓGICA: Si está en modo player, controlar reproducción ===
+        if (hasattr(self.video_widget, 'is_in_player_mode') and 
+            self.video_widget.is_in_player_mode):
+            self.video_widget.toggle_playback()
+            return
+        
+        # === LÓGICA ORIGINAL PARA GRABACIÓN ===
         try:
-            selected_test_data = self.get_selected_test_data()
-            
-            if not selected_test_data:
-                print("No hay prueba seleccionada")
-                return
-                
-            test_data = selected_test_data['test_data']
-            test_estado = test_data.get('estado', '').lower()
-            button_text = self.ui.btn_start.text()
-            
-            # Manejar reproducción de pruebas completadas
-            if test_estado == 'completada':
-                if button_text == "Reproducir":
-                    self.iniciar_reproduccion()
-                elif button_text == "Pausar":
-                    self.pausar_reproduccion()
-                    
-            # Manejar grabación de pruebas nuevas
-            elif test_estado in ['pendiente', 'ejecutando']:
-                if button_text == "Iniciar":
-                    self.start_test_recording()
-                elif button_text == "Detener":
-                    self.stop_test_recording()
-                    
+            if not self.is_recording and not self.is_calibrating:
+                self.start_recording()
+            else:
+                self.stop_recording()
         except Exception as e:
             print(f"Error en toggle_recording: {e}")
+
 
 
 
@@ -1373,6 +1418,15 @@ class MainWindow(QMainWindow):
         self.update_test_ui_state()
         
         print("Grabación detenida")
+        
+        try:
+            # Después de guardar y completar la grabación
+            if self.video_widget and hasattr(self.video_widget, 'is_in_player_mode'):
+                # Pequeña demora para asegurar que la grabación terminó
+                QTimer.singleShot(1000, lambda: self.video_widget.switch_to_live_mode(self.camera_index))
+                print("Programado cambio a modo live post-grabación")
+        except Exception as e:
+            print(f"Error programando cambio a modo live: {e}")
 
 
     def update_recording_time(self):
@@ -1897,7 +1951,59 @@ class MainWindow(QMainWindow):
 
 
 
+    def debug_video_mode(self):
+        """Método de debug para verificar estado del video"""
+        if self.video_widget:
+            mode = "PLAYER" if getattr(self.video_widget, 'is_in_player_mode', False) else "LIVE"
+            has_player = bool(getattr(self.video_widget, 'video_player_thread', None))
+            has_live = bool(getattr(self.video_widget, 'video_thread', None))
+            
+            print(f"=== DEBUG VIDEO MODE ===")
+            print(f"Modo actual: {mode}")
+            print(f"Tiene PlayerThread: {has_player}")
+            print(f"Tiene VideoThread: {has_live}")
+            print(f"Slider time habilitado: {self.ui.slider_time.isEnabled()}")
+            print(f"Texto botón: {self.ui.btn_start.text()}")
+            print("========================")
 
+
+    def keyPressEvent(self, event):
+        """Manejar teclas de acceso rápido"""
+        try:
+            # Controles de video cuando está en modo player
+            if (hasattr(self.video_widget, 'is_in_player_mode') and 
+                self.video_widget.is_in_player_mode):
+                
+                if event.key() == Qt.Key_Space:
+                    # Barra espaciadora = play/pause
+                    self.video_widget.toggle_playback()
+                    event.accept()
+                    return
+                elif event.key() == Qt.Key_Left:
+                    # Flecha izquierda = retroceder 1 segundo
+                    if self.video_widget.video_player_thread:
+                        current_time = self.video_widget.video_player_thread.get_current_time()
+                        new_time = max(0, current_time - 1.0)
+                        self.video_widget.video_player_thread.seek_to_time(new_time)
+                    event.accept()
+                    return
+                elif event.key() == Qt.Key_Right:
+                    # Flecha derecha = avanzar 1 segundo
+                    if self.video_widget.video_player_thread:
+                        current_time = self.video_widget.video_player_thread.get_current_time()
+                        max_time = self.video_widget.video_player_thread.get_duration()
+                        new_time = min(max_time, current_time + 1.0)
+                        self.video_widget.video_player_thread.seek_to_time(new_time)
+                    event.accept()
+                    return
+            
+            # Llamar al método padre para otros eventos
+            super().keyPressEvent(event)
+            
+        except Exception as e:
+            print(f"Error en keyPressEvent: {e}")
+            super().keyPressEvent(event)
+            
 
 
     def closeEvent(self, event):

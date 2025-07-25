@@ -560,3 +560,106 @@ class SievManager:
         except Exception as e:
             print(f"Error listando archivos .siev: {e}")
             return []
+        
+    # AGREGAR ESTE MÉTODO A LA CLASE SievManager:
+
+    def extract_test_video_data(self, siev_path: str, test_id: str) -> bytes:
+        """
+        Extraer datos de video de una prueba específica desde archivo .siev
+        
+        Args:
+            siev_path: Ruta al archivo .siev
+            test_id: ID de la prueba
+            
+        Returns:
+            bytes: Datos binarios del video, o None si no se encuentra
+        """
+        try:
+            if not os.path.exists(siev_path):
+                print(f"Archivo .siev no encontrado: {siev_path}")
+                return None
+            
+            with tarfile.open(siev_path, 'r:gz') as tar:
+                # Buscar archivo de video para la prueba
+                video_filename = f"videos/{test_id}.mp4"
+                
+                try:
+                    video_member = tar.getmember(video_filename)
+                    video_file = tar.extractfile(video_member)
+                    
+                    if video_file:
+                        video_data = video_file.read()
+                        print(f"Video extraído: {test_id} ({len(video_data)} bytes)")
+                        return video_data
+                    else:
+                        print(f"No se pudo extraer el archivo de video: {video_filename}")
+                        return None
+                        
+                except KeyError:
+                    print(f"Video no encontrado en .siev: {video_filename}")
+                    return None
+                    
+        except Exception as e:
+            print(f"Error extrayendo video de .siev: {e}")
+            return None
+
+    def has_test_video(self, siev_path: str, test_id: str) -> bool:
+        """
+        Verificar si una prueba tiene video asociado
+        
+        Args:
+            siev_path: Ruta al archivo .siev
+            test_id: ID de la prueba
+            
+        Returns:
+            bool: True si tiene video, False si no
+        """
+        try:
+            if not os.path.exists(siev_path):
+                return False
+            
+            with tarfile.open(siev_path, 'r:gz') as tar:
+                video_filename = f"videos/{test_id}.mp4"
+                
+                try:
+                    tar.getmember(video_filename)
+                    return True
+                except KeyError:
+                    return False
+                    
+        except Exception as e:
+            print(f"Error verificando video en .siev: {e}")
+            return False
+
+    def get_test_video_info(self, siev_path: str, test_id: str) -> dict:
+        """
+        Obtener información del video de una prueba
+        
+        Args:
+            siev_path: Ruta al archivo .siev
+            test_id: ID de la prueba
+            
+        Returns:
+            dict: Información del video (tamaño, etc.)
+        """
+        try:
+            if not os.path.exists(siev_path):
+                return {}
+            
+            with tarfile.open(siev_path, 'r:gz') as tar:
+                video_filename = f"videos/{test_id}.mp4"
+                
+                try:
+                    video_member = tar.getmember(video_filename)
+                    return {
+                        'filename': video_filename,
+                        'size_bytes': video_member.size,
+                        'size_mb': round(video_member.size / (1024 * 1024), 2),
+                        'modified_time': video_member.mtime
+                    }
+                except KeyError:
+                    return {}
+                    
+        except Exception as e:
+            print(f"Error obteniendo info de video: {e}")
+            return {}

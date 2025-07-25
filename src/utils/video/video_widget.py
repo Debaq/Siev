@@ -3,6 +3,8 @@ from PySide6.QtCore import QThread, Signal,QObject
 from PySide6.QtGui import QImage, QPixmap
 import time
 from utils.video.video_thread import VideoThread
+from utils.video.video_player_thread import VideoPlayerThread
+from PySide6.QtCore import QTimer
 
 class VideoWidget(QObject):
     sig_pos = Signal(list)
@@ -17,7 +19,20 @@ class VideoWidget(QObject):
         self.sliders = sliders
         self.camera_frame = camera_frame
         self.pos_eye = []
+
+        # === NUEVAS PROPIEDADES PARA PLAYER ===
+        self.video_player_thread = None
+        self.is_in_player_mode = False
+        self.current_video_data = None
         
+        # === REFERENCIAS A UI ===
+        self.slider_time = None  # Se asignará desde main_window
+        self.btn_start = None    # Se asignará desde main_window
+        
+        # Timer para actualizar slider de tiempo
+        self.time_update_timer = QTimer()
+        self.time_update_timer.timeout.connect(self.update_time_slider)
+                
         slider_contrast = next((slider for slider in self.sliders if slider.objectName() == "slider_contrast"), None)
         slider_brightness = next((slider for slider in self.sliders if slider.objectName() == "slider_brightness"), None)
 
@@ -245,25 +260,284 @@ class VideoWidget(QObject):
             print(f"Error al cambiar modo YOLO: {e}")
 
 
+    def set_ui_references(self, slider_time, btn_start):
+        """Establecer referencias a controles de UI"""
+        self.slider_time = slider_time
+        self.btn_start = btn_start
+        
+        # Conectar eventos del slider de tiempo
+        if self.slider_time:
+            self.slider_time.sliderPressed.connect(self._on_time_slider_pressed)
+            self.slider_time.sliderReleased.connect(self._on_time_slider_released)
+            self.slider_time.valueChanged.connect(self._on_time_slider_changed)
+            
+        print("Referencias UI establecidas para VideoWidget")
 
-    
+    def switch_to_live_mode(self, camera_id=2):
+        """Cambiar a modo cámara en vivo"""
+        print("=== CAMBIANDO A MODO CÁMARA EN VIVO ===")
+        
+        # 1. Destruir VideoPlayerThread si existe
+        if self.video_player_thread:
+            print("Destruyendo VideoPlayerThread...")
+            self.video_player_thread.stop()
+            if self.video_player_thread.isRunning():
+                self.video_player_thread.wait(3000)
+            self.video_player_thread = None
+        
+        # 2. Parar timer de actualización
+        self.time_update_timer.stop()
+        
+        # 3. Limpiar estado de player
+        self.is_in_player_mode = False
+        self.current_video_data = None
+        
+        # 4. Configurar UI para modo en vivo
+        self._configure_ui_for_live_mode()
+        
+        # 5. Crear/Recrear VideoThread si no existe
+        if not hasattr(self, 'video_thread') or not self.video_thread:
+            print("Creando nuevo VideoThread...")
+            self._create_new_video_thread(camera_id)
+        
+        print("Modo cámara en vivo activado")
+
+    def switch_to_player_mode(self, video_data):
+        """Cambiar a modo reproductor de video"""
+        print("=== CAMBIANDO A MODO REPRODUCTOR ===")
+        
+        # 1. Destruir VideoThread si existe
+        if hasattr(self, 'video_thread') and self.video_thread:
+            print("Destruyendo VideoThread...")
+            self.video_thread.stop()
+            if self.video_thread.isRunning():
+                self.video_thread.wait(3000)
+            self.video_thread = None
+        
+        # 2. Configurar estado de player
+        self.is_in_player_mode = True
+        self.current_video_data = video_data
+        
+        # 3. Configurar UI para modo player
+        self._configure_ui_for_player_mode()
+        
+        # 4. Crear VideoPlayerThread
+        print("Creando VideoPlayerThread...")
+        self._create_video_player_thread(video_data)
+        
+        # 5. Iniciar timer de actualización
+        self.time_update_timer.start(100)  # Actualizar cada 100ms
+        
+        print("Modo reproductor activado")
+
+    def _create_new_video_thread(self, camera_id):
+        """Crear nuevo VideoThread con configuración actual"""
+        try:
+            # Obtener configuración actual
+            resolucion = self.cbres.currentText()
+            res_partes = resolucion.split('@')
+            width, height = map(int, res_partes[0].split('x'))
+            fps = int(res_partes[1])
+            
+            # Obtener valores de sliders
+            slider_contrast = next((slider for slider in self.sliders if slider.objectName() == "slider_contrast"), None)
+            slider_brightness = next((slider for slider in self.sliders if slider.objectName() == "slider_brightness"), None)
+            
+            # Crear VideoThread
+            from utils.video.video_thread import VideoThread
+            self.video_thread = VideoThread(
+                camera_id=camera_id,
+                cap_width=width,
+                cap_height=height,
+                cap_fps=fps,
+                brightness=slider_brightness.value() if slider_brightness else -21,
+                contrast=slider_contrast.value() if slider_contrast else 50
+            )
+            
+            # Conectar señales
+            self.video_thread.frame_ready.connect(self.update_frame)
+            
+            # Iniciar thread
+            self.video_thread.start(QThread.HighPriority)
+            
+            # Reconectar sliders
+            self.reconnect_sliders()
+            
+            print("VideoThread creado exitosamente")
+            
+        except Exception as e:
+            print(f"Error creando VideoThread: {e}")
+
+    def _create_video_player_thread(self, video_data):
+        """Crear VideoPlayerThread"""
+        try:
+            # Configuración de análisis desde sliders actuales
+            analysis_config = {
+                'threslhold': [50, 50],
+                'erode': [2, 2],
+                'nose_width': 0.25,
+                'eye_height': 0.5
+            }
+            
+            # Actualizar con valores de sliders actuales
+            self._update_analysis_config_from_sliders(analysis_config)
+            
+            # Crear VideoPlayerThread
+            self.video_player_thread = VideoPlayerThread(video_data, analysis_config)
+            
+            # Conectar señales
+            self.video_player_thread.frame_ready.connect(self.update_frame)
+            self.video_player_thread.video_loaded.connect(self._on_video_loaded)
+            self.video_player_thread.duration_changed.connect(self._on_duration_changed)
+            
+            # Iniciar thread
+            self.video_player_thread.start()
+            
+            print("VideoPlayerThread creado exitosamente")
+            
+        except Exception as e:
+            print(f"Error creando VideoPlayerThread: {e}")
+
+    def _update_analysis_config_from_sliders(self, config):
+        """Actualizar configuración de análisis desde sliders"""
+        try:
+            for slider in self.sliders:
+                name = slider.objectName()
+                value = slider.value()
+                
+                if name == "slider_th_right":
+                    config['threslhold'][0] = value
+                elif name == "slider_th_left":
+                    config['threslhold'][1] = value
+                elif name == "slider_erode_right":
+                    config['erode'][0] = value
+                elif name == "slider_erode_left":
+                    config['erode'][1] = value
+                elif name == "slider_nose_width":
+                    config['nose_width'] = value / 100.0
+                elif name == "slider_height":
+                    config['eye_height'] = value / 100.0
+        except Exception as e:
+            print(f"Error actualizando config de análisis: {e}")
+
+    def _configure_ui_for_live_mode(self):
+        """Configurar UI para modo cámara en vivo"""
+        if self.slider_time:
+            self.slider_time.setEnabled(False)
+            self.slider_time.setValue(0)
+        
+        if self.btn_start:
+            self.btn_start.setText("Iniciar")
+
+    def _configure_ui_for_player_mode(self):
+        """Configurar UI para modo reproductor"""
+        if self.slider_time:
+            self.slider_time.setEnabled(True)
+            self.slider_time.setValue(0)
+        
+        if self.btn_start:
+            self.btn_start.setText("Play")
+
+    def _on_video_loaded(self, success):
+        """Callback cuando se carga el video"""
+        if success:
+            print("Video cargado exitosamente")
+        else:
+            print("Error cargando video")
+
+    def _on_duration_changed(self, duration):
+        """Callback cuando cambia la duración del video"""
+        if self.slider_time:
+            # Configurar slider para la duración del video (precisión de centésimas)
+            self.slider_time.setMaximum(int(duration * 100))
+            self.slider_time.setValue(0)
+        print(f"Duración del video: {duration:.2f} segundos")
+
+    def _on_time_slider_pressed(self):
+        """Cuando se presiona el slider de tiempo"""
+        if self.video_player_thread:
+            self.video_player_thread.pause()
+
+    def _on_time_slider_released(self):
+        """Cuando se suelta el slider de tiempo"""
+        # No reanudar automáticamente, esperar botón play
+        pass
+
+    def _on_time_slider_changed(self, value):
+        """Cuando cambia el valor del slider de tiempo"""
+        if self.video_player_thread and self.is_in_player_mode:
+            # Convertir valor a tiempo
+            time_seconds = value / 100.0
+            self.video_player_thread.seek_to_time(time_seconds)
+
+    # === MÉTODOS PARA CONTROLES DE REPRODUCCIÓN ===
+
+    def play_video(self):
+        """Reproducir video"""
+        if self.video_player_thread and self.is_in_player_mode:
+            self.video_player_thread.play()
+            if self.btn_start:
+                self.btn_start.setText("Pause")
+
+    def pause_video(self):
+        """Pausar video"""
+        if self.video_player_thread and self.is_in_player_mode:
+            self.video_player_thread.pause()
+            if self.btn_start:
+                self.btn_start.setText("Play")
+
+    def toggle_playback(self):
+        """Alternar reproducción/pausa"""
+        if self.video_player_thread and self.is_in_player_mode:
+            if self.video_player_thread.is_playing:
+                self.pause_video()
+            else:
+                self.play_video()
+
+    def update_time_slider(self):
+        """Actualizar slider de tiempo durante reproducción"""
+        if (self.video_player_thread and self.slider_time and 
+            self.is_in_player_mode and self.video_player_thread.is_playing):
+            
+            current_time = self.video_player_thread.get_current_time()
+            slider_value = int(current_time * 100)
+            
+            # Actualizar sin triggear el evento
+            self.slider_time.blockSignals(True)
+            self.slider_time.setValue(slider_value)
+            self.slider_time.blockSignals(False)
+
+
     def cleanup(self):
         """Limpia los recursos al cerrar la aplicación"""
         try:
-            # Desconectar señales
-            try:
-                self.video_thread.frame_ready.disconnect()
-            except:
-                pass
+            # Detener timer
+            self.time_update_timer.stop()
             
-            # Detener el hilo
-            print("Deteniendo VideoThread...")
-            self.video_thread.stop()
+            # Limpiar VideoThread
+            if hasattr(self, 'video_thread') and self.video_thread:
+                try:
+                    self.video_thread.frame_ready.disconnect()
+                except:
+                    pass
+                
+                print("Deteniendo VideoThread...")
+                self.video_thread.stop()
+                
+                if self.video_thread.isRunning():
+                    if not self.video_thread.wait(2000):
+                        print("Forzando terminación del VideoThread")
+                        self.video_thread.terminate()
             
-            # Esperar a que termine (con timeout)
-            if self.video_thread.isRunning():
-                if not self.video_thread.wait(2000):  # 2 segundos de timeout
-                    print("Forzando terminación del hilo de video")
-                    self.video_thread.terminate()
+            # Limpiar VideoPlayerThread
+            if self.video_player_thread:
+                print("Deteniendo VideoPlayerThread...")
+                self.video_player_thread.stop()
+                
+                if self.video_player_thread.isRunning():
+                    if not self.video_player_thread.wait(2000):
+                        print("Forzando terminación del VideoPlayerThread")
+                        self.video_player_thread.terminate()
+                        
         except Exception as e:
             print(f"Error durante la limpieza: {e}")

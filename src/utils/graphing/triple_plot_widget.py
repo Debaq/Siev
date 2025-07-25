@@ -229,7 +229,7 @@ class ConfigurablePlotWidget(QWidget):
         # Debug cada 100 puntos
         if self.data_points_received % 100 == 0:
             buffer_info = self.display_buffer.get_buffer_info()
-            print(f"Puntos recibidos: {self.data_points_received}, Buffer: {buffer_info['current_size']}")
+            #print(f"Puntos recibidos: {self.data_points_received}, Buffer: {buffer_info['current_size']}")
     
     def _update_display(self):
         """Actualiza la visualización de manera optimizada."""
