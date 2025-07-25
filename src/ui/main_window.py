@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
         self.last_update_time = None
         self.MAX_RECORDING_TIME = 5 * 60  # 5 minutos
         self.CALIBRATION_TIME = 1  # 1 segundo
+
         # === GESTOR DE USUARIOS ===
         self.siev_manager = None
         self.current_user_siev = None
@@ -275,7 +276,6 @@ class MainWindow(QMainWindow):
             self.data_storage = DataStorage(
                 auto_save_interval=2.0,
                 buffer_size=500,
-                data_path=self.data_path  # Usar ruta del config
             )
             
             # Variables de control de envío a gráficos
@@ -625,12 +625,147 @@ class MainWindow(QMainWindow):
             # En caso de error, limpiar buffer para evitar acumulación
             self.graph_data_buffer.clear()
 
+
+
     def toggle_recording(self):
-        """Alternar grabación"""
-        if not self.is_recording and not self.is_calibrating:
-            self.start_calibration_phase()
-        else:
-            self.stop_recording()
+        """
+        Manejo completo del botón Iniciar/Detener con integración de protocol_manager
+        """
+        try:
+            # Estado: Iniciar nueva prueba
+            if not self.is_recording and not self.is_calibrating and self.ui.btn_start.text() == "Iniciar":
+                self.start_test_recording()
+                
+            # Estado: Detener prueba en curso
+            elif (self.is_recording or self.is_calibrating) and self.ui.btn_start.text() == "Detener":
+                self.stop_test_recording()
+                
+            # Estado: Prueba finalizada - no hacer nada
+            elif self.ui.btn_start.text() == "Finalizado":
+                print("Prueba ya finalizada. Crear nueva prueba para continuar.")
+                
+        except Exception as e:
+            print(f"Error en toggle_recording: {e}")
+
+    def start_test_recording(self):
+        """Iniciar grabación con integración de protocolo"""
+        try:
+            # Obtener ID de prueba actual
+            current_test_id = self.protocol_manager.get_current_test_id()
+            
+            if not current_test_id:
+                print("No hay prueba activa. Debe crear una prueba primero.")
+                QMessageBox.warning(
+                    self,
+                    "Sin Prueba Activa",
+                    "Debe crear una prueba antes de iniciar la grabación.\n"
+                    "Use el menú Protocolos para crear una nueva prueba."
+                )
+                return
+            
+            # Marcar inicio en protocol_manager
+            if not self.protocol_manager.start_test(current_test_id):
+                print("Error iniciando prueba en protocol_manager")
+                return
+            
+            # Iniciar calibración o grabación según corresponda
+            if hasattr(self, 'current_protocol') and self.current_protocol in ['sacadas', 'seguimiento_lento', 'ng_optocinetico']:
+                # Protocolos con estímulos
+                self.toggle_recording_with_stimulus()
+            else:
+                # Protocolos normales
+                self.start_calibration_phase()
+            
+            # Actualizar botón
+            self.ui.btn_start.setText("Detener")
+            self.ui.btn_start.setEnabled(True)
+            
+            print(f"Prueba {current_test_id} iniciada")
+            
+        except Exception as e:
+            print(f"Error iniciando prueba: {e}")
+
+    def stop_test_recording(self):
+        """Detener grabación y finalizar prueba"""
+        try:
+            # Obtener ID de prueba actual
+            current_test_id = self.protocol_manager.get_current_test_id()
+            
+            if not current_test_id:
+                print("No se encontró prueba activa para finalizar")
+            
+            # Detener grabación
+            was_recording = self.is_recording
+            
+            if was_recording or self.is_calibrating:
+                self.stop_recording()  # Método original de detención
+            
+            # Cerrar ventana de estímulos si está abierta
+            if hasattr(self, 'stimulus_manager') and self.stimulus_manager:
+                self.stimulus_manager.close_stimulus_window()
+                
+            # Resetear estados de estímulos
+            if hasattr(self, 'test_preparation_mode'):
+                self.test_preparation_mode = False
+                self.test_ready_to_start = False
+            
+            # Finalizar en protocol_manager
+            if current_test_id and was_recording:
+                self.protocol_manager.finalize_test(current_test_id, stopped_manually=True)
+            
+            # Actualizar botón a estado final
+            self.ui.btn_start.setText("Finalizado")
+            self.ui.btn_start.setEnabled(False)
+            
+            print(f"Prueba {current_test_id} finalizada")
+            
+        except Exception as e:
+            print(f"Error deteniendo prueba: {e}")
+
+    def on_recording_time_expired(self):
+        """Manejar finalización automática por tiempo cumplido"""
+        try:
+            print("=== TIEMPO DE GRABACIÓN CUMPLIDO ===")
+            
+            # Obtener ID de prueba actual
+            current_test_id = self.protocol_manager.get_current_test_id()
+            
+            # Detener grabación
+            self.stop_recording()  # Método original
+            
+            # Finalizar en protocol_manager
+            if current_test_id:
+                self.protocol_manager.finalize_test(current_test_id, stopped_manually=False)
+            
+            # Actualizar botón a estado final
+            self.ui.btn_start.setText("Finalizado")
+            self.ui.btn_start.setEnabled(False)
+            
+            print(f"Prueba {current_test_id} finalizada automáticamente")
+            
+        except Exception as e:
+            print(f"Error en finalización automática: {e}")
+
+    def reset_button_for_new_test(self):
+        """
+        Resetear botón para nueva prueba (llamar desde protocol_manager al crear prueba)
+        """
+        try:
+            self.ui.btn_start.setText("Iniciar")
+            self.ui.btn_start.setEnabled(True)
+            
+            # Resetear estados
+            if hasattr(self, 'test_preparation_mode'):
+                self.test_preparation_mode = False
+                self.test_ready_to_start = False
+            
+            print("Botón reseteado para nueva prueba")
+            
+        except Exception as e:
+            print(f"Error reseteando botón: {e}")
+
+
+
 
     def start_calibration_phase(self):
         """Iniciar fase de calibración"""
@@ -1106,7 +1241,6 @@ class MainWindow(QMainWindow):
         """Habilitar/deshabilitar funciones que requieren usuario"""
         try:
 
-            print(f"=== DEBUG enable_test_functions: enabled={enabled} ===")
 
             # Habilitar botón de iniciar
             self.ui.btn_start.setEnabled(enabled)

@@ -131,8 +131,9 @@ class OptimizedBuffer:
             
             # Debug info
             if len(visible_data['timestamps']) > 0:
-                print(f"DEBUG: Datos visibles encontrados: {len(visible_data['timestamps'])} puntos")
-                print(f"       Rango de tiempo: {visible_data['timestamps'][0]:.2f} - {visible_data['timestamps'][-1]:.2f}")
+                #print(f"DEBUG: Datos visibles encontrados: {len(visible_data['timestamps'])} puntos")
+                #print(f"       Rango de tiempo: {visible_data['timestamps'][0]:.2f} - {visible_data['timestamps'][-1]:.2f}")
+                pass
             
             return visible_data
             

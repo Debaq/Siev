@@ -220,7 +220,8 @@ class ProtocolManager:
             
             # Agregar al tree widget
             self.add_test_to_tree(test_data, test_id)
-            
+            self.main_window.reset_button_for_new_test()
+
             # Mensaje de confirmación
             protocol_name = self.protocol_names.get(protocol_type, protocol_type)
             QMessageBox.information(
@@ -228,7 +229,8 @@ class ProtocolManager:
                 "Prueba Creada",
                 f"Prueba '{protocol_name}' creada exitosamente.\n\n"
                 f"Evaluador: {self.current_evaluator}\n"
-                f"Estado: Pendiente"
+                f"Estado: Pendiente\n\n"
+                f"Presione 'Iniciar' para comenzar la grabación."
             )
             
             print(f"Prueba creada: {protocol_name} por {self.current_evaluator}")
@@ -414,15 +416,267 @@ class ProtocolManager:
         except Exception as e:
             print(f"Error actualizando prueba en tree: {e}")
     
-    def update_test_in_siev(self, test_id, new_status):
-        """Actualizar estado de prueba en el .siev"""
+    # Agregar estos métodos al protocol_manager.py existente:
+
+    def start_test(self, test_id):
+        """
+        Iniciar una prueba (llamar cuando se presiona Iniciar)
+        
+        Args:
+            test_id: ID de la prueba a iniciar
+        """
         try:
-            # Esta función se implementará cuando se integre con la lógica de grabación
-            # Por ahora solo logging
-            print(f"TODO: Actualizar prueba {test_id} en .siev con estado {new_status}")
+            # Actualizar estado a "ejecutando"
+            self.update_test_status(test_id, "ejecutando")
+            
+            # Actualizar hora de inicio en .siev
+            self.update_test_in_siev(test_id, hora_inicio=time.time())
+            
+            print(f"Prueba {test_id} iniciada")
+            return True
             
         except Exception as e:
-            print(f"Error actualizando prueba en .siev: {e}")
+            print(f"Error iniciando prueba {test_id}: {e}")
+            return False
+
+    def finalize_test(self, test_id, stopped_manually=False):
+        """
+        Finalizar prueba y empaquetar datos
+        
+        Args:
+            test_id: ID de la prueba
+            stopped_manually: Si fue detenida manualmente o por tiempo
+        """
+        try:
+            print(f"=== FINALIZANDO PRUEBA {test_id} ===")
+            
+            # Obtener datos de data_storage
+            test_data = self.main_window.data_storage.get_test_data()
+            
+            if not test_data:
+                print("No hay datos para empaquetar")
+                self.update_test_status(test_id, "error")
+                return False
+            
+            # Actualizar estado a "completado"
+            self.update_test_status(test_id, "completado")
+            
+            # Actualizar metadatos finales en .siev
+            self.update_test_in_siev(
+                test_id, 
+                hora_fin=time.time(),
+                test_data=test_data,
+                stopped_manually=stopped_manually
+            )
+            
+            # Limpiar datos de memoria
+            self.main_window.data_storage.clear_data()
+            
+            print(f"Prueba {test_id} finalizada y empaquetada exitosamente")
+            
+            # Mostrar estadísticas
+            stats = test_data.get('statistics', {})
+            print(f"  - Duración: {stats.get('duration_seconds', 0):.1f}s")
+            print(f"  - Muestras: {stats.get('total_samples', 0)}")
+            print(f"  - Tasa de muestreo: {stats.get('sample_rate', 0):.1f} Hz")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error finalizando prueba {test_id}: {e}")
+            self.update_test_status(test_id, "error")
+            return False
+
+    def update_test_in_siev(self, test_id, hora_inicio=None, hora_fin=None, test_data=None, stopped_manually=False):
+        """
+        Actualizar prueba en el archivo .siev con datos completos
+        
+        Args:
+            test_id: ID de la prueba
+            hora_inicio: Timestamp de inicio (opcional)
+            hora_fin: Timestamp de finalización (opcional)  
+            test_data: Datos completos de la prueba (opcional)
+            stopped_manually: Si fue detenida manualmente
+        """
+        try:
+            siev_manager = self.main_window.siev_manager
+            siev_path = self.main_window.current_user_siev
+            
+            if not siev_manager or not siev_path:
+                raise Exception("Sistema de usuarios no disponible")
+            
+            # Si es solo actualización de timestamps
+            if not test_data:
+                # Actualizar solo metadatos básicos
+                metadata_updates = {}
+                if hora_inicio:
+                    metadata_updates['hora_inicio'] = hora_inicio
+                if hora_fin:
+                    metadata_updates['hora_fin'] = hora_fin
+                
+                # TODO: Implementar actualización simple de metadatos en SievManager
+                print(f"Actualizando timestamps para {test_id}")
+                return True
+            
+            # Si es finalización completa con datos
+            if test_data:
+                # Preparar datos CSV en formato compatible
+                csv_data = self._prepare_csv_data(test_data)
+                
+                # Obtener metadatos actuales de la prueba
+                current_test_data = self._get_test_metadata(test_id)
+                if current_test_data:
+                    current_test_data['hora_fin'] = hora_fin
+                    current_test_data['estado'] = 'completado'
+                    current_test_data['detenido_manualmente'] = stopped_manually
+                    
+                    # Usar SievManager para agregar datos completos
+                    success = siev_manager.add_test_to_siev(
+                        siev_path,
+                        current_test_data,
+                        csv_data=csv_data,
+                        video_path=None  # TODO: Implementar video si es necesario
+                    )
+                    
+                    if success:
+                        print(f"Datos de prueba {test_id} empaquetados en .siev")
+                        return True
+                    else:
+                        raise Exception("Error empaquetando datos en .siev")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error actualizando prueba {test_id} en .siev: {e}")
+            return False
+
+    def _prepare_csv_data(self, test_data):
+        """
+        Convertir datos de prueba al formato CSV para SievManager
+        
+        Args:
+            test_data: Datos de la prueba desde data_storage
+            
+        Returns:
+            str: Datos en formato CSV
+        """
+        try:
+            import io
+            import csv
+            
+            # Crear buffer para CSV
+            csv_buffer = io.StringIO()
+            
+            # Headers CSV
+            headers = [
+                'timestamp', 'recording_time', 
+                'left_eye_x', 'left_eye_y', 'left_eye_detected',
+                'right_eye_x', 'right_eye_y', 'right_eye_detected',
+                'imu_x', 'imu_y', 'imu_z'
+            ]
+            
+            writer = csv.writer(csv_buffer)
+            writer.writerow(headers)
+            
+            # Escribir datos
+            for sample in test_data.get('data', []):
+                eye_data = sample.get('eye_data', {})
+                imu_data = sample.get('imu_data', {})
+                
+                row = [
+                    sample.get('timestamp', 0),
+                    sample.get('recording_time', 0),
+                    eye_data.get('left_eye_x', 0),
+                    eye_data.get('left_eye_y', 0),
+                    eye_data.get('left_eye_detected', False),
+                    eye_data.get('right_eye_x', 0),
+                    eye_data.get('right_eye_y', 0),
+                    eye_data.get('right_eye_detected', False),
+                    imu_data.get('x', 0),
+                    imu_data.get('y', 0),
+                    imu_data.get('z', 0)
+                ]
+                writer.writerow(row)
+            
+            return csv_buffer.getvalue()
+            
+        except Exception as e:
+            print(f"Error preparando datos CSV: {e}")
+            return ""
+
+    def _get_test_metadata(self, test_id):
+        """
+        Obtener metadatos actuales de una prueba desde el tree widget
+        
+        Args:
+            test_id: ID de la prueba
+            
+        Returns:
+            dict: Metadatos de la prueba o None
+        """
+        try:
+            tree_widget = self.main_window.ui.listTestWidget
+            
+            # Buscar el item de la prueba
+            for i in range(tree_widget.topLevelItemCount()):
+                date_item = tree_widget.topLevelItem(i)
+                
+                for j in range(date_item.childCount()):
+                    test_item = date_item.child(j)
+                    item_data = test_item.data(0, Qt.UserRole)
+                    
+                    if item_data and item_data.get('test_id') == test_id:
+                        return item_data.get('test_data', {})
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error obteniendo metadatos de prueba {test_id}: {e}")
+            return None
+
+    def get_current_test_id(self):
+        """
+        Obtener ID de la prueba actualmente seleccionada o más reciente
+        
+        Returns:
+            str: ID de la prueba actual o None
+        """
+        try:
+            tree_widget = self.main_window.ui.listTestWidget
+            
+            # Intentar obtener item seleccionado
+            current_item = tree_widget.currentItem()
+            if current_item and current_item.parent():  # Es un item de prueba
+                item_data = current_item.data(0, Qt.UserRole)
+                if item_data:
+                    return item_data.get('test_id')
+            
+            # Si no hay selección, buscar la prueba más reciente con estado "pendiente" o "ejecutando"
+            latest_test_id = None
+            latest_timestamp = 0
+            
+            for i in range(tree_widget.topLevelItemCount()):
+                date_item = tree_widget.topLevelItem(i)
+                
+                for j in range(date_item.childCount()):
+                    test_item = date_item.child(j)
+                    item_data = test_item.data(0, Qt.UserRole)
+                    
+                    if item_data:
+                        test_data = item_data.get('test_data', {})
+                        estado = test_data.get('estado', '')
+                        fecha = test_data.get('fecha', 0)
+                        
+                        if estado in ['pendiente', 'ejecutando'] and fecha > latest_timestamp:
+                            latest_timestamp = fecha
+                            latest_test_id = item_data.get('test_id')
+            
+            return latest_test_id
+            
+        except Exception as e:
+            print(f"Error obteniendo test_id actual: {e}")
+            return None
+    
     
     def get_current_evaluator(self):
         """Obtener evaluador actual"""
