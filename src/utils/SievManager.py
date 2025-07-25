@@ -90,19 +90,12 @@ class SievManager:
                 os.remove(temp_path)
             raise Exception(f"Error creando archivo .siev: {e}")
     
+
+
     def add_test_to_siev(self, siev_path: str, test_data: Dict, 
                         csv_data: List[Dict] = None, video_path: str = None) -> bool:
         """
-        Agrega una nueva prueba al archivo .siev existente
-        
-        Args:
-            siev_path: Ruta del archivo .siev
-            test_data: Datos de la prueba (tipo, fecha, etc.)
-            csv_data: Datos CSV de la prueba
-            video_path: Ruta del archivo de video (si existe)
-            
-        Returns:
-            True si se agregó exitosamente
+        Agrega una nueva prueba o actualiza una existente en el archivo .siev
         """
         if not os.path.exists(siev_path):
             raise FileNotFoundError(f"Archivo .siev no encontrado: {siev_path}")
@@ -113,28 +106,60 @@ class SievManager:
             # Leer datos actuales
             current_data = self._read_metadata_from_siev(siev_path)
             
-            # Generar ID único para la prueba
+            # Usar ID que viene en test_data o generar uno nuevo
             test_id = test_data.get('id') or f"test_{int(time.time())}"
             
-            # Preparar datos de la nueva prueba
-            new_test = {
-                "id": test_id,
-                "tipo": test_data.get('tipo', 'desconocido'),
-                "fecha": test_data.get('fecha', time.time()),
-                "hora_inicio": test_data.get('hora_inicio', time.time()),
-                "hora_fin": test_data.get('hora_fin', None),
-                "evaluador": test_data.get('evaluador', None),
-                "comentarios": test_data.get('comentarios', None),
-                "archivos": {
-                    "csv": f"data/{test_id}.csv" if csv_data else None,
-                    "video": f"videos/{test_id}.mp4" if video_path else None
-                },
-                "metadata_prueba": test_data.get('metadata_prueba', {})
-            }
+            # BUSCAR SI YA EXISTE LA PRUEBA
+            existing_test = None
+            for i, test in enumerate(current_data["pruebas"]):
+                if test.get("id") == test_id:
+                    existing_test = i
+                    break
             
-            # Agregar nueva prueba
-            current_data["pruebas"].append(new_test)
-            current_data["metadata"]["total_pruebas"] += 1
+            # Si existe, ACTUALIZAR; si no existe, CREAR nueva
+            if existing_test is not None:
+                # ACTUALIZAR prueba existente
+                test_to_update = current_data["pruebas"][existing_test]
+                
+                # Actualizar solo campos que no son None o vacíos
+                if test_data.get('tipo') and test_data.get('tipo') != 'video_update':
+                    test_to_update['tipo'] = test_data.get('tipo')
+                if test_data.get('evaluador'):
+                    test_to_update['evaluador'] = test_data.get('evaluador')
+                if test_data.get('hora_inicio'):
+                    test_to_update['hora_inicio'] = test_data.get('hora_inicio')
+                if test_data.get('hora_fin'):
+                    test_to_update['hora_fin'] = test_data.get('hora_fin')
+                
+                # Actualizar archivos
+                if csv_data:
+                    test_to_update['archivos']['csv'] = f"data/{test_id}.csv"
+                if video_path:
+                    test_to_update['archivos']['video'] = f"videos/{test_id}.mp4"
+                    
+                print(f"Actualizando prueba existente: {test_id}")
+            else:
+                # CREAR nueva prueba
+                new_test = {
+                    "id": test_id,
+                    "tipo": test_data.get('tipo', 'desconocido'),
+                    "fecha": test_data.get('fecha', time.time()),
+                    "hora_inicio": test_data.get('hora_inicio'),
+                    "hora_fin": test_data.get('hora_fin'),
+                    "evaluador": test_data.get('evaluador'),
+                    "comentarios": test_data.get('comentarios'),
+                    "archivos": {
+                        "csv": f"data/{test_id}.csv" if csv_data else None,
+                        "video": f"videos/{test_id}.mp4" if video_path else None
+                    },
+                    "metadata_prueba": test_data.get('metadata_prueba', {})
+                }
+                
+                current_data["pruebas"].append(new_test)
+                current_data["metadata"]["total_pruebas"] += 1
+                print(f"Creando nueva prueba: {test_id}")
+            
+            # Actualizar timestamp
             current_data["metadata"]["ultima_actualizacion"] = time.time()
             
             # Crear nuevo archivo .siev
@@ -149,21 +174,22 @@ class SievManager:
                 if video_path and os.path.exists(video_path):
                     self._add_file_to_tar(new_tar, video_path, f"videos/{test_id}.mp4")
                 
-                # Actualizar metadata con backup
+                # Actualizar metadata
                 self._add_json_to_tar(new_tar, current_data, "metadata_backup.json")
                 self._add_json_to_tar(new_tar, current_data, "metadata.json")
             
-            # Reemplazar archivo original
+            # Renombrar archivo temporal a definitivo
             shutil.move(temp_path, siev_path)
-            print(f"Prueba agregada al archivo .siev: {test_id}")
+            
             return True
             
         except Exception as e:
-            # Limpiar archivo temporal si hay error
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-            raise Exception(f"Error agregando prueba: {e}")
-    
+            raise Exception(f"Error procesando archivo .siev: {e}")
+
+
+
     def update_test_metadata(self, siev_path: str, test_id: str, 
                            evaluator: str = None, comments: str = None) -> bool:
         """
