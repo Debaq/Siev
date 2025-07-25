@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'MainWindowrXVrPC.ui'
+## Form generated from reading UI file 'MainWindowcDApLE.ui'
 ##
 ## Created by: Qt User Interface Compiler version 6.9.1
 ##
@@ -269,6 +269,11 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_2.addLayout(self.horizontalLayout_5)
 
+        self.lbl_test = QLabel(self.centralwidget)
+        self.lbl_test.setObjectName(u"lbl_test")
+
+        self.verticalLayout_2.addWidget(self.lbl_test)
+
 
         self.horizontalLayout_2.addLayout(self.verticalLayout_2)
 
@@ -415,6 +420,7 @@ class Ui_MainWindow(object):
         self.btn_start.setShortcut(QCoreApplication.translate("MainWindow", u"Space", None))
 #endif // QT_CONFIG(shortcut)
         self.btn_fixed.setText(QCoreApplication.translate("MainWindow", u"Fijar", None))
+        self.lbl_test.setText("")
         self.lbl_time.setText("")
         self.lbl_text_temp.setText("")
         self.menuCalofrica.setTitle(QCoreApplication.translate("MainWindow", u"VNG", None))
