@@ -192,7 +192,6 @@ class VideoManager(QObject):
     def set_camera_index(self, camera_index: int):
         """Cambia el índice de cámara"""
         self.camera_index = camera_index
-        print(f"Índice de cámara cambiado a: {camera_index}")
     
     # === CALLBACKS Y HANDLERS ===
     
@@ -212,7 +211,7 @@ class VideoManager(QObject):
         """Maneja cambios en sliders de configuración"""
         sender = self.sender()
         if sender:
-            print(f"Slider {sender.objectName()} cambiado a: {value}")
+            pass
             # Aquí se pueden agregar acciones específicas por slider
     
     # === MÉTODOS DE CONFIGURACIÓN ===

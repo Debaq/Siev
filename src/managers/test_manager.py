@@ -422,7 +422,6 @@ class TestManager(QObject):
                 if evaluator:
                     self.current_evaluator = evaluator
                     self.evaluator_changed.emit(evaluator)
-                    print(f"Evaluador cambiado a: {evaluator}")
                     return True
             
             return False
