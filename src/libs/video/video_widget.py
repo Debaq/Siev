@@ -2,8 +2,8 @@ import numpy as np
 from PySide6.QtCore import QThread, Signal,QObject
 from PySide6.QtGui import QImage, QPixmap
 import time
-from utils.video.video_thread import VideoThread
-from utils.video.video_player_thread import VideoPlayerThread
+from libs.video.video_thread import VideoThread
+from libs.video.video_player_thread import VideoPlayerThread
 from PySide6.QtCore import QTimer
 
 class VideoWidget(QObject):
@@ -174,8 +174,8 @@ class VideoWidget(QObject):
             slider_name = slider.objectName()
             
             # Conectar al nuevo thread
-            slider.valueChanged.connect(lambda value, name=slider_name: self.video_thread.set_threshold(value, name))
-            
+            slider.valueChanged.connect(lambda value, name=slider_name: self.set_threshold(value, name))
+
             # Solo conectar estos si no estaban conectados antes
             if not hasattr(self, '_ui_connections_done'):
                 slider.sliderPressed.connect(self.on_slider_pressed)
@@ -207,9 +207,63 @@ class VideoWidget(QObject):
         for slider in self.sliders:
             slider_name = slider.objectName()
             current_value = slider.value()
-            self.video_thread.set_threshold(current_value, slider_name)
+            self.set_threshold(current_value, slider_name)
+
     
    
+    def set_threshold(self, value, slider_name):
+        """MODIFICAR método existente para manejar ambos modos"""
+        
+        # Actualizar VideoThread si está en modo live
+        if hasattr(self, 'video_thread') and self.video_thread and not self.is_in_player_mode:
+            # Lógica original para VideoThread
+            if slider_name == "slider_th_right":
+                self.video_thread.threslhold[0] = value
+                self.video_thread.vp.threslhold[0] = value
+            elif slider_name == "slider_th_left":
+                self.video_thread.threslhold[1] = value
+                self.video_thread.vp.threslhold[1] = value
+            elif slider_name == "slider_erode_right":
+                self.video_thread.erode[0] = value
+                self.video_thread.vp.erode[0] = value
+            elif slider_name == "slider_erode_left":
+                self.video_thread.erode[1] = value
+                self.video_thread.vp.erode[1] = value
+            elif slider_name == "slider_nose_width":
+                self.video_thread.nose_width = value/100
+                self.video_thread.vp.nose_width.value = value/100
+                self.video_thread.vp.changed_nose.value = True
+            elif slider_name == "slider_height":
+                self.video_thread.vp.eye_heigh.value = value/100
+                self.video_thread.vp.changed_eye_height.value = True
+            elif slider_name == "slider_brightness":
+                self.video_thread.vp.brightness.value = value
+                self.video_thread.vp.color_changed.value = True
+            elif slider_name == "slider_contrast":
+                self.video_thread.vp.contrast.value = value
+                self.video_thread.vp.color_changed.value = True
+            else:
+                print(f"Error: Slider no reconocido: {slider_name}")
+        
+        # Actualizar VideoPlayerThread si está en modo player
+        if self.video_player_thread and self.is_in_player_mode:
+            config_update = {}
+            
+            if slider_name == "slider_th_right":
+                config_update['threslhold'] = [value, self.video_player_thread.analysis_config['threslhold'][1]]
+            elif slider_name == "slider_th_left":
+                config_update['threslhold'] = [self.video_player_thread.analysis_config['threslhold'][0], value]
+            elif slider_name == "slider_erode_right":
+                config_update['erode'] = [value, self.video_player_thread.analysis_config['erode'][1]]
+            elif slider_name == "slider_erode_left":
+                config_update['erode'] = [self.video_player_thread.analysis_config['erode'][0], value]
+            elif slider_name == "slider_nose_width":
+                config_update['nose_width'] = value / 100.0
+            elif slider_name == "slider_height":
+                config_update['eye_height'] = value / 100.0
+            
+            if config_update:
+                self.video_player_thread.update_analysis_config(config_update)
 
     def update_frame(self, frame, pupil_positions, gray_frame=None):
         """Actualiza el frame de video y las posiciones de las pupilas"""
@@ -344,7 +398,7 @@ class VideoWidget(QObject):
             slider_brightness = next((slider for slider in self.sliders if slider.objectName() == "slider_brightness"), None)
             
             # Crear VideoThread
-            from utils.video.video_thread import VideoThread
+            from libs.video.video_thread import VideoThread
             self.video_thread = VideoThread(
                 camera_id=camera_id,
                 cap_width=width,

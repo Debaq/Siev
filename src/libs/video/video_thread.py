@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from PySide6.QtCore import QThread, Signal, QTimer
 import time
-from utils.video.video_processes import VideoProcesses
+from libs.video.video_processes import VideoProcesses
 
     
 class VideoThread(QThread):
@@ -88,59 +88,6 @@ class VideoThread(QThread):
 
 
 
-    def set_threshold(self, value, slider_name):
-        """MODIFICAR método existente para manejar ambos modos"""
-        
-        # Actualizar VideoThread si está en modo live
-        if hasattr(self, 'video_thread') and self.video_thread and not self.is_in_player_mode:
-            # Lógica original para VideoThread
-            if slider_name == "slider_th_right":
-                self.video_thread.threslhold[0] = value
-                self.video_thread.vp.threslhold[0] = value
-            elif slider_name == "slider_th_left":
-                self.video_thread.threslhold[1] = value
-                self.video_thread.vp.threslhold[1] = value
-            elif slider_name == "slider_erode_right":
-                self.video_thread.erode[0] = value
-                self.video_thread.vp.erode[0] = value
-            elif slider_name == "slider_erode_left":
-                self.video_thread.erode[1] = value
-                self.video_thread.vp.erode[1] = value
-            elif slider_name == "slider_nose_width":
-                self.video_thread.nose_width = value/100
-                self.video_thread.vp.nose_width.value = value/100
-                self.video_thread.vp.changed_nose.value = True
-            elif slider_name == "slider_height":
-                self.video_thread.vp.eye_heigh.value = value/100
-                self.video_thread.vp.changed_eye_height.value = True
-            elif slider_name == "slider_brightness":
-                self.video_thread.vp.brightness.value = value
-                self.video_thread.vp.color_changed.value = True
-            elif slider_name == "slider_contrast":
-                self.video_thread.vp.contrast.value = value
-                self.video_thread.vp.color_changed.value = True
-            else:
-                print(f"Error: Slider no reconocido: {slider_name}")
-        
-        # Actualizar VideoPlayerThread si está en modo player
-        if self.video_player_thread and self.is_in_player_mode:
-            config_update = {}
-            
-            if slider_name == "slider_th_right":
-                config_update['threslhold'] = [value, self.video_player_thread.analysis_config['threslhold'][1]]
-            elif slider_name == "slider_th_left":
-                config_update['threslhold'] = [self.video_player_thread.analysis_config['threslhold'][0], value]
-            elif slider_name == "slider_erode_right":
-                config_update['erode'] = [value, self.video_player_thread.analysis_config['erode'][1]]
-            elif slider_name == "slider_erode_left":
-                config_update['erode'] = [self.video_player_thread.analysis_config['erode'][0], value]
-            elif slider_name == "slider_nose_width":
-                config_update['nose_width'] = value / 100.0
-            elif slider_name == "slider_height":
-                config_update['eye_height'] = value / 100.0
-            
-            if config_update:
-                self.video_player_thread.update_analysis_config(config_update)
 
     def run(self):
         # Iniciar procesos

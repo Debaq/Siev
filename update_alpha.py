@@ -37,10 +37,34 @@ class DeploymentWorker(QThread):
                 self.finished.emit(False, "La rama 'development' no existe")
                 return
             
-            self.status_changed.emit("Cambiando a rama development...")
+            # NUEVA VERIFICACIÓN: Cambios locales en development
+            self.status_changed.emit("Verificando cambios locales en development...")
+            self.progress_changed.emit(25)
+            
+            # Asegurarse de estar en development antes de verificar
+            current_branch = self._get_current_branch()
+            if current_branch != "development":
+                if not self._checkout_branch("development"):
+                    self.finished.emit(False, "Error al cambiar a rama development para verificación")
+                    return
+            
+            # Verificar cambios locales
+            local_changes = self._check_local_changes()
+            if local_changes:
+                changes_list = "\n".join([f"  • {file}" for file in local_changes])
+                error_msg = (
+                    "⚠️ HAY CAMBIOS LOCALES EN DEVELOPMENT SIN SUBIR:\n\n"
+                    f"{changes_list}\n\n"
+                    "Debes hacer commit y push de estos cambios antes de continuar.\n"
+                    "El deployment ha sido cancelado para proteger tu trabajo."
+                )
+                self.finished.emit(False, error_msg)
+                return
+            
+            self.status_changed.emit("Development limpio, procediendo...")
             self.progress_changed.emit(30)
             
-            # Checkout a development
+            # Checkout a development (ya estamos aquí, pero por seguridad)
             if not self._checkout_branch("development"):
                 self.finished.emit(False, "Error al cambiar a rama development")
                 return
@@ -48,7 +72,7 @@ class DeploymentWorker(QThread):
             self.status_changed.emit("Descartando cambios locales...")
             self.progress_changed.emit(40)
             
-            # Descartar cambios locales
+            # Descartar cambios locales (ahora es seguro porque ya verificamos)
             if not self._reset_hard():
                 self.finished.emit(False, "Error al descartar cambios locales")
                 return
@@ -103,6 +127,61 @@ class DeploymentWorker(QThread):
             return result.returncode == 0
         except:
             return False
+    
+    def _get_current_branch(self):
+        """Obtiene la rama actual"""
+        try:
+            result = subprocess.run(
+                ["git", "branch", "--show-current"],
+                cwd=self.project_path,
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            )
+            if result.returncode == 0:
+                return result.stdout.strip()
+            return None
+        except:
+            return None
+    
+    def _check_local_changes(self):
+        """Verifica si hay cambios locales sin commitear"""
+        try:
+            result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=self.project_path,
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                # Parsear la salida de git status --porcelain
+                changes = []
+                for line in result.stdout.strip().split('\n'):
+                    if line.strip():
+                        # Formato: "XY filename" donde X e Y son códigos de estado
+                        status = line[:2]
+                        filename = line[3:]
+                        
+                        # Interpretar códigos de estado
+                        if status[0] == 'M' or status[1] == 'M':
+                            changes.append(f"{filename} (modificado)")
+                        elif status[0] == 'A' or status[1] == 'A':
+                            changes.append(f"{filename} (nuevo archivo)")
+                        elif status[0] == 'D' or status[1] == 'D':
+                            changes.append(f"{filename} (eliminado)")
+                        elif status[0] == 'R':
+                            changes.append(f"{filename} (renombrado)")
+                        elif status[0] == '?' and status[1] == '?':
+                            changes.append(f"{filename} (sin seguimiento)")
+                        else:
+                            changes.append(f"{filename} (modificado)")
+                
+                return changes
+            return []
+        except:
+            return []
     
     def _checkout_branch(self, branch_name):
         """Hace checkout a una rama específica"""
@@ -202,7 +281,8 @@ class DeploymentDialog(QDialog):
         
         # Mensaje
         self.message_label = QLabel("¿Desea hacer deployment de development → alpha_version?\n\n"
-                                  "⚠️ ADVERTENCIA: Se perderá todo el contenido actual de alpha_version")
+                                  "⚠️ ADVERTENCIA: Se perderá todo el contenido actual de alpha_version\n"
+                                  "✅ Se verificarán cambios locales en development antes de proceder")
         self.message_label.setWordWrap(True)
         self.message_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.message_label)
@@ -225,79 +305,70 @@ class DeploymentDialog(QDialog):
         self.cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(self.cancel_button)
         
-        self.deploy_button = QPushButton("Hacer Deployment")
-        self.deploy_button.setDefault(True)
+        self.deploy_button = QPushButton("Iniciar Deployment")
         self.deploy_button.clicked.connect(self.start_deployment)
-        self.deploy_button.setStyleSheet("""
-            QPushButton {
-                background-color: #FF5722;
-                color: white;
-                font-weight: bold;
-                padding: 8px 16px;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #E64A19;
-            }
-        """)
+        self.deploy_button.setDefault(True)
         button_layout.addWidget(self.deploy_button)
         
         layout.addLayout(button_layout)
     
     def start_deployment(self):
         """Inicia el proceso de deployment"""
-        # Cambiar UI para mostrar progreso
-        self.message_label.setText("Ejecutando deployment...")
-        self.progress_bar.setVisible(True)
-        self.status_label.setVisible(True)
         self.deploy_button.setEnabled(False)
         self.cancel_button.setEnabled(False)
         
-        # Obtener ruta del proyecto
-        import os
-        if getattr(sys, "frozen", False):
-            project_path = os.path.dirname(sys.executable)
-        else:
-            project_path = os.path.dirname(os.path.abspath(__file__))
+        self.progress_bar.setVisible(True)
+        self.status_label.setVisible(True)
         
-        # Crear worker thread
+        # Obtener path del proyecto
+        project_path = Path(__file__).parent.parent
+        
+        # Iniciar worker
         self.worker = DeploymentWorker(project_path)
         self.worker.progress_changed.connect(self.progress_bar.setValue)
         self.worker.status_changed.connect(self.status_label.setText)
         self.worker.finished.connect(self.on_deployment_finished)
-        
-        # Iniciar deployment
         self.worker.start()
     
     def on_deployment_finished(self, success, message):
-        """Maneja la finalización del deployment"""
+        """Maneja el resultado del deployment"""
         if success:
-            self.message_label.setText("¡Deployment Completado!")
+            self.message_label.setText("Deployment completado exitosamente")
             self.status_label.setText(message)
             self.status_label.setStyleSheet("color: green;")
-            QMessageBox.information(self, "Éxito", message)
+            self.deploy_button.setText("Cerrar")
+            self.deploy_button.setEnabled(True)
+            self.deploy_button.clicked.disconnect()
+            self.deploy_button.clicked.connect(self.accept)
+            self.cancel_button.setVisible(False)
         else:
-            self.message_label.setText("Error en el Deployment")
+            self.message_label.setText("Error en el deployment")
             self.status_label.setText(message)
             self.status_label.setStyleSheet("color: red;")
-            QMessageBox.critical(self, "Error", message)
-        
-        self.deploy_button.setText("Cerrar")
-        self.deploy_button.setEnabled(True)
+            self.deploy_button.setText("Reintentar")
+            self.deploy_button.setEnabled(True)
+            self.deploy_button.clicked.disconnect()
+            self.deploy_button.clicked.connect(self.restart_deployment)
+            self.cancel_button.setEnabled(True)
+    
+    def restart_deployment(self):
+        """Reinicia el proceso de deployment"""
+        self.deploy_button.setText("Iniciar Deployment")
         self.deploy_button.clicked.disconnect()
-        self.deploy_button.clicked.connect(self.accept)
-        self.cancel_button.setVisible(False)
+        self.deploy_button.clicked.connect(self.start_deployment)
+        self.status_label.setStyleSheet("")
+        self.progress_bar.setValue(0)
+        self.start_deployment()
 
 
 def main():
-    """Punto de entrada principal"""
+    """Función principal"""
     app = QApplication(sys.argv)
     
     dialog = DeploymentDialog()
-    dialog.exec()
+    result = dialog.exec()
     
-    return 0
+    return result
 
 
 if __name__ == "__main__":

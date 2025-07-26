@@ -6,8 +6,8 @@ import multiprocessing as mp
 from multiprocessing import Value, Array
 import time
 import ctypes
-from utils.path_utils import get_model_file_path
-from utils.video.simulated_box import SimulatedBox
+from libs.common.path_utils import get_model_file_path
+from libs.video.simulated_box import SimulatedBox
 
 
 class VideoProcesses:
@@ -412,13 +412,11 @@ class VideoProcesses:
                         cv2.rectangle(final_frame, (ex, ey), (ex+ew, ey+eh), (0, 255, 0), 1)
                     # Dibujar círculo de la pupila
                     #color = (0, 255, 0)
-                    
                     if data[5]:  # is_right_eye
                         color = (0, 0, 255)  # Rojo para ojo derecho (BGR)
                     else:
                         color = (255, 191, 0)  # Azul claro para ojo izquierdo (BGR)
                                             
-                        
                     cv2.circle(final_frame[ey:ey+eh, ex:ex+ew], (cx, cy), radius, color, 1)
                     
                     # Calcular coordenadas absolutas

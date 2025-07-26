@@ -1,639 +1,430 @@
-import json
 import os
-import sys
 import time
-from PySide6.QtWidgets import (QMainWindow, QMenu, QWidgetAction, QSlider, 
-                            QHBoxLayout, QWidget, QLabel, QCheckBox, 
-                            QMessageBox, QPushButton, QDialog, QFileDialog, QTreeWidgetItem)
-
+from PySide6.QtWidgets import (QMainWindow, QSlider, QMessageBox, QTreeWidgetItem, 
+                              QMenu, QHBoxLayout, QWidget, QLabel, QCheckBox, QWidgetAction)
 from PySide6.QtCore import Qt, QTimer
 
-# Diálogos
-from ui.dialogs.protocol_dialog import ProtocolSelectionDialog
-from ui.dialogs.tracking_dialog import TrackingCalibrationDialog
+# Managers
+from managers import VideoManager, HardwareManager, DataManager, TestManager
 
-# Utils
-from utils.serial_thread import SerialReadThread
-from utils.stimulus_system import StimulusManager
-from utils.SerialHandler import SerialHandler
-from utils.video.video_widget import VideoWidget
-from utils.DetectorNistagmo import DetectorNistagmo
-from utils.EyeDataProcessor import EyeDataProcessor
-from utils.CalibrationManager import CalibrationManager
-from utils.data_storage import DataStorage
-from utils.graphing.triple_plot_widget import TriplePlotWidget, PlotConfigurations
-from utils.config_manager import ConfigManager
-from utils.CameraResolutionDetector import CameraResolutionDetector
-from utils.utils import select_max_resolution
-from ui.dialogs.user_dialog import NewUserDialog
-from utils.SievManager import SievManager
-from utils.protocol_manager import ProtocolManager
+# Libs básicas
+from libs.core.config_manager import ConfigManager
+from libs.hardware.camera_resolution_detector import CameraResolutionDetector
+from libs.common.utils import select_max_resolution
 from datetime import datetime
 
 
 class MainWindow(QMainWindow):
-    """Ventana principal del sistema VNG - Versión limpia y funcional"""
+    """MainWindow refactorizado - versión limpia"""
     
     def __init__(self):
         super().__init__()
         
-        # === CONFIGURACIÓN BÁSICA ===
+        # Configuración básica
         self.config_manager = ConfigManager()
-        
-        
-        self.setupUi() #==> crea a self.ui
+        self.setupUi()
         self.load_config()
         
-        # === VARIABLES DE ESTADO ===
-        self.pos_eye = []
-        self.pos_hit = [0.0, 0.0, 0.0]  # IMU data
+        # Managers
+        self.video_manager = VideoManager(self)
+        self.hardware_manager = HardwareManager(self)
+        self.data_manager = DataManager(self.config_manager, self)
+        self.test_manager = TestManager(self)
+        
+        # Variables de estado
         self.camera_index = 2
-        res_video = CameraResolutionDetector()
-        resolution_video =res_video.listar_resoluciones(self.camera_index)
-        #aca vamos a seleccionar la mejor resolución
-        max_res = select_max_resolution(resolution_video, True)
-        self.fill_cmbres(self.ui.cb_resolution, resolution_video, max_res)
-        # === SISTEMA DE GRABACIÓN ===
         self.is_recording = False
         self.is_calibrating = False
-        self.recording_start_time = None
-        self.graph_time = 0.0
-        self.last_update_time = None
-        self.MAX_RECORDING_TIME = 5 * 60  # 5 minutos
-        self.CALIBRATION_TIME = 1  # 1 segundo
-
-        # === GESTOR DE USUARIOS ===
-        self.siev_manager = None
-        self.current_user_siev = None
-        self.current_user_data = None
-        # === GESTOR DE PROTOCOLOS ===
-        self.protocol_manager = ProtocolManager(self)
-        self.current_evaluator = None  # Por compatibilidad, aunque se maneja en protocol_manager
-
-        self.enable_test_functions(False)
-
-
-        # === CONFIGURAR UI ===
+        self.pos_eye = []
+        self.pos_hit = [0.0, 0.0, 0.0]
+        self.MAX_RECORDING_TIME = 5 * 60
+        self.CALIBRATION_TIME = 1
+        
+        # Inicialización
+        self.initialize_application()
+        self.showMaximized()
+    
+    def initialize_application(self):
+        """Inicializar aplicación"""
+        # 1. Crear sliders de menú
         self.setup_menu_and_controls()
+        
+        # 2. Configurar referencias UI
+        self._setup_ui_references()
+        
+        # 3. Inicializar sistemas
+        self._initialize_systems()
+        
+        # 4. Conectar señales
+        self._connect_signals()
+        
+        # 5. UI final
+        self._setup_final_ui()
+    
+    def setup_menu_and_controls(self):
+        """Crear menú con sliders de brightness/contrast"""
+        menu = QMenu(self)
+        
+        # Crear sliders
+        brightness_slider = self.create_labeled_slider("slider_brightness", "Brightness:", -64, 64, -21)
+        contrast_slider = self.create_labeled_slider("slider_contrast", "Contrast:", 0, 100, 50)
+        
+        # Checkbox YOLO
+        checkbox_container = QWidget()
+        checkbox_layout = QHBoxLayout()
+        self.chk_use_yolo = QCheckBox("Usar YOLO (precisión)")
+        self.chk_use_yolo.setChecked(True)
+        self.chk_use_yolo.toggled.connect(self.on_yolo_toggled)
+        checkbox_layout.addWidget(self.chk_use_yolo)
+        checkbox_container.setLayout(checkbox_layout)
+        
+        # Añadir al menú
+        menu.addAction(self.create_widget_action(menu, checkbox_container))
+        menu.addAction(self.create_widget_action(menu, brightness_slider))
+        menu.addAction(self.create_widget_action(menu, contrast_slider))
+        
+        if hasattr(self.ui, 'toolButton'):
+            self.ui.toolButton.setMenu(menu)
+    
+    def create_labeled_slider(self, name, label_text, min_val, max_val, initial_val):
+        """Crear slider con etiqueta"""
+        container = QWidget()
+        layout = QHBoxLayout()
+        layout.addWidget(QLabel(label_text))
+        
+        slider = QSlider(Qt.Horizontal)
+        slider.setObjectName(name)
+        slider.setMinimum(min_val)
+        slider.setMaximum(max_val)
+        slider.setValue(initial_val)
+        slider.valueChanged.connect(self.save_slider_configuration)
+        
+        layout.addWidget(slider)
+        container.setLayout(layout)
+        return container
+    
+    def create_widget_action(self, parent, widget):
+        """Crear QWidgetAction"""
+        action = QWidgetAction(parent)
+        action.setDefaultWidget(widget)
+        return action
+    
+    def _setup_ui_references(self):
+        """Configurar referencias UI para managers"""
+        # Detectar resoluciones
+        res_video = CameraResolutionDetector()
+        resolution_video = res_video.listar_resoluciones(self.camera_index)
+        max_res = select_max_resolution(resolution_video, True)
+        self.fill_cmbres(self.ui.cb_resolution, resolution_video, max_res)
+        
+        # Sliders para VideoManager
+        slider_brightness = self.findChild(QSlider, "slider_brightness")
+        slider_contrast = self.findChild(QSlider, "slider_contrast")
+        
+        slider_list = [
+            self.ui.slider_th_right, self.ui.slider_th_left,
+            self.ui.slider_erode_right, self.ui.slider_erode_left,
+            self.ui.slider_nose_width, self.ui.slider_vertical_cut_up,
+            self.ui.slider_vertical_cut_down, slider_brightness, 
+            slider_contrast
+        ]
+        
+        # Configurar managers
+        self.video_manager.set_ui_references(self.ui.CameraFrame, self.ui.cb_resolution, slider_list)
+        self.video_manager.set_camera_index(self.camera_index)
+        self.data_manager.set_ui_references(self.ui.layout_graph)
+        self.test_manager.set_references(self, self.ui.listTestWidget)
+    
+    def _initialize_systems(self):
+        """Inicializar sistemas"""
+        # Video primero
+        self.video_manager.initialize_video_system()
+        
+        # Hardware
+        self.hardware_manager.initialize_hardware('/dev/ttyUSB0', 115200)
+        
+        # Data - manual porque DataStorage no acepta data_dir
+        data_path = self.config_manager.get_data_path()
+        from libs.data.data_storage import DataStorage
+        
+        self.data_manager.data_storage = DataStorage(
+            auto_save_interval=2.0,
+            buffer_size=500,
+            data_path=data_path
+        )
+        self.data_manager._init_processing_system()
+        self.data_manager._init_graphics_system()
+        
+        # Test
+        self.test_manager.initialize_test_system()
+    
+    def _connect_signals(self):
+        """Conectar señales esenciales"""
+        # Video
+        if hasattr(self.video_manager, 'video_widget') and self.video_manager.video_widget:
+            self.video_manager.video_widget.sig_pos.connect(self.handle_eye_positions)
+        
+        # Hardware
+        self.hardware_manager.imu_data_received.connect(self.handle_serial_data)
+        
+        # Test manager
+        self.test_manager.user_loaded.connect(self.on_user_loaded)
+        self.test_manager.user_closed.connect(self.on_user_closed)
+    
+    def _setup_final_ui(self):
+        """UI final"""
         self.connect_events()
         self.load_slider_configuration()
-
-        # === INICIALIZAR COMPONENTES ===
-        self.init_video_system()
-        self.init_serial_system()
-        self.init_calibration_system()
-        self.init_graphics_system()
-        self.init_recording_system()
-        self.init_video_recorder()
-
-        self.init_processing_system()
-        self.init_user_system()
-
+        self.ui.listTestWidget.currentItemChanged.connect(self.on_test_selection_changed)
         
-        # === TIMERS ===
-        self.setup_timers()
-        self.init_stimulus_system()
-        self.setup_right_click_trigger()
-        self.init_test_selection_system()
+        if hasattr(self.video_manager, 'video_widget') and self.video_manager.video_widget:
+            self.video_manager.video_widget.set_ui_references(self.ui.slider_time, self.ui.btn_start)
         
-       # === CONFIGURAR REFERENCIAS UI PARA VIDEO WIDGET ===
-        if self.video_widget:
-            self.video_widget.set_ui_references(self.ui.slider_time, self.ui.btn_start)
-            print("Referencias UI configuradas para VideoWidget")
-        
-        # === MOSTRAR PROTOCOLO ===
-        #QTimer.singleShot(500, self.show_protocol_selection)
-        
-        self.showMaximized()
-        print("=== SISTEMA VNG INICIADO CORRECTAMENTE ===")
-                # Conectar todos los sliders
-
-
-    def handle_gray_frame_for_video(self, gray_frame):
-        """Callback para manejar frames gray para grabación"""
-        if (self.video_recorder and 
-            self.video_recorder.is_recording and 
-            self.is_recording):
-            self.video_recorder.add_frame(gray_frame)
-                
-    def init_video_recorder(self):
-        """Inicializar grabador de video"""
-        try:
-            from utils.VideoRecorder import VideoRecorder
-            self.video_recorder = VideoRecorder(self)
-            print("VideoRecorder inicializado")
-        except Exception as e:
-            print(f"Error inicializando VideoRecorder: {e}")
-            self.video_recorder = None
-
-    def init_test_selection_system(self):
-        """
-        Inicializar sistema de selección de pruebas
-        AGREGAR AL FINAL DE __init__ en MainWindow
-        """
-        try:
-            # Variables de estado
-            self.is_reproducing = False
-            
-            # Conectar señal de selección del tree
-            self.ui.listTestWidget.currentItemChanged.connect(self.on_test_selection_changed)
-            
-            # Inicializar estado del botón
-            self.update_test_ui_state()
-            
-            print("Sistema de selección de pruebas inicializado")
-            
-        except Exception as e:
-            print(f"Error inicializando sistema de selección: {e}")
-
-
-
-    # ========================================
-    # MANEJO DE SELECCIÓN DE PRUEBAS
-    # ========================================
-
-
-
-
+        self.installEventFilter(self)
+        self.enable_test_functions(False)
+    
+    # =========================================================================
+    # HANDLERS BÁSICOS
+    # =========================================================================
+    
+    def handle_eye_positions(self, positions):
+        """Manejar posiciones de ojos"""
+        self.pos_eye = positions
+        if len(positions) >= 2:
+            left_eye = positions[0] if positions[0] else None
+            right_eye = positions[1] if positions[1] else None
+            self.data_manager.process_eye_data(left_eye, right_eye)
+    
+    def handle_serial_data(self, imu_data):
+        """Manejar datos IMU"""
+        if imu_data.get('is_valid', False):
+            self.pos_hit = [
+                imu_data.get('yaw', 0.0),
+                imu_data.get('pitch', 0.0), 
+                imu_data.get('roll', 0.0)
+            ]
+            self.data_manager.process_imu_data(imu_data)
+    
+    def on_user_loaded(self, user_data):
+        """Usuario cargado"""
+        user_info = self.test_manager.get_current_user_info()
+        self.setWindowTitle(f"SIEV - {user_info}")
+        self.enable_test_functions(True)
+    
+    def on_user_closed(self):
+        """Usuario cerrado"""
+        self.setWindowTitle("SIEV")
+        self.enable_test_functions(False)
+    
     def on_test_selection_changed(self, current_item, previous_item):
-        """MODIFICAR método existente para manejar alternancia de video"""
-        try:
-            # === LÓGICA EXISTENTE ===
-            self.update_test_ui_state()
-            self.update_graph_for_selection(current_item)
-            
-            # === NUEVA LÓGICA: ALTERNANCIA DE VIDEO ===
-            selected_test_data = self.get_selected_test_data()
-            
-            if selected_test_data:
-                test_data = selected_test_data['test_data']
-                test_estado = test_data.get('estado', '').lower()
-                test_id = selected_test_data['test_id']
-                hora_fin = test_data.get('hora_fin')
-                
-                # === USAR LA MISMA LÓGICA QUE update_graph_for_selection ===
-                is_completed = (test_estado in ['completada', 'completado'] or hora_fin is not None)
-                
-                print(f"Evaluando prueba {test_id}: estado='{test_estado}', hora_fin={hora_fin}, is_completed={is_completed}")
-                
-                if is_completed:
-                    # Cargar video para reproducción
-                    print(f"Cargando video para prueba completada: {test_id}")
-                    video_data = self.load_video_for_test(test_id)
-                    if video_data and self.video_widget:
-                        self.video_widget.switch_to_player_mode(video_data)
-                    else:
-                        print("No se encontró video para la prueba o no hay VideoWidget")
-                        # Cambiar a modo live como fallback
-                        if self.video_widget:
-                            self.video_widget.switch_to_live_mode(self.camera_index)
-                else:
-                    # Prueba nueva/pendiente - cambiar a modo live
-                    print("Prueba no completada - cambiando a modo live")
-                    if self.video_widget:
-                        self.video_widget.switch_to_live_mode(self.camera_index)
-            else:
-                # Sin selección - modo live
-                print("Sin selección - cambiando a modo live")
-                if self.video_widget:
-                    self.video_widget.switch_to_live_mode(self.camera_index)
-                    
-        except Exception as e:
-            print(f"Error en cambio de selección: {e}")
-            
-
-
-    def is_test_completed(self, test_data):
-        """
-        Evaluar si una prueba está completada usando lógica unificada
-        
-        Args:
-            test_data: Datos de la prueba
-            
-        Returns:
-            bool: True si está completada, False si no
-        """
-        test_estado = test_data.get('estado', '').lower()
-        hora_fin = test_data.get('hora_fin')
-        
-        # Una prueba está completada si:
-        # 1. Tiene estado "completada" o "completado", O
-        # 2. Tiene hora_fin (aunque el estado esté vacío)
-        return (test_estado in ['completada', 'completado'] or hora_fin is not None)
-
-    def load_video_for_test(self, test_id):
-        """Cargar video desde archivo .siev para una prueba específica"""
-        try:
-            if not self.siev_manager or not self.current_user_siev:
-                print("Sistema de archivos no disponible")
-                return None
-            
-            # === AGREGAR VERIFICACIÓN PREVIA ===
-            if self.siev_manager.has_test_video(self.current_user_siev, test_id):
-                print(f"Video confirmado en .siev para {test_id}")
-            else:
-                print(f"ADVERTENCIA: No se detectó video en .siev para {test_id}")
-                return None
-            
-            # Extraer datos de video del archivo .siev
-            video_data = self.siev_manager.extract_test_video_data(
-                self.current_user_siev, 
-                test_id
-            )
-            
-            if video_data:
-                print(f"Video cargado para prueba {test_id}: {len(video_data)} bytes")
-                return video_data
-            else:
-                print(f"No se encontró video para prueba {test_id}")
-                return None
-                
-        except Exception as e:
-            print(f"Error cargando video para prueba {test_id}: {e}")
-            return None
-        
-
-    def update_graph_for_selection(self, current_item):
-        """
-        Actualizar gráfico según la selección del tree
-        """
-        try:
-            if not hasattr(self, 'plot_widget') or not self.plot_widget:
-                print("Widget de gráfico no disponible")
-                return
-            
-            # Si no hay selección o es un item de fecha, limpiar gráfico
-            if not current_item or not current_item.parent():
-                print("Sin selección válida - limpiando gráfico")
-                self.plot_widget.clearPlots()
-                return
-            
-            # Obtener datos de la prueba seleccionada
-            item_data = current_item.data(0, Qt.UserRole)
-            if not item_data:
-                print("Sin datos de prueba - limpiando gráfico")
-                self.plot_widget.clearPlots()
-                return
-            
-            test_data = item_data.get('test_data')
-            test_id = item_data.get('test_id')
-            
-            # === USAR MÉTODO HELPER UNIFICADO ===
-            is_completed = self.is_test_completed(test_data)
-            
-            if is_completed:
-                # Prueba completada: cargar datos CSV
-                print(f"Cargando datos de prueba completada: {test_id} (estado: '{test_data.get('estado')}', hora_fin: {test_data.get('hora_fin')})")
-                self.load_test_data_to_graph(test_id, test_data)
-            else:
-                # Prueba pendiente/en progreso: limpiar gráfico
-                print(f"Prueba no completada (estado: '{test_data.get('estado')}', hora_fin: {test_data.get('hora_fin')}) - limpiando gráfico")
-                self.plot_widget.clearPlots()
-                
-        except Exception as e:
-            print(f"Error actualizando gráfico para selección: {e}")
-            
-    def load_test_data_to_graph(self, test_id, test_data):
-        """
-        Cargar datos CSV de una prueba completada al gráfico
-        
-        Args:
-            test_id: ID de la prueba
-            test_data: Metadatos de la prueba
-        """
-        try:
-            if not self.siev_manager or not self.current_user_siev:
-                print("Sistema de archivos no disponible")
-                return
-            
-            # Limpiar gráfico primero
-            self.plot_widget.clearPlots()
-            
-            # Extraer datos CSV del archivo .siev
-            csv_data = self.siev_manager.extract_test_csv_data(
-                self.current_user_siev, 
-                test_id
-            )
-            
-            if not csv_data:
-                print(f"No se encontraron datos CSV para prueba {test_id}")
-                return
-            
-            print(f"Cargando {len(csv_data)} puntos de datos al gráfico")
-            
-            # Cargar datos punto por punto al gráfico
-            for row in csv_data:
-                try:
-                    # Extraer datos según formato esperado por GraphHandler
-                    left_eye = [row.get('left_eye_x', 0), row.get('left_eye_y', 0)] if row.get('left_eye_detected', False) else None
-                    right_eye = [row.get('right_eye_x', 0), row.get('right_eye_y', 0)] if row.get('right_eye_detected', False) else None
-                    imu_x = row.get('imu_x', 0)
-                    imu_y = row.get('imu_y', 0)
-                    timestamp = row.get('timestamp', 0)
-                    
-                    # Enviar datos al gráfico en formato esperado
-                    data_point = [right_eye, left_eye, imu_x, imu_y, timestamp]
-                    self.plot_widget.updatePlots(data_point)
-                    
-                except Exception as e:
-                    print(f"Error procesando punto de datos: {e}")
-                    continue
-            
-            print(f"Datos de prueba {test_id} cargados exitosamente al gráfico")
-            
-        except Exception as e:
-            print(f"Error cargando datos al gráfico: {e}")
-
-
-    def get_selected_test_data(self):
-        """Obtener datos de la prueba seleccionada"""
-        try:
-            current_item = self.ui.listTestWidget.currentItem()
-            
-            if current_item and current_item.parent():  # Es un item de prueba
-                item_data = current_item.data(0, Qt.UserRole)
-                if item_data:
-                    return item_data
-                    
-            return None
-            
-        except Exception as e:
-            print(f"Error obteniendo datos de prueba seleccionada: {e}")
-            return None
-        
-    # ========================================
-    # ACTUALIZACIÓN DE ESTADO DE UI
-    # ========================================
-
-    def update_test_ui_state(self):
-        """Actualizar estado de UI según la prueba seleccionada"""
-        try:
-            selected_test_data = self.get_selected_test_data()
-            
-            if not selected_test_data:
-                # Sin selección
-                self._set_no_selection_state()
-            else:
-                test_data = selected_test_data['test_data']
-                test_name = test_data.get('tipo', 'Prueba')
-                test_estado = test_data.get('estado', '').lower()
-                
-                # Actualizar label de prueba
-                self._set_test_name_display(test_name)
-                
-                # Configurar botón según estado
-                if test_estado == 'completada':
-                    self._set_reproduction_button_state()
-                elif test_estado in ['pendiente', 'ejecutando']:
-                    self._set_recording_button_state()
-                else:
-                    self._set_unknown_state()
-                    
-        except Exception as e:
-            print(f"Error actualizando estado de UI: {e}")
-
-    def _set_no_selection_state(self):
-        """Estado: Sin prueba seleccionada"""
-        self.ui.lbl_test.setText("Selecciona una prueba")
-        self.ui.lbl_test.setStyleSheet("")
-        self.ui.btn_start.setText("Iniciar")
-        self.ui.btn_start.setEnabled(False)
-
-    def _set_test_name_display(self, test_name):
-        """Mostrar nombre de prueba con formato mejorado"""
-        self.ui.lbl_test.setText(test_name)
-        self.ui.lbl_test.setStyleSheet("""
-            QLabel {
-                font-size: 16px;
-                font-weight: bold;
-                color: #2196F3;
-                padding: 5px;
-            }
-        """)
-
-    def _set_reproduction_button_state(self):
-        """Estado: Prueba completada - botón de reproducción"""
-        if self.is_reproducing:
-            self.ui.btn_start.setText("Pausar")
-            self.ui.btn_start.setStyleSheet("""
-                QPushButton {
-                    background-color: #FF9800; 
-                    color: white; 
-                    font-weight: bold;
-                    font-size: 14px; 
-                    padding: 10px; 
-                    border: none; 
-                    border-radius: 5px;
-                }
-                QPushButton:hover { background-color: #F57C00; }
-            """)
+        """Cambio de selección de test"""
+        self.update_test_ui_state()
+    
+    # =========================================================================
+    # CONTROL DE GRABACIÓN
+    # =========================================================================
+    
+    def toggle_recording(self):
+        """Control principal de grabación"""
+        if not self.is_recording:
+            success = self.data_manager.start_recording()
+            if success:
+                self.video_manager.start_recording()
+                self.is_recording = True
+                self.ui.btn_start.setText("Detener")
         else:
-            self.ui.btn_start.setText("Reproducir")
-            self.ui.btn_start.setStyleSheet("""
-                QPushButton {
-                    background-color: #9C27B0; 
-                    color: white; 
-                    font-weight: bold;
-                    font-size: 14px; 
-                    padding: 10px; 
-                    border: none; 
-                    border-radius: 5px;
-                }
-                QPushButton:hover { background-color: #7B1FA2; }
-            """)
-        self.ui.btn_start.setEnabled(True)
-
-    def _set_recording_button_state(self):
-        """Estado: Prueba nueva/en ejecución - botón de grabación"""
-        if self.is_recording or self.is_calibrating:
-            self.ui.btn_start.setText("Detener")
-            self.ui.btn_start.setStyleSheet("""
-                QPushButton {
-                    background-color: #f44336; 
-                    color: white; 
-                    font-weight: bold;
-                    font-size: 14px; 
-                    padding: 10px; 
-                    border: none; 
-                    border-radius: 5px;
-                }
-                QPushButton:hover { background-color: #da190b; }
-            """)
-        else:
+            self.data_manager.stop_recording()
+            self.video_manager.stop_recording()
+            self.is_recording = False
             self.ui.btn_start.setText("Iniciar")
-            self.ui.btn_start.setStyleSheet("""
-                QPushButton {
-                    background-color: #4CAF50; 
-                    color: white; 
-                    font-weight: bold;
-                    font-size: 14px; 
-                    padding: 10px; 
-                    border: none; 
-                    border-radius: 5px;
-                }
-                QPushButton:hover { background-color: #45a049; }
-            """)
-        self.ui.btn_start.setEnabled(True)
-
-    def _set_unknown_state(self):
-        """Estado: Prueba con estado desconocido"""
-        self.ui.btn_start.setText("Iniciar")
-        self.ui.btn_start.setEnabled(False)
-
-
-    # ========================================
-    # 4. DISPLAY DE TIEMPO EN LBL_TEST
-    # ========================================
-
-    def update_time_display_in_test_label(self, time_text):
-        """Actualizar display de tiempo en el label de prueba durante ejecución/reproducción"""
-        try:
-            selected_test_data = self.get_selected_test_data()
-            
-            if selected_test_data:
-                test_name = selected_test_data['test_data'].get('tipo', 'Prueba')
-                
-                # Mostrar nombre y tiempo con formato grande y visible
-                display_text = f"{test_name}\n{time_text}"
-                
-                self.ui.lbl_test.setText(display_text)
-                self.ui.lbl_test.setStyleSheet("""
-                    QLabel {
-                        font-size: 18px;
-                        font-weight: bold;
-                        color: #1976D2;
-                        background-color: #E3F2FD;
-                        border: 2px solid #2196F3;
-                        border-radius: 8px;
-                        padding: 10px;
-                        text-align: center;
-                    }
-                """)
-                
-        except Exception as e:
-            print(f"Error actualizando display de tiempo: {e}")
-
-    def update_recording_display(self):
-        """Actualizar display de tiempo durante grabación"""
-        try:
-            if not (self.is_recording or self.is_calibrating):
-                return
-                
-            current_time = time.time()
-            
-            if self.is_calibrating:
-                # Durante calibración
-                elapsed = current_time - self.recording_start_time
-                remaining = max(0, self.CALIBRATION_TIME - elapsed)
-                time_text = f"Calibrando: {remaining:.1f}s"
-                
-            elif self.is_recording:
-                # Durante grabación
-                elapsed = current_time - self.recording_start_time
-                time_text = f"Grabando: {elapsed:.1f}s"
-                
-                # Agregar duración total si está disponible
-                if hasattr(self, 'total_recording_time') and self.total_recording_time:
-                    progress = (elapsed / self.total_recording_time) * 100
-                    time_text += f" ({progress:.1f}%)"
-            
-            # Actualizar display en lbl_test
-            self.update_time_display_in_test_label(time_text)
-            
-        except Exception as e:
-            print(f"Error actualizando display de grabación: {e}")
-
-    def update_reproduction_display(self, current_time, total_time):
-        """Actualizar display durante reproducción"""
-        try:
-            if not self.is_reproducing:
-                return
-                
-            progress = (current_time / total_time) * 100 if total_time > 0 else 0
-            time_text = f"Reproduciendo: {current_time:.1f}s / {total_time:.1f}s ({progress:.1f}%)"
-            
-            self.update_time_display_in_test_label(time_text)
-            
-        except Exception as e:
-            print(f"Error actualizando display de reproducción: {e}")
-
-
-
-
-
-
-
-    def fill_cmbres(self, cb_resolution, resoluciones, max_res):
-        """
-        Llena un combobox con las resoluciones disponibles
+    
+    # =========================================================================
+    # CONFIGURACIÓN DE SLIDERS
+    # =========================================================================
+    
+    def save_slider_configuration(self):
+        """Guardar configuración de sliders"""
+        sender = self.sender()
+        if sender:
+            sender_name = sender.objectName()
+            sender_value = sender.value()
+            self.config_manager.set_slider_value(sender_name, sender_value)
+    
+    def load_slider_configuration(self):
+        """Cargar configuración de sliders"""
+        slider_settings = self.config_manager.get_slider_settings()
         
-        Args:
-            cb_resolution: QComboBox a llenar
-            resoluciones: Lista de tuplas (width, height)
-        """
-        cb_resolution.clear()
+        slider_mapping = {
+            'slider_th_right': 'slider_th_right',
+            'slider_th_left': 'slider_th_left',
+            'slider_erode_right': 'slider_erode_right',
+            'slider_erode_left': 'slider_erode_left',
+            'slider_nose_width': 'slider_nose_width',
+            'slider_vertical_cut_up': 'slider_vertical_cut_up',
+            'slider_vertical_cut_down': 'slider_vertical_cut_down',
+            'slider_brightness': 'slider_brightness',
+            'slider_contrast': 'slider_contrast'
+        }
+        
+        for config_name, ui_name in slider_mapping.items():
+            if config_name in slider_settings:
+                value = slider_settings[config_name]
+                
+                if hasattr(self.ui, ui_name):
+                    slider = getattr(self.ui, ui_name)
+                else:
+                    slider = self.findChild(QSlider, config_name)
+                
+                if slider and slider.minimum() <= value <= slider.maximum():
+                    slider.setValue(value)
+    
+    # =========================================================================
+    # MÉTODOS DELEGADOS
+    # =========================================================================
+    
+    def open_new_user_dialog(self):
+        """Nuevo usuario"""
+        return self.test_manager.open_new_user_dialog()
+    
+    def open_user_file(self):
+        """Abrir usuario"""
+        return self.test_manager.open_user_file()
+    
+    def close_current_user(self):
+        """Cerrar usuario"""
+        self.test_manager.close_current_user()
+    
+    def change_evaluator(self):
+        """Cambiar evaluador"""
+        return self.test_manager.change_evaluator()
+    
+    def show_protocol_selection(self, protocol_type=None):
+        """Mostrar protocolo"""
+        # Cambiar de create_protocol_test a open_protocol_dialog
+        return self.test_manager.open_protocol_dialog(protocol_type)
+    
+    def start_calibration(self):
+        """Iniciar calibración"""
+        return self.hardware_manager.start_calibration()
+    
+    def on_yolo_toggled(self, checked):
+        """Toggle YOLO"""
+        if hasattr(self.video_manager, 'video_widget') and self.video_manager.video_widget:
+            self.video_manager.video_widget.set_yolo_enabled(checked)
+    
+    # =========================================================================
+    # MÉTODOS BÁSICOS UI
+    # =========================================================================
+    
+    def setupUi(self):
+        """Configurar UI"""
         try:
-            for width, height in resoluciones:
+            from .main_ui import Ui_MainWindow
+            self.ui = Ui_MainWindow()
+            self.ui.setupUi(self)
+        except ImportError:
+            from ui.main_ui import Ui_MainWindow
+            self.ui = Ui_MainWindow()
+            self.ui.setupUi(self)
+    
+    def load_config(self):
+        """Cargar configuración"""
+        window_config = self.config_manager.get_window_config()
+        self.setWindowTitle(window_config["title"])
+        size = window_config["size"]
+        self.resize(size["width"], size["height"])
+    
+    def fill_cmbres(self, combo, resolution_list, selected_resolution):
+        """Llenar combo de resoluciones"""
+        combo.clear()
+        try:
+            for width, height in resolution_list:
                 texto = f"{width}x{height}"
-                cb_resolution.addItem(texto, (width, height))
+                combo.addItem(texto, (width, height))
         except:
-            # Filtrar resoluciones con ancho >= 640 y FPS >= 60
+            # Formato con FPS
             resoluciones_filtradas = []
-            for i in resoluciones:
+            for i in resolution_list:
                 res, fps = i.split("@")
                 width, height = res.split("x")
-                
                 if int(width) >= 640 and int(fps) >= 60:
                     resoluciones_filtradas.append((res, int(fps), i))
             
-            # Obtener la resolución con mayor FPS para cada resolución única
             resoluciones_unicas = {}
             for res, fps, item_completo in resoluciones_filtradas:
                 if res not in resoluciones_unicas or fps > resoluciones_unicas[res][0]:
                     resoluciones_unicas[res] = (fps, item_completo)
             
-            # Agregar al combo box en orden inverso
             items_ordenados = list(resoluciones_unicas.items())
             items_ordenados.reverse()
             
             for res, (fps, item_completo) in items_ordenados:
-                cb_resolution.addItem(item_completo)
+                combo.addItem(item_completo)
 
-        cb_resolution.setCurrentText(max_res)
-            
+        combo.setCurrentText(selected_resolution)
+    
+    def connect_events(self):
+        """Conectar eventos"""
+        # Botón principal
+        self.ui.btn_start.clicked.connect(self.toggle_recording)
+        
+        # Menú archivo
+        if hasattr(self.ui, 'actionNewUser'):
+            self.ui.actionNewUser.triggered.connect(self.open_new_user_dialog)
+        if hasattr(self.ui, 'actionExit'):
+            self.ui.actionExit.triggered.connect(self.close)
+        if hasattr(self.ui, 'actionAbrir'):
+            self.ui.actionAbrir.triggered.connect(self.open_user_file)
+        
+        # Evaluador
+        if hasattr(self.ui, 'actionCambiar_evaluador'):
+            self.ui.actionCambiar_evaluador.triggered.connect(self.change_evaluator)
 
-    def load_config(self):
-        """Cargar configuración usando ConfigManager"""
-        try:
-            # Obtener configuración de ventana
-            window_config = self.config_manager.get_window_config()
-            self.setWindowTitle(window_config["title"])
-            self.resize(window_config["size"]["width"], window_config["size"]["height"])
-            
-            # Obtener ruta de datos expandida
-            self.data_path = self.config_manager.get_data_path()
-            
-            print(f"Configuración cargada. Ruta de datos: {self.data_path}")
-            
-        except Exception as e:
-            print(f"Error cargando configuración: {e}")
-            # Valores por defecto
-            self.setWindowTitle("SIEV")
-            self.resize(800, 600)
-            self.data_path = os.path.expanduser("~/siev")
+        # Protocolos calóricos
+        if hasattr(self.ui, 'actionOD_44'):
+            self.ui.actionOD_44.triggered.connect(lambda: self.show_protocol_selection("OD_44"))
+        if hasattr(self.ui, 'actionOI_44'):
+            self.ui.actionOI_44.triggered.connect(lambda: self.show_protocol_selection("OI_44"))
+        if hasattr(self.ui, 'actionOD_37'):
+            self.ui.actionOD_37.triggered.connect(lambda: self.show_protocol_selection("OD_37"))
+        if hasattr(self.ui, 'actionOI37'):
+            self.ui.actionOI37.triggered.connect(lambda: self.show_protocol_selection("OI_37"))
 
-    def init_stimulus_system(self):
-        """Inicializar sistema de estímulos"""
-        self.stimulus_manager = StimulusManager(self)
-        self.test_preparation_mode = False
-        print("Sistema de estímulos inicializado")
+        # Protocolos oculomotores
+        if hasattr(self.ui, 'actionSeguimiento_Lento'):
+            self.ui.actionSeguimiento_Lento.triggered.connect(lambda: self.show_protocol_selection("seguimiento_lento"))
+        if hasattr(self.ui, 'actionOptoquinetico'):
+            self.ui.actionOptoquinetico.triggered.connect(lambda: self.show_protocol_selection("optoquinetico"))
+        if hasattr(self.ui, 'actionSacadas'):
+            self.ui.actionSacadas.triggered.connect(lambda: self.show_protocol_selection("sacadas"))
+        if hasattr(self.ui, 'actionEspont_neo'):
+            self.ui.actionEspont_neo.triggered.connect(lambda: self.show_protocol_selection("espontaneo"))
 
-    def setup_right_click_trigger(self):
-        """Configurar click derecho global"""
-        self.installEventFilter(self)
-
+        # Calibración
+        if hasattr(self.ui, 'actionCalibrar'):
+            self.ui.actionCalibrar.triggered.connect(self.start_calibration)
+    
+    def enable_test_functions(self, enabled):
+        """Habilitar/deshabilitar funciones de test"""
+        if hasattr(self.ui, 'btn_start'):
+            self.ui.btn_start.setEnabled(enabled)
+        
+        # Menús calóricos
+        for action_name in ['actionOD_44', 'actionOI_44', 'actionOD_37', 'actionOI37']:
+            if hasattr(self.ui, action_name):
+                getattr(self.ui, action_name).setEnabled(enabled)
+        
+        # Menús oculomotores
+        for action_name in ['actionEspont_neo', 'actionSeguimiento_Lento', 'actionOptoquinetico', 'actionSacadas']:
+            if hasattr(self.ui, action_name):
+                getattr(self.ui, action_name).setEnabled(enabled)
+    
+    def update_test_ui_state(self):
+        """Actualizar estado UI"""
+        pass
+    
     def eventFilter(self, obj, event):
-        """Capturar click derecho"""
+        """Event filter para click derecho"""
         from PySide6.QtCore import QEvent
         from PySide6.QtGui import QMouseEvent
         
@@ -642,1451 +433,35 @@ class MainWindow(QMainWindow):
                 self.ui.btn_start.click()
                 return True
         return super().eventFilter(obj, event)
-
-
-    def setupUi(self):
-        """Configurar la interfaz de usuario"""
-        try:
-            from .main_ui import Ui_MainWindow
-            self.ui = Ui_MainWindow()
-            self.ui.setupUi(self)
-            print("UI cargada exitosamente")
-        except ImportError:
-            try:
-                from ui.main_ui import Ui_MainWindow
-                self.ui = Ui_MainWindow()
-                self.ui.setupUi(self)
-                print("UI cargada desde ui.main_ui")
-            except ImportError:
-                print("ERROR: No se pudo cargar la UI")
-
-    def init_video_system(self):
-        """Inicializar sistema de video"""
-        try:
-            slider_brightness = self.findChild(QSlider, "slider_brightness")
-            slider_contrast = self.findChild(QSlider, "slider_contrast")
-
-            slider_list = [
-                self.ui.slider_th_right, self.ui.slider_th_left,
-                self.ui.slider_erode_right, self.ui.slider_erode_left,
-                self.ui.slider_nose_width, self.ui.slider_vertical_cut_up,
-                self.ui.slider_vertical_cut_down, slider_brightness, 
-                slider_contrast
-            ]
-            
-            self.video_widget = VideoWidget(
-                self.ui.CameraFrame, 
-                slider_list,
-                self.ui.cb_resolution,
-                camera_id=self.camera_index,
-                video_callback=self.handle_gray_frame_for_video
-
-            )
-
-            for i, slider in enumerate(slider_list):
-                #slider.valueChanged.connect(lambda value, i=i: self.video_thread.set_threshold([value, i]))
-                slider.valueChanged.connect(self.save_slider_configuration)
-                #slider.sliderPressed.connect(self.save_slider_configuration)
-                #slider.sliderReleased.connect(self.save_slider_configuration)
-
-            self.video_widget.sig_pos.connect(self.handle_eye_positions)
-            print("Sistema de video inicializado")
-            
-        except Exception as e:
-            print(f"Error inicializando video: {e}")
-            self.video_widget = None
-
-    def init_serial_system(self):
-        """Inicializar comunicación serial"""
-        try:
-            self.serial_handler = SerialHandler('/dev/ttyUSB0', 115200)
-            self.serial_thread = SerialReadThread(self.serial_handler)
-            self.serial_thread.data_received.connect(self.handle_serial_data)
-            self.serial_thread.start()
-            print("Sistema serial inicializado")
-        except Exception as e:
-            print(f"Error inicializando serial: {e}")
-            self.serial_handler = None
-            self.serial_thread = None
-
-    def init_calibration_system(self):
-        """Inicializar sistema de calibración"""
-        try:
-            self.calibration_manager = CalibrationManager(self.serial_handler)
-            print("Sistema de calibración inicializado")
-        except Exception as e:
-            print(f"Error inicializando calibración: {e}")
-            self.calibration_manager = None
-
-    def init_graphics_system(self):
-        """Inicializar sistema de gráficos"""
-        try:
-            config = PlotConfigurations.get_ultra_minimal()
-            self.plot_widget = TriplePlotWidget(
-                parent=None,
-                window_size=60,
-                update_interval=50,
-                plot_config=config
-            )
-            self.ui.layout_graph.addWidget(self.plot_widget)
-            print("Sistema de gráficos inicializado")
-        except Exception as e:
-            print(f"Error inicializando gráficos: {e}")
-            self.plot_widget = None
-
-    def init_recording_system(self):
-        """Inicializar sistema de grabación"""
-        try:
-            # Usar la ruta de datos del ConfigManager
-            self.data_storage = DataStorage(
-                auto_save_interval=2.0,
-                buffer_size=500,
-            )
-            
-            # Variables de control de envío a gráficos
-            self.send_to_graph = False
-            self.graph_update_interval = 50  # ms
-            self.last_graph_update = 0
-            self.graph_data_buffer = []
-            self.total_data_points = 0
-            
-            print("Sistema de grabación inicializado")
-        except Exception as e:
-            print(f"Error inicializando grabación: {e}")
-
-    def init_user_system(self):
-        """Inicializar sistema de usuarios"""
-        try:
-            # Crear directorio de usuarios si no existe
-            users_path = os.path.join(self.data_path, "users")
-            self.siev_manager = SievManager(users_path)
-            print(f"Sistema de usuarios inicializado: {users_path}")
-        except Exception as e:
-            print(f"Error inicializando sistema de usuarios: {e}")
-            self.siev_manager = None
-
-    def init_processing_system(self):
-        """Inicializar sistema de procesamiento de datos"""
-        try:
-            self.eye_processor = EyeDataProcessor()
-            
-            # Configuración optimizada
-            self.eye_processor.set_filter_strength(0.4)
-            self.eye_processor.set_interpolation_steps(2)
-            self.eye_processor.set_history_size(3)
-            self.eye_processor.set_smoothing_enabled(True)
-            self.eye_processor.set_interpolation_enabled(True)
-            
-            # Kalman filter
-            self.eye_processor.set_kalman_enabled(True)
-            self.eye_processor.set_kalman_parameters(
-                process_noise=0.001,
-                measurement_noise=0.3,
-                stability_factor=0.01
-            )
-            
-            self.eye_processor.set_extra_smoothing(True, buffer_size=5)
-            
-            # Detector de nistagmos
-            self.nistagmo_detector = DetectorNistagmo(frecuencia_muestreo=200)
-            self.eye_positions_buffer = []
-            
-            print("Sistema de procesamiento inicializado")
-        except Exception as e:
-            print(f"Error inicializando procesamiento: {e}")
-
-    def setup_timers(self):
-        """Configurar timers del sistema"""
-        # Timer principal de grabación
-        self.recording_timer = QTimer()
-        self.recording_timer.timeout.connect(self.update_recording_time)
-        self.recording_timer.start(100)
-        
-        # Timer para gráficos
-        self.graph_timer = QTimer()
-        self.graph_timer.timeout.connect(self.flush_graph_buffer)
-        self.graph_timer.start(self.graph_update_interval)
-        
-        # Timer para nistagmos
-        self.nistagmo_timer = QTimer()
-        self.nistagmo_timer.timeout.connect(self.process_nystagmus)
-        self.nistagmo_timer.start(2000)
-
-    def setup_menu_and_controls(self):
-        """Configurar menú y controles adicionales"""
-        try:
-            # Crear menú de cámara
-            menu = QMenu(self)
-            
-            # Controles de cámara
-            brightness_slider = self.create_labeled_slider("slider_brightness","Brightness:", -64, 64, -21)
-            contrast_slider = self.create_labeled_slider("slider_contrast","Contrast:", 0, 100, 50)
-            
-            # Checkbox YOLO
-            checkbox_container = QWidget()
-            checkbox_layout = QHBoxLayout()
-            self.chk_use_yolo = QCheckBox("Usar YOLO (precisión)")
-            self.chk_use_yolo.setChecked(True)
-            self.chk_use_yolo.toggled.connect(self.on_yolo_toggled)
-            checkbox_layout.addWidget(self.chk_use_yolo)
-            checkbox_container.setLayout(checkbox_layout)
-            
-            # Añadir al menú
-            menu.addAction(self.create_widget_action(menu, checkbox_container))
-            menu.addAction(self.create_widget_action(menu, brightness_slider))
-            menu.addAction(self.create_widget_action(menu, contrast_slider))
-            
-            if hasattr(self.ui, 'toolButton'):
-                self.ui.toolButton.setMenu(menu)
-
-                
-        except Exception as e:
-            print(f"Error configurando menú: {e}")
-
-    def connect_events(self):
-        """Conectar eventos principales"""
-        try:
-            # Botón de grabación
-            self.ui.btn_start.clicked.connect(self.toggle_recording)
-            
-            # Conectar acciones del menú archivo
-            self.ui.actionNewUser.triggered.connect(self.open_new_user_dialog)
-            self.ui.actionExit.triggered.connect(self.close)
-            self.ui.actionAbrir.triggered.connect(self.open_user_file)
-            
-            # Conectar cambio de evaluador
-            if hasattr(self.ui, 'actionCambiar_evaluador'):
-                self.ui.actionCambiar_evaluador.triggered.connect(self.protocol_manager.change_evaluator)
-
-            # Conectar protocolos calóricos
-            if hasattr(self.ui, 'actionOD_44'):
-                self.ui.actionOD_44.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OD_44"))
-            if hasattr(self.ui, 'actionOI_44'):
-                self.ui.actionOI_44.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OI_44"))
-            if hasattr(self.ui, 'actionOD_37'):
-                self.ui.actionOD_37.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OD_37"))
-            if hasattr(self.ui, 'actionOI37'):
-                self.ui.actionOI37.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OI_37"))
-
-            # Conectar protocolos oculomotores
-            if hasattr(self.ui, 'actionSeguimiento_Lento'):
-                self.ui.actionSeguimiento_Lento.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("seguimiento_lento"))
-            if hasattr(self.ui, 'actionOptoquinetico'):
-                self.ui.actionOptoquinetico.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("optoquinetico"))
-            if hasattr(self.ui, 'actionSacadas'):
-                self.ui.actionSacadas.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("sacadas"))
-            if hasattr(self.ui, 'actionEspont_neo'):
-                self.ui.actionEspont_neo.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("espontaneo"))
-
-            # Conectar calibración
-            if hasattr(self.ui, 'actionCalibrar'):
-                self.ui.actionCalibrar.triggered.connect(self.start_calibration)
-                    
-        except Exception as e:
-            print(f"Error conectando eventos: {e}")
-
-    def show_protocol_selection(self):
-        """Mostrar selección completa de protocolo - ACTUALIZADO"""
-        dialog = ProtocolSelectionDialog(self)
-        result = dialog.exec()
-        
-        if result == QDialog.Accepted:
-            selected_protocol = dialog.get_selected_protocol()
-            spontaneous_enabled = dialog.is_spontaneous_enabled()
-            
-            print(f"Protocolo seleccionado: {selected_protocol}")
-            print(f"Nistagmo espontáneo: {'SÍ' if spontaneous_enabled else 'NO'}")
-            
-            # Guardar configuración para uso posterior
-            self.current_protocol = selected_protocol
-            self.spontaneous_test_enabled = spontaneous_enabled
-            
-            if selected_protocol != "sin_protocolo":
-                # Si hay protocolo, mostrar opción de seguimiento
-                QTimer.singleShot(500, self.show_tracking_calibration_choice)
-            else:
-                print("Iniciando sin protocolo - sistema listo")
-        else:
-            # Usar protocolo por defecto
-            print("Usando protocolo por defecto: sin protocolo")
-            self.current_protocol = "sin_protocolo"
-            self.spontaneous_test_enabled = False
-
-
-    def show_tracking_calibration_choice(self):
-        """Mostrar ventana de elección para calibración de seguimiento"""
-        dialog = TrackingCalibrationDialog(self)
-        result = dialog.exec()
-        
-        if result == QDialog.Accepted:
-            choice = dialog.get_user_choice()
-            print(f"Elección de seguimiento: {choice}")
-            
-            if choice == "tracking_first":
-                self.start_tracking_adjustment_mode()
-            elif choice == "skip_to_calibration":
-                QTimer.singleShot(1000, self.start_calibration)
-        else:
-            # Por defecto, ir a ajuste de seguimiento
-            self.start_tracking_adjustment_mode()
-
-    def start_tracking_adjustment_mode(self):
-        """Iniciar modo de ajuste de seguimiento"""
-        print("=== MODO AJUSTE DE SEGUIMIENTO ===")
-        
-        # Cambiar botón Start por "Continuar Calibración"
-        if hasattr(self.ui, 'btn_start'):
-            self.ui.btn_start.setText("Continuar Calibración")
-            self.ui.btn_start.setStyleSheet("""
-                QPushButton {
-                    background-color: #4CAF50; color: white; font-weight: bold;
-                    font-size: 14px; padding: 10px; border: none; border-radius: 5px;
-                }
-                QPushButton:hover { background-color: #45a049; }
-            """)
-            
-            # Reconectar evento
-            try:
-                self.ui.btn_start.clicked.disconnect()
-            except:
-                pass
-            self.ui.btn_start.clicked.connect(self.continue_to_calibration)
-        
-        # Mostrar mensaje
-        if hasattr(self.ui, 'lbl_time'):
-            self.ui.lbl_time.setText("AJUSTE EL SEGUIMIENTO CON LOS SLIDERS")
-            self.ui.lbl_time.setStyleSheet("""
-                QLabel {
-                    color: #FF9800; font-weight: bold; font-size: 14px;
-                }
-            """)
-        
-        print("Ajuste los sliders de seguimiento y presione 'Continuar Calibración'")
-
-    def continue_to_calibration(self):
-        """Continuar a calibración después del ajuste"""
-        print("Guardando configuración de sliders y continuando a calibración...")
-        
-        # Guardar configuración
-        self.save_slider_configuration()
-        
-        # Restaurar botón Start
-        if hasattr(self.ui, 'btn_start'):
-            self.ui.btn_start.setText("Start")
-            self.ui.btn_start.setStyleSheet("")
-            
-            try:
-                self.ui.btn_start.clicked.disconnect()
-            except:
-                pass
-            self.ui.btn_start.clicked.connect(self.toggle_recording)
-        
-        # Restaurar label
-        if hasattr(self.ui, 'lbl_time'):
-            self.ui.lbl_time.setText("00:00 / 05:00")
-            self.ui.lbl_time.setStyleSheet("")
-        
-        # Iniciar calibración
-        QTimer.singleShot(500, self.start_calibration)
-
-
-    def handle_serial_data(self, data):
-        """Procesar datos seriales del IMU"""
-        try:
-            parts = data.split(",")
-            if len(parts) >= 3:
-                self.pos_hit = [float(parts[0]), float(parts[1]), float(parts[2])]
-        except (ValueError, IndexError) as e:
-            print(f"Error procesando datos serial: {e}")
-
-    def handle_eye_positions(self, pos):
-        """Procesar posiciones oculares principales - SISTEMA COMPLETO"""
-        self.pos_eye = pos
-        
-        # Si hay calibración en progreso, enviar datos al sistema de calibración
-        if hasattr(self, 'calibration_in_progress') and self.calibration_in_progress:
-            if hasattr(self, 'calibration_controller') and self.calibration_controller:
-                left_eye = self.pos_eye[1] if len(self.pos_eye) > 1 else None
-                right_eye = self.pos_eye[0] if len(self.pos_eye) > 0 else None
-                self.calibration_controller.process_eye_positions(left_eye, right_eye)
-        
-        # Procesar datos normalmente para grabación/visualización
-        if not self.send_to_graph:
-            return
-            
-        try:
-            # Extraer posiciones según estructura original
-            left_eye = self.pos_eye[1] if len(self.pos_eye) > 1 else None
-            right_eye = self.pos_eye[0] if len(self.pos_eye) > 0 else None
-            
-            # APLICAR CALIBRACIÓN SI ESTÁ DISPONIBLE
-            if self.calibration_manager and self.calibration_manager.is_calibrated:
-                left_eye_degrees, right_eye_degrees = self.calibration_manager.convert_to_degrees(
-                    left_eye, right_eye
-                )
-                # Usar datos calibrados en grados
-                processed_left = left_eye_degrees
-                processed_right = right_eye_degrees
-            else:
-                # Usar datos en píxeles si no hay calibración
-                processed_left = left_eye
-                processed_right = right_eye
-            
-            # Procesar a través del EyeDataProcessor
-            processed_points = self.eye_processor.process_eye_data(
-                processed_left, 
-                processed_right, 
-                float(self.pos_hit[0]),  # IMU X
-                float(self.pos_hit[1]),  # IMU Y
-                self.graph_time
-            )
-            
-            # === ALMACENAMIENTO COMPLETO (TODOS LOS PUNTOS) ===
-            if self.is_recording:
-                for point in processed_points:
-                    processed_left, processed_right, imu_x, imu_y, point_time = point
-                    self.data_storage.add_data_point(
-                        processed_left, processed_right, imu_x, imu_y, point_time
-                    )
-                    self.total_data_points += 1
-            
-            # === VISUALIZACIÓN OPTIMIZADA ===
-            current_time = time.time()
-            if current_time - self.last_graph_update >= (self.graph_update_interval / 1000.0):
-                if processed_points:
-                    # Añadir al buffer de gráficos (solo los últimos puntos para eficiencia)
-                    latest_point = processed_points[-1]
-                    self.graph_data_buffer.append(latest_point)
-                    self.last_graph_update = current_time
-                    
-        except Exception as e:
-            print(f"Error procesando posiciones oculares: {e}")
-
-    def flush_graph_buffer(self):
-        """Enviar datos acumulados a los gráficos - SISTEMA COMPLETO"""
-        if not self.graph_data_buffer or not self.plot_widget:
-            return
-            
-        try:
-            # Procesar en lotes para mejor performance
-            for point in self.graph_data_buffer:
-                processed_left, processed_right, imu_x, imu_y, point_time = point
-                
-                # Usar el método correcto según la implementación del plot_widget
-                if hasattr(self.plot_widget, 'add_data_point'):
-                    self.plot_widget.add_data_point(
-                        processed_left, processed_right, imu_x, imu_y, point_time
-                    )
-                elif hasattr(self.plot_widget, 'updatePlots'):
-                    # Formato para compatibilidad con TriplePlotWidget original
-                    data = [processed_right, processed_left, imu_x, imu_y, point_time]
-                    self.plot_widget.updatePlots(data)
-            
-            # Limpiar buffer después de enviar
-            self.graph_data_buffer.clear()
-            
-        except Exception as e:
-            print(f"Error enviando a gráficos: {e}")
-            # En caso de error, limpiar buffer para evitar acumulación
-            self.graph_data_buffer.clear()
-
-
-
-    def toggle_recording(self):
-        """MODIFICAR método existente para manejar ambos modos"""
-        
-        # === NUEVA LÓGICA: Si está en modo player, controlar reproducción ===
-        if (hasattr(self.video_widget, 'is_in_player_mode') and 
-            self.video_widget.is_in_player_mode):
-            self.video_widget.toggle_playback()
-            return
-        
-        # === LÓGICA ORIGINAL PARA GRABACIÓN ===
-        try:
-            if not self.is_recording and not self.is_calibrating:
-                self.start_recording()
-            else:
-                self.stop_recording()
-        except Exception as e:
-            print(f"Error en toggle_recording: {e}")
-
-
-
-
-
-    # ========================================
-    # 6. FUNCIONES DE REPRODUCCIÓN
-    # ========================================
-
-    def iniciar_reproduccion(self):
-        """Iniciar reproducción de una prueba completada"""
-        try:
-            selected_test_data = self.get_selected_test_data()
-            
-            if not selected_test_data:
-                print("No hay prueba seleccionada para reproducir")
-                return
-                
-            test_data = selected_test_data['test_data']
-            test_id = selected_test_data['test_id']
-            
-            print(f"Iniciando reproducción de prueba: {test_data.get('tipo', 'Desconocida')}")
-            
-            # Llamar al método reproducir
-            self.reproducir()
-            
-            # Actualizar estado
-            self.is_reproducing = True
-            self.update_test_ui_state()
-            
-        except Exception as e:
-            print(f"Error iniciando reproducción: {e}")
-
-    def pausar_reproduccion(self):
-        """Pausar reproducción actual"""
-        try:
-            print("Pausando reproducción")
-            
-            # Pausar la reproducción (implementar según necesidades)
-            
-            self.is_reproducing = False
-            self.update_test_ui_state()
-            
-        except Exception as e:
-            print(f"Error pausando reproducción: {e}")
-
-    def reproducir(self):
-        """
-        Método para reproducir una prueba completada
-        IMPLEMENTACIÓN PENDIENTE - estructura base
-        """
-        try:
-            selected_test_data = self.get_selected_test_data()
-            
-            if not selected_test_data:
-                print("No hay prueba seleccionada para reproducir")
-                return
-                
-            test_data = selected_test_data['test_data']
-            test_id = selected_test_data['test_id']
-            
-            print(f"=== REPRODUCIENDO PRUEBA ===")
-            print(f"ID: {test_id}")
-            print(f"Tipo: {test_data.get('tipo', 'Desconocida')}")
-            print(f"Fecha: {test_data.get('fecha', 'Sin fecha')}")
-            print(f"Evaluador: {test_data.get('evaluador', 'Desconocido')}")
-            
-            # TODO: Implementar lógica específica de reproducción
-            # - Cargar datos CSV de la prueba
-            # - Configurar gráficos para mostrar datos grabados
-            # - Implementar controles de reproducción
-            # - Mostrar progreso en el display de tiempo
-            
-            print("Método reproducir() - estructura lista para implementación")
-            
-        except Exception as e:
-            print(f"Error en método reproducir: {e}")
-
-
-
-    def start_test_recording(self):
-        """Iniciar grabación con integración de protocolo"""
-        try:
-            # Obtener ID de prueba actual
-            current_test_id = self.protocol_manager.get_current_test_id()
-            
-            if not current_test_id:
-                print("No hay prueba activa. Debe crear una prueba primero.")
-                QMessageBox.warning(
-                    self,
-                    "Sin Prueba Activa",
-                    "Debe crear una prueba antes de iniciar la grabación.\n"
-                    "Use el menú Protocolos para crear una nueva prueba."
-                )
-                return
-            
-            # Marcar inicio en protocol_manager
-            if not self.protocol_manager.start_test(current_test_id):
-                print("Error iniciando prueba en protocol_manager")
-                return
-            
-            # Iniciar calibración o grabación según corresponda
-            if hasattr(self, 'current_protocol') and self.current_protocol in ['sacadas', 'seguimiento_lento', 'ng_optocinetico']:
-                # Protocolos con estímulos
-                self.toggle_recording_with_stimulus()
-            else:
-                # Protocolos normales
-                self.start_calibration_phase()
-            
-            # Actualizar botón
-            self.ui.btn_start.setText("Detener")
-            self.ui.btn_start.setEnabled(True)
-            
-            print(f"Prueba {current_test_id} iniciada")
-            
-        except Exception as e:
-            print(f"Error iniciando prueba: {e}")
-
-    def stop_test_recording(self):
-        """Detener grabación y finalizar prueba"""
-        try:
-            # Obtener ID de prueba actual
-            current_test_id = self.protocol_manager.get_current_test_id()
-            
-            if not current_test_id:
-                print("No se encontró prueba activa para finalizar")
-            
-            # Detener grabación
-            was_recording = self.is_recording
-            
-            if was_recording or self.is_calibrating:
-                self.stop_recording()  # Método original de detención
-            
-            # Cerrar ventana de estímulos si está abierta
-            if hasattr(self, 'stimulus_manager') and self.stimulus_manager:
-                self.stimulus_manager.close_stimulus_window()
-                
-            # Resetear estados de estímulos
-            if hasattr(self, 'test_preparation_mode'):
-                self.test_preparation_mode = False
-                self.test_ready_to_start = False
-            
-            # Finalizar en protocol_manager
-            if current_test_id and was_recording:
-                self.protocol_manager.finalize_test(current_test_id, stopped_manually=True)
-            
-            # Actualizar botón a estado final
-            self.ui.btn_start.setText("Finalizado")
-            self.ui.btn_start.setEnabled(False)
-            
-            print(f"Prueba {current_test_id} finalizada")
-            
-        except Exception as e:
-            print(f"Error deteniendo prueba: {e}")
-
-    def on_recording_time_expired(self):
-        """Manejar finalización automática por tiempo cumplido"""
-        try:
-            print("=== TIEMPO DE GRABACIÓN CUMPLIDO ===")
-            
-            # Obtener ID de prueba actual
-            current_test_id = self.protocol_manager.get_current_test_id()
-            
-            # Detener grabación
-            self.stop_recording()  # Método original
-            
-            # Finalizar en protocol_manager
-            if current_test_id:
-                self.protocol_manager.finalize_test(current_test_id, stopped_manually=False)
-            
-            # Actualizar botón a estado final
-            self.ui.btn_start.setText("Finalizado")
-            self.ui.btn_start.setEnabled(False)
-            
-            print(f"Prueba {current_test_id} finalizada automáticamente")
-            
-        except Exception as e:
-            print(f"Error en finalización automática: {e}")
-
-    def reset_button_for_new_test(self):
-        """
-        MODIFICAR EL MÉTODO EXISTENTE - Resetear botón para nueva prueba
-        """
-        try:
-            # Resetear estados
-            if hasattr(self, 'test_preparation_mode'):
-                self.test_preparation_mode = False
-                self.test_ready_to_start = False
-            
-            self.is_reproducing = False
-            
-            # Actualizar UI usando el nuevo sistema
-            self.update_test_ui_state()
-            
-            print("Botón reseteado para nueva prueba")
-            
-        except Exception as e:
-            print(f"Error reseteando botón: {e}")
-
-
-
-    def update_time_displays(self):
-        """
-        Método unificado para actualizar displays de tiempo
-        USAR EN TIMERS EXISTENTES en lugar de actualizar lbl_time directamente
-        """
-        try:
-            # Durante calibración o grabación
-            if self.is_recording or self.is_calibrating:
-                self.update_recording_display()
-            
-            # Durante reproducción
-            elif self.is_reproducing:
-                # Integrar con sistema de reproducción cuando esté implementado
-                # self.update_reproduction_display(current_time, total_time)
-                pass
-                
-            # Otras actualizaciones de tiempo (nistagmo timer, etc.)
-            # pueden continuar normalmente
-            
-        except Exception as e:
-            print(f"Error actualizando displays de tiempo: {e}")
-
-
-    # ========================================
-    # 7. MODIFICACIONES A MÉTODOS EXISTENTES
-    # ========================================
-
-    def start_calibration_phase(self):
-        """
-        MODIFICAR EL MÉTODO EXISTENTE - Iniciar fase de calibración
-        """
-        print("=== INICIANDO CALIBRACIÓN ===")
-        self.is_calibrating = True
-        self.eye_processor.reset_calibration()
-        
-        self.recording_start_time = time.time()
-        self.last_update_time = time.time()
-        self.graph_time = -self.CALIBRATION_TIME
-        
-        # Actualizar UI con nuevo sistema
-        self.update_test_ui_state()
-        self.update_time_display_in_test_label(f"Calibrando: {self.CALIBRATION_TIME}s")
-        
-        self.send_to_graph = True
-        QTimer.singleShot(self.CALIBRATION_TIME * 1000, self.start_recording)
-
-    def start_recording(self):
-        """
-        MODIFICAR EL MÉTODO EXISTENTE - Iniciar grabación real
-        """
-        print("=== INICIANDO GRABACIÓN ENTRAMOS A START_RECORDING ===")
-        self.is_calibrating = False
-        self.is_recording = True
-        self.recording_start_time = time.time()
-        self.graph_time = 0.0
-        self.last_update_time = time.time()
-        
-        # Iniciar almacenamiento
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"vng_recording_{timestamp}.csv"
-        self.data_storage.start_recording(filename)
-        
-        # Configurar gráficos
-        if self.plot_widget:
-            self.plot_widget.clear_data()
-            self.plot_widget.set_recording_state(True)
-        
-        # === INICIAR GRABACIÓN DE VIDEO ===
-        if self.video_recorder:
-            # Obtener protocolo de la prueba actual
-            current_test_data = self.get_selected_test_data()
-            if current_test_data:
-                protocol = current_test_data['test_data'].get('tipo', 'desconocido')
-                test_id = self.protocol_manager.get_current_test_id()
-                self.video_recorder.start_recording(test_id)
-        
-        # Actualizar UI usando el nuevo sistema
-        self.update_test_ui_state()
-
-    def stop_recording(self):
-        """
-        MODIFICAR EL MÉTODO EXISTENTE - Detener grabación
-        """
-        print("=== DETENIENDO GRABACIÓN ===")
-        
-        was_recording = self.is_recording
-        
-        # Estados
-        self.is_recording = False
-        self.is_calibrating = False
-        self.recording_start_time = None
-        self.last_update_time = None
-        self.graph_time = 0.0
-        self.send_to_graph = False
-        
-        # Detener almacenamiento de datos
-        if was_recording:
-            self.data_storage.stop_recording()
-            
-            # Mostrar estadísticas finales
-            stats = self.data_storage.get_statistics()
-            print(f"Grabación completada:")
-            print(f"  - Total de muestras: {stats.get('total_samples', 0)}")
-            print(f"  - Duración: {stats.get('duration_seconds', 0):.1f}s")
-            print(f"  - Tasa de muestreo: {stats.get('sample_rate', 0):.1f} Hz")
-            print(f"  - Detección ojo izq: {stats.get('left_eye_detection_rate', 0):.1f}%")
-            print(f"  - Detección ojo der: {stats.get('right_eye_detection_rate', 0):.1f}%")
-        
-        # === DETENER Y GUARDAR VIDEO ===
-        if self.video_recorder and self.video_recorder.is_recording:
-            video_path = self.video_recorder.stop_recording()
-            if video_path:
-                # Guardar en .siev
-                success = self.video_recorder.save_to_siev(video_path)
-                if success:
-                    print("Video guardado exitosamente en archivo .siev")
-                else:
-                    print("Error guardando video en archivo .siev")
-            else:
-                print("Error: No se pudo obtener el archivo de video")
-        
-        # Configurar gráfica para exploración
-        if self.plot_widget:
-            self.plot_widget.set_recording_state(False)
-        
-        # UI
-        self.ui.btn_start.setText("Iniciar")
-        self.ui.lbl_time.setText("00:00 / 05:00")
-        
-        # Actualizar estado del sistema de pruebas
-        self.update_test_ui_state()
-        
-        print("Grabación detenida")
-        
-        try:
-            # Después de guardar y completar la grabación
-            if self.video_widget and hasattr(self.video_widget, 'is_in_player_mode'):
-                # Pequeña demora para asegurar que la grabación terminó
-                QTimer.singleShot(1000, lambda: self.video_widget.switch_to_live_mode(self.camera_index))
-                print("Programado cambio a modo live post-grabación")
-        except Exception as e:
-            print(f"Error programando cambio a modo live: {e}")
-
-
-    def update_recording_time(self):
-        """Actualizar tiempo de grabación"""
-        current_time = time.time()
-        
-        if self.last_update_time is not None:
-            delta_time = current_time - self.last_update_time
-            
-            if self.is_recording:
-                self.graph_time += delta_time
-                elapsed = current_time - self.recording_start_time
-                
-                if elapsed >= self.MAX_RECORDING_TIME:
-                    self.stop_recording()
-                    return
-                
-                minutes = int(self.graph_time // 60)
-                seconds = int(self.graph_time % 60)
-                self.ui.lbl_time.setText(f"{minutes:02d}:{seconds:02d} / 05:00")
-                
-            elif self.is_calibrating:
-                elapsed = current_time - self.recording_start_time
-                remaining = max(0, self.CALIBRATION_TIME - elapsed)
-                self.graph_time = -remaining
-                self.ui.lbl_time.setText(f"Calibrando: {int(remaining)}s")
-        
-        self.last_update_time = current_time
-
-    def start_calibration(self):
-        """Iniciar calibración del sistema"""
-        if not self.calibration_manager:
-            QMessageBox.warning(self, "Error", "Sistema de calibración no disponible")
-            return
-            
-        try:
-            from ui.calibration_dialog import CalibrationDialog
-            dialog = CalibrationDialog(
-                calibration_manager=self.calibration_manager,
-                parent_window=self
-            )
-            dialog.calibration_finished.connect(self.on_calibration_finished)
-            dialog.exec()
-        except Exception as e:
-            print(f"Error iniciando calibración: {e}")
-
-    def on_calibration_finished(self, success):
-        """Procesar resultado de calibración"""
-        if success:
-            print("=== CALIBRACIÓN EXITOSA ===")
-            summary = self.calibration_manager.get_calibration_summary()
-            print(f"Ángulo teórico: {summary['theoretical_angle']:.1f}°")
-            
-            # Actualizar UI
-            if hasattr(self, 'btn_calibrate'):
-                self.btn_calibrate.setText("Sistema Calibrado ✓")
-                self.btn_calibrate.setStyleSheet("color: green; font-weight: bold;")
-            
-            # Actualizar límites del gráfico
-            self.update_graph_limits_after_calibration()
-            
-            # Mensaje de éxito
-            QMessageBox.information(
-                self,
-                "Calibración Exitosa",
-                f"El sistema ha sido calibrado correctamente.\n\n"
-                f"Ángulo medido: {summary['theoretical_angle']:.1f}°\n"
-                f"Los gráficos ahora mostrarán datos en grados."
-            )
-        else:
-            print("Calibración cancelada o falló")
-            QMessageBox.information(
-                self,
-                "Calibración Cancelada", 
-                "La calibración no se completó."
-            )
-
-    def update_graph_limits_after_calibration(self):
-        """Actualizar límites del gráfico después de calibración"""
-        if not self.calibration_manager or not self.calibration_manager.is_calibrated:
-            return
-        
-        summary = self.calibration_manager.get_calibration_summary()
-        theoretical_angle = summary['theoretical_angle']
-        
-        # Calcular límites con margen
-        margin = 20.0  # grados de margen
-        max_limit = theoretical_angle / 2 + margin
-        min_limit = -max_limit
-        
-        print(f"Actualizando límites del gráfico:")
-        print(f"  Rango: {min_limit:.1f}° a {max_limit:.1f}°")
-        print(f"  Unidades: GRADOS (calibrado)")
-        
-        # Aplicar a los plots
-        if self.plot_widget and hasattr(self.plot_widget, 'plots'):
-            for plot in self.plot_widget.plots:
-                plot.setYRange(min_limit, max_limit)
-
-    def process_nystagmus(self):
-        """Procesar detección de nistagmos"""
-        if len(self.eye_positions_buffer) > 100:
-            try:
-                resultados = self.nistagmo_detector.procesar_datos(self.eye_positions_buffer)
-                if resultados['total_nistagmos'] > 0:
-                    print(f"Nistagmos: {resultados['total_nistagmos']}, VCL: {resultados['vcl_promedio']:.2f}°/s")
-            except Exception as e:
-                print(f"Error procesando nistagmos: {e}")
-
-    def on_yolo_toggled(self, checked):
-        """Manejar cambio de YOLO"""
-        if self.video_widget:
-            self.video_widget.set_yolo_enabled(checked)
-
-    def create_labeled_slider(self, nameobj, label_text, min_val, max_val, initial_val):
-        """Crear slider con etiqueta"""
-        container = QWidget()
-        layout = QHBoxLayout()
-        
-        layout.addWidget(QLabel(label_text))
-        
-        slider = QSlider(Qt.Horizontal)
-        slider.setObjectName(nameobj)
-        slider.setMinimum(min_val)
-        slider.setMaximum(max_val)
-        slider.setValue(initial_val)
-        slider.valueChanged.connect(self.save_slider_configuration)
-
-
-        layout.addWidget(slider)
-        container.setLayout(layout)
-        return container
-
-    def create_widget_action(self, parent, widget):
-        """Crear QWidgetAction para menús"""
-        action = QWidgetAction(parent)
-        action.setDefaultWidget(widget)
-        return action
-
-    def load_slider_configuration(self):
-        """Cargar configuraciones de sliders desde config.json"""
-        try:
-            slider_settings = self.config_manager.get_slider_settings()
-            print("se carga setting")
-
-            slider_mapping = {
-                'slider_th_right': 'slider_th_right',
-                'slider_th_left': 'slider_th_left',
-                'slider_erode_right': 'slider_erode_right',
-                'slider_erode_left': 'slider_erode_left',
-                'slider_nose_width': 'slider_nose_width',
-                'slider_vertical_cut_up': 'slider_vertical_cut_up',
-                'slider_vertical_cut_down': 'slider_vertical_cut_down',
-                'slider_brightness': 'slider_brightness',
-                'slider_contrast': 'slider_contrast'
-            }
-            
-            loaded_count = 0
-            for config_name, ui_name in slider_mapping.items():
-                if config_name in slider_settings:
-                    value = slider_settings[config_name]  # ✅ Mover aquí
-                    
-                    if hasattr(self.ui, ui_name):
-                        slider = getattr(self.ui, ui_name)
-                    else:
-                        slider = self.findChild(QSlider, config_name)
-                    
-                    if slider and slider.minimum() <= value <= slider.maximum():
-                        slider.setValue(value)
-                        loaded_count += 1
-                        #print(f"Slider {ui_name} configurado a {value}")
-                    else:
-                        print(f"Valor {value} fuera de rango para {ui_name}")
-            
-            print(f"Configuración de sliders cargada: {loaded_count} sliders configurados")
-        except Exception as e:
-            print(f"Error cargando configuración de sliders: {e}")
-        
-    def save_slider_configuration(self):
-        """Guardar configuraciones actuales de sliders"""
-
-        sender_name = self.sender().objectName()
-        sender_value = self.sender().value()
-        #print(f"Me ha llamado {sender_name} con valor {sender_value}")
-
-        try:
-            if self.config_manager.set_slider_value(sender_name, sender_value):
-                pass
-                #print(f"Configuración de {sender_name} guardada")
-            else:
-                print(f"Error guardando configuración de {sender_name}")
-                
-        except Exception as e:
-            print(f"Error guardando configuración de sliders: {e}")
-
-
-
-    def open_user_file(self):
-        """Abrir archivo de usuario existente (.siev)"""
-        try:
-            # Directorio inicial - ruta de usuarios predeterminada
-            if self.siev_manager:
-                initial_dir = self.siev_manager.base_path
-            else:
-                initial_dir = os.path.expanduser("~/siev_data/users")
-            
-            # Asegurar que el directorio existe
-            os.makedirs(initial_dir, exist_ok=True)
-            
-            # Abrir diálogo de archivo
-            file_path, _ = QFileDialog.getOpenFileName(
-                self,
-                "Abrir Usuario - Sistema VNG",
-                initial_dir,
-                "Archivos SIEV (*.siev);;Todos los archivos (*.*)"
-            )
-            
-            if file_path:
-                self.load_user_from_file(file_path)
-                
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error abriendo archivo de usuario: {e}")
-
-    def load_user_from_file(self, file_path):
-        """Cargar usuario desde archivo .siev"""
-        try:
-            if not self.siev_manager:
-                QMessageBox.critical(self, "Error", "Sistema de usuarios no inicializado")
-                return
-            
-            # Validar archivo .siev
-            validation = self.siev_manager.validate_siev(file_path)
-            
-            if not validation["valid"]:
-                error_msg = "Archivo .siev inválido:\n\n" + "\n".join(validation["errors"])
-                if validation["warnings"]:
-                    error_msg += "\n\nAdvertencias:\n" + "\n".join(validation["warnings"])
-                
-                QMessageBox.warning(self, "Archivo Inválido", error_msg)
-                return
-            
-            # Mostrar advertencias si las hay
-            if validation["warnings"]:
-                warning_msg = "El archivo se puede abrir pero tiene advertencias:\n\n" + "\n".join(validation["warnings"])
-                QMessageBox.warning(self, "Advertencias", warning_msg)
-            
-            # Cargar datos del usuario
-            user_data = self.siev_manager.get_user_info(file_path)
-            
-            if not user_data:
-                QMessageBox.warning(self, "Error", "No se pudieron cargar los datos del usuario")
-                return
-            
-            # Cerrar usuario anterior si existe
-            self.close_current_user()
-            
-            # Establecer nuevo usuario
-            self.current_user_siev = file_path
-            self.current_user_data = user_data
-            
-            # Actualizar interfaz
-            self.update_ui_for_user(user_data)
-            
-            # Cargar pruebas del usuario
-            self.load_user_tests()
-            
-            # Mensaje de confirmación
-            user_name = user_data.get('nombre', 'Usuario')
-            file_name = os.path.basename(file_path)
-            
-            QMessageBox.information(
-                self, 
-                "Usuario Cargado", 
-                f"Usuario '{user_name}' cargado exitosamente.\n\n"
-                f"Archivo: {file_name}\n"
-                f"Total de pruebas: {len(self.siev_manager.get_user_tests(file_path))}"
-            )
-            
-            print(f"Usuario cargado: {user_name} desde {file_path}")
-            
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error cargando usuario: {e}")
-            print(f"Error detallado cargando usuario: {e}")
-
-    def close_current_user(self):
-        """Cerrar usuario actual y limpiar interfaz"""
-        try:
-            if self.current_user_siev:
-                print(f"Cerrando usuario: {self.current_user_data.get('nombre', 'Desconocido')}")
-            
-            # Limpiar variables
-            self.current_user_siev = None
-            self.current_user_data = None
-            
-            # Limpiar interfaz
-            self.ui.listTestWidget.clear()
-            self.ui.listTestWidget.setHeaderLabel("Sin usuario seleccionado")
-            self.setWindowTitle("Sistema VNG")
-            
-            # Limpiar datos de sesión del protocolo
-            if hasattr(self, 'protocol_manager'):
-                self.protocol_manager.clear_session_data()
-            
-            # Deshabilitar funciones que requieren usuario
-            self.enable_test_functions(False)
-            
-        except Exception as e:
-            print(f"Error cerrando usuario actual: {e}")
-
-    def get_current_user_info(self):
-        """Obtener información del usuario actual para mostrar en la interfaz"""
-        try:
-            if not self.current_user_data:
-                return "Sin usuario seleccionado"
-            
-            user_name = self.current_user_data.get('nombre', 'Desconocido')
-            user_id = self.current_user_data.get('rut_id', '')
-            
-            if user_id:
-                return f"{user_name} ({user_id})"
-            else:
-                return user_name
-                
-        except Exception as e:
-            print(f"Error obteniendo info de usuario: {e}")
-            return "Error obteniendo usuario"
-
-
-
-    def open_new_user_dialog(self):
-        """Abrir diálogo para crear nuevo usuario"""
-        try:
-            dialog = NewUserDialog(self)
-            if dialog.exec() == QDialog.Accepted:
-                user_data = dialog.get_user_data()
-                if user_data:
-                    self.create_new_user(user_data)
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error abriendo diálogo de usuario: {e}")
-
-
-    def create_new_user(self, user_data):
-        """Crear nuevo usuario y archivo .siev"""
-        try:
-            if not self.siev_manager:
-                QMessageBox.critical(self, "Error", "Sistema de usuarios no inicializado")
-                return
-            
-            # Crear archivo .siev para el usuario
-            siev_path = self.siev_manager.create_user_siev(user_data)
-            
-            # Establecer como usuario actual
-            self.current_user_siev = siev_path
-            self.current_user_data = user_data
-            
-            # Actualizar interfaz
-            self.update_ui_for_user(user_data)
-            
-            # Limpiar lista de pruebas (nuevo usuario, sin pruebas)
-            self.ui.listTestWidget.clear()
-            
-            # *** NUEVA LÓGICA: Limpiar gráfico para nuevo usuario ***
-            if hasattr(self, 'plot_widget') and self.plot_widget:
-                print("Nuevo usuario - limpiando gráfico")
-                self.plot_widget.clearPlots()
-            
-            QMessageBox.information(
-                self, 
-                "Usuario Creado", 
-                f"Usuario '{user_data['nombre']}' creado exitosamente.\n\n"
-                f"Archivo: {os.path.basename(siev_path)}"
-            )
-            
-            print(f"Nuevo usuario creado: {user_data['nombre']}")
-            
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error creando usuario: {e}")
-
-    def update_ui_for_user(self, user_data):
-        """Actualizar interfaz con información del usuario actual"""
-        try:
-            # Actualizar título de ventana
-            user_name = user_data.get('nombre', 'Usuario')
-            self.setWindowTitle(f"Sistema VNG - {user_name}")
-            
-            # Actualizar header del tree widget
-            self.update_tree_header(user_data)
-            
-            # Habilitar funciones que requieren usuario
-            self.enable_test_functions(True)
-            
-        except Exception as e:
-            print(f"Error actualizando UI para usuario: {e}")
-
-
-    def update_tree_header(self, user_data):
-        """Actualizar header del QTreeWidget con información del usuario"""
-        try:
-            if hasattr(self.ui, 'listTestWidget'):
-                user_name = user_data.get('nombre', 'Usuario')
-                user_id = user_data.get('rut_id', '')
-                
-                if user_id:
-                    header_text = f"{user_name} ({user_id})"
-                else:
-                    header_text = user_name
-                
-                self.ui.listTestWidget.setHeaderLabel(header_text)
-                print(f"Header del tree actualizado: {header_text}")
-            
-        except Exception as e:
-            print(f"Error actualizando header del tree: {e}")
-
-    def enable_test_functions(self, enabled):
-        """Habilitar/deshabilitar funciones que requieren usuario"""
-        try:
-
-
-            # Habilitar botón de iniciar
-            self.ui.btn_start.setEnabled(enabled)
-            
-            # Habilitar menús de pruebas CALÓRICAS
-            if hasattr(self.ui, 'actionOD_44'):
-                self.ui.actionOD_44.setEnabled(enabled)
-            if hasattr(self.ui, 'actionOI_44'):
-                self.ui.actionOI_44.setEnabled(enabled)
-            if hasattr(self.ui, 'actionOD_37'):
-                self.ui.actionOD_37.setEnabled(enabled)
-            if hasattr(self.ui, 'actionOI37'):
-                self.ui.actionOI37.setEnabled(enabled)
-            
-            # AGREGAR ESTAS LÍNEAS para habilitar pruebas OCULOMOTORAS:
-            if hasattr(self.ui, 'actionEspont_neo'):
-                self.ui.actionEspont_neo.setEnabled(enabled)
-            if hasattr(self.ui, 'actionSeguimiento_Lento'):
-                self.ui.actionSeguimiento_Lento.setEnabled(enabled)
-            if hasattr(self.ui, 'actionOptoquinetico'):
-                self.ui.actionOptoquinetico.setEnabled(enabled)
-            if hasattr(self.ui, 'actionSacadas'):
-                self.ui.actionSacadas.setEnabled(enabled)
-            
-        except Exception as e:
-            print(f"Error habilitando funciones de prueba: {e}")
-
-
-    def load_user_tests(self):
-        """Cargar y mostrar las pruebas del usuario actual en el QTreeWidget"""
-        try:
-            if not self.current_user_siev or not self.siev_manager:
-                return
-            
-            # Limpiar tree
-            self.ui.listTestWidget.clear()
-            
-            # Obtener lista de pruebas
-            tests = self.siev_manager.get_user_tests(self.current_user_siev)
-            
-            if not tests:
-                print("No hay pruebas para cargar")
-                return
-            
-            # Organizar pruebas por fecha
-            tests_by_date = {}
-            for test in tests:
-                try:
-                    # Convertir timestamp a fecha
-                    test_date = datetime.fromtimestamp(test.get('fecha', 0))
-                    date_str = test_date.strftime("%d/%m/%Y")
-                    
-                    if date_str not in tests_by_date:
-                        tests_by_date[date_str] = []
-                    
-                    tests_by_date[date_str].append(test)
-                    
-                except Exception as e:
-                    print(f"Error procesando prueba: {e}")
-                    continue
-            
-            # Crear estructura en el tree
-            for date_str in sorted(tests_by_date.keys(), reverse=True):  # Más reciente primero
-                # Crear item de fecha
-                date_item = QTreeWidgetItem(self.ui.listTestWidget)
-                date_item.setText(0, date_str)
-                
-                # Estilo para fecha
-                font = date_item.font(0)
-                font.setBold(True)
-                date_item.setFont(0, font)
-                
-                # Agregar pruebas de esta fecha
-                for test in tests_by_date[date_str]:
-                    try:
-                        test_date = datetime.fromtimestamp(test.get('fecha', 0))
-                        time_str = test_date.strftime("%H:%M")
-                        
-                        test_name = test.get('tipo', 'Desconocido')
-                        evaluator = test.get('evaluador', 'Sin evaluador')
-                        estado = test.get('estado', 'completada').upper()
-                        
-                        test_text = f"{test_name} - {time_str} ({evaluator}) [{estado}]"
-                        test_item = QTreeWidgetItem(date_item)
-                        test_item.setText(0, test_text)
-                        
-                        # Guardar datos para referencia
-                        test_item.setData(0, Qt.UserRole, {
-                            'test_id': test.get('id'),
-                            'test_data': test
-                        })
-                        
-                    except Exception as e:
-                        print(f"Error creando item de prueba: {e}")
-                        continue
-                
-                # Expandir fecha si tiene pocas pruebas
-                if len(tests_by_date[date_str]) <= 3:
-                    date_item.setExpanded(True)
-            
-            print(f"Cargadas {len(tests)} pruebas del usuario organizadas por fecha")
-            
-        except Exception as e:
-            print(f"Error cargando pruebas del usuario: {e}")
-
-
-
-    def debug_video_mode(self):
-        """Método de debug para verificar estado del video"""
-        if self.video_widget:
-            mode = "PLAYER" if getattr(self.video_widget, 'is_in_player_mode', False) else "LIVE"
-            has_player = bool(getattr(self.video_widget, 'video_player_thread', None))
-            has_live = bool(getattr(self.video_widget, 'video_thread', None))
-            
-            print(f"=== DEBUG VIDEO MODE ===")
-            print(f"Modo actual: {mode}")
-            print(f"Tiene PlayerThread: {has_player}")
-            print(f"Tiene VideoThread: {has_live}")
-            print(f"Slider time habilitado: {self.ui.slider_time.isEnabled()}")
-            print(f"Texto botón: {self.ui.btn_start.text()}")
-            print("========================")
-
-
-
-    def debug_siev_content(self, test_id):
-        """Debug: Mostrar contenido del .siev para una prueba"""
-        try:
-            import tarfile
-            
-            if not self.current_user_siev:
-                print("No hay archivo .siev cargado")
-                return
-            
-            print(f"=== DEBUG .SIEV PARA {test_id} ===")
-            
-            with tarfile.open(self.current_user_siev, 'r:gz') as tar:
-                # Listar todos los archivos
-                members = tar.getnames()
-                print(f"Archivos en .siev: {members}")
-                
-                # Buscar archivos relacionados con la prueba
-                test_files = [m for m in members if test_id in m]
-                print(f"Archivos de la prueba {test_id}: {test_files}")
-                
-                # Verificar específicamente el video
-                video_path = f"videos/{test_id}.mp4"
-                if video_path in members:
-                    video_member = tar.getmember(video_path)
-                    print(f"Video encontrado: {video_path} ({video_member.size} bytes)")
-                else:
-                    print(f"Video NO encontrado: {video_path}")
-                    
-        except Exception as e:
-            print(f"Error en debug .siev: {e}")
-            
-
-    def keyPressEvent(self, event):
-        """Manejar teclas de acceso rápido"""
-        try:
-            # Controles de video cuando está en modo player
-            if (hasattr(self.video_widget, 'is_in_player_mode') and 
-                self.video_widget.is_in_player_mode):
-                
-                if event.key() == Qt.Key_Space:
-                    # Barra espaciadora = play/pause
-                    self.video_widget.toggle_playback()
-                    event.accept()
-                    return
-                elif event.key() == Qt.Key_Left:
-                    # Flecha izquierda = retroceder 1 segundo
-                    if self.video_widget.video_player_thread:
-                        current_time = self.video_widget.video_player_thread.get_current_time()
-                        new_time = max(0, current_time - 1.0)
-                        self.video_widget.video_player_thread.seek_to_time(new_time)
-                    event.accept()
-                    return
-                elif event.key() == Qt.Key_Right:
-                    # Flecha derecha = avanzar 1 segundo
-                    if self.video_widget.video_player_thread:
-                        current_time = self.video_widget.video_player_thread.get_current_time()
-                        max_time = self.video_widget.video_player_thread.get_duration()
-                        new_time = min(max_time, current_time + 1.0)
-                        self.video_widget.video_player_thread.seek_to_time(new_time)
-                    event.accept()
-                    return
-            
-            # Llamar al método padre para otros eventos
-            super().keyPressEvent(event)
-            
-        except Exception as e:
-            print(f"Error en keyPressEvent: {e}")
-            super().keyPressEvent(event)
-            
-
-
+    
+    # =========================================================================
+    # CLEANUP
+    # =========================================================================
+    
     def closeEvent(self, event):
-        """Manejar cierre de aplicación"""
-        try:
-            print("Cerrando aplicación...")
-            
-            if self.is_recording:
-                self.stop_recording()
-            
-            if self.video_widget:
-                self.video_widget.cleanup()
-            
-            if self.serial_thread:
-                self.serial_thread.stop()
-            
-            if hasattr(self, 'nistagmo_timer'):
-                self.nistagmo_timer.stop()
-            if hasattr(self, 'recording_timer'):
-                self.recording_timer.stop()
-            if hasattr(self, 'graph_timer'):
-                self.graph_timer.stop()
-                
-            print("Aplicación cerrada correctamente")
-        except Exception as e:
-            print(f"Error durante cierre: {e}")
+        """Cierre limpio"""
+        if self.is_recording:
+            self.toggle_recording()
         
-        super().closeEvent(event)
+        # Cleanup directo de video threads
+        if hasattr(self, 'video_manager') and hasattr(self.video_manager, 'video_widget'):
+            video_widget = self.video_manager.video_widget
+            if video_widget:
+                if hasattr(video_widget, 'video_thread') and video_widget.video_thread:
+                    video_widget.video_thread.stop()
+                    video_widget.video_thread.wait(3000)
+                if hasattr(video_widget, 'video_player_thread') and video_widget.video_player_thread:
+                    video_widget.video_player_thread.stop()
+                    video_widget.video_player_thread.wait(3000)
+        
+        # Cleanup managers
+        if hasattr(self, 'video_manager'):
+            self.video_manager.cleanup()
+        if hasattr(self, 'hardware_manager'):
+            self.hardware_manager.cleanup()
+        if hasattr(self, 'data_manager'):
+            self.data_manager.cleanup()
+        if hasattr(self, 'test_manager'):
+            self.test_manager.cleanup()
+        
+        event.accept()
