@@ -300,10 +300,8 @@ class MainWindow(QMainWindow):
     
     def show_protocol_selection(self, protocol_type=None):
         """Mostrar protocolo"""
-        if protocol_type:
-            return self.test_manager.create_protocol_test(protocol_type)
-        else:
-            return self.test_manager.show_protocol_selection()
+        # Cambiar de create_protocol_test a open_protocol_dialog
+        return self.test_manager.open_protocol_dialog(protocol_type)
     
     def start_calibration(self):
         """Iniciar calibración"""

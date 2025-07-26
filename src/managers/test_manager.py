@@ -168,6 +168,32 @@ class TestManager(QObject):
             QMessageBox.critical(self.main_window, "Error", f"Error creando usuario: {e}")
             return False
     
+    def open_protocol_dialog(self, protocol_type: str):
+        """
+        Abre el diálogo de protocolo delegando al ProtocolManager.
+        
+        Args:
+            protocol_type: Tipo de protocolo (ej: "OD_44", "seguimiento_lento")
+        """
+        try:
+            if not self.protocol_manager:
+                raise Exception("Gestor de protocolos no disponible")
+            
+            # Sincronizar el estado del usuario con ProtocolManager
+            # ProtocolManager espera estos atributos en main_window
+            self.main_window.current_user_siev = self.current_user_siev
+            
+            # También sincronizar el evaluador
+            if self.current_evaluator:
+                self.protocol_manager.current_evaluator = self.current_evaluator
+            
+            # Delegar al ProtocolManager existente
+            return self.protocol_manager.open_protocol_dialog(protocol_type)
+            
+        except Exception as e:
+            print(f"Error abriendo protocolo desde TestManager: {e}")
+            return False
+
     def open_user_file(self) -> bool:
         """
         Abre diálogo para seleccionar archivo de usuario.
