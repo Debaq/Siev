@@ -170,7 +170,6 @@ class VideoThread(QThread):
         self.vp.stop()
 
     
-    
     def stop(self):
         """Detiene el hilo de manera segura."""
         print("Deteniendo VideoThread...")
@@ -199,5 +198,3 @@ class VideoThread(QThread):
             self.quit()
             if not self.wait(2000):  # Esperar 2 segundos más
                 print("ADVERTENCIA: No se pudo terminar el hilo limpiamente")
-                
-                

@@ -411,14 +411,7 @@ class VideoProcesses:
                     if not self.use_yolo.value:
                         cv2.rectangle(final_frame, (ex, ey), (ex+ew, ey+eh), (0, 255, 0), 1)
                     # Dibujar círculo de la pupila
-                    #color = (0, 255, 0)
-                    
-                    if data[5]:  # is_right_eye
-                        color = (0, 0, 255)  # Rojo para ojo derecho (BGR)
-                    else:
-                        color = (255, 191, 0)  # Azul claro para ojo izquierdo (BGR)
-                                            
-                        
+                    color = (0, 255, 0)
                     cv2.circle(final_frame[ey:ey+eh, ex:ex+ew], (cx, cy), radius, color, 1)
                     
                     # Calcular coordenadas absolutas

@@ -6,7 +6,6 @@ from utils.video.video_thread import VideoThread
 from utils.video.video_player_thread import VideoPlayerThread
 from PySide6.QtCore import QTimer
 
-
 class VideoWidget(QObject):
     sig_pos = Signal(list)
 
@@ -303,36 +302,6 @@ class VideoWidget(QObject):
         
         print("Modo cámara en vivo activado")
 
-
-    def switch_to_live_mode(self, camera_id=2):
-        """Cambiar a modo cámara en vivo"""
-        print("=== CAMBIANDO A MODO CÁMARA EN VIVO ===")
-        
-        # 1. Destruir VideoPlayerThread si existe
-        if self.video_player_thread:
-            print("Destruyendo VideoPlayerThread...")
-            self.video_player_thread.stop()
-            if self.video_player_thread.isRunning():
-                self.video_player_thread.wait(3000)
-            self.video_player_thread = None
-        
-        # 2. Parar timer de actualización
-        self.time_update_timer.stop()
-        
-        # 3. Limpiar estado de player
-        self.is_in_player_mode = False
-        self.current_video_data = None
-        
-        # 4. Configurar UI para modo en vivo
-        self._configure_ui_for_live_mode()
-        
-        # 5. Crear/Recrear VideoThread si no existe
-        if not hasattr(self, 'video_thread') or not self.video_thread:
-            print("Creando nuevo VideoThread...")
-            self._create_new_video_thread(camera_id)
-        
-        print("Modo cámara en vivo activado")
-
     def switch_to_player_mode(self, video_data):
         """Cambiar a modo reproductor de video"""
         print("=== CAMBIANDO A MODO REPRODUCTOR ===")
@@ -360,7 +329,6 @@ class VideoWidget(QObject):
         self.time_update_timer.start(100)  # Actualizar cada 100ms
         
         print("Modo reproductor activado")
-
 
     def _create_new_video_thread(self, camera_id):
         """Crear nuevo VideoThread con configuración actual"""
@@ -504,7 +472,6 @@ class VideoWidget(QObject):
 
     # === MÉTODOS PARA CONTROLES DE REPRODUCCIÓN ===
 
- 
     def play_video(self):
         """Reproducir video"""
         if self.video_player_thread and self.is_in_player_mode:

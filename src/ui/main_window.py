@@ -5,7 +5,6 @@ import time
 from PySide6.QtWidgets import (QMainWindow, QMenu, QWidgetAction, QSlider, 
                             QHBoxLayout, QWidget, QLabel, QCheckBox, 
                             QMessageBox, QPushButton, QDialog, QFileDialog, QTreeWidgetItem)
-from PySide6.QtGui import QShortcut, QKeySequence
 
 from PySide6.QtCore import Qt, QTimer
 
@@ -97,15 +96,13 @@ class MainWindow(QMainWindow):
         self.setup_right_click_trigger()
         self.init_test_selection_system()
         
-        # === CONFIGURAR REFERENCIAS UI PARA VIDEO WIDGET ===
+       # === CONFIGURAR REFERENCIAS UI PARA VIDEO WIDGET ===
         if self.video_widget:
             self.video_widget.set_ui_references(self.ui.slider_time, self.ui.btn_start)
             print("Referencias UI configuradas para VideoWidget")
         
         # === MOSTRAR PROTOCOLO ===
         #QTimer.singleShot(500, self.show_protocol_selection)
-        debug_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
-        debug_shortcut.activated.connect(lambda: self.debug_siev_content("test_1753446570"))
         
         self.showMaximized()
         print("=== SISTEMA VNG INICIADO CORRECTAMENTE ===")
@@ -157,6 +154,7 @@ class MainWindow(QMainWindow):
 
 
 
+
     def on_test_selection_changed(self, current_item, previous_item):
         """MODIFICAR método existente para manejar alternancia de video"""
         try:
@@ -202,7 +200,7 @@ class MainWindow(QMainWindow):
                     
         except Exception as e:
             print(f"Error en cambio de selección: {e}")
-
+            
 
 
     def is_test_completed(self, test_data):
@@ -253,8 +251,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error cargando video para prueba {test_id}: {e}")
             return None
-
-
         
 
     def update_graph_for_selection(self, current_item):
@@ -296,7 +292,6 @@ class MainWindow(QMainWindow):
                 
         except Exception as e:
             print(f"Error actualizando gráfico para selección: {e}")
-
             
     def load_test_data_to_graph(self, test_id, test_data):
         """
@@ -1118,6 +1113,7 @@ class MainWindow(QMainWindow):
 
 
 
+
     # ========================================
     # 6. FUNCIONES DE REPRODUCCIÓN
     # ========================================
@@ -1394,11 +1390,60 @@ class MainWindow(QMainWindow):
         self.update_test_ui_state()
 
     def stop_recording(self):
-        """MODIFICAR método existente - agregar al final"""
+        """
+        MODIFICAR EL MÉTODO EXISTENTE - Detener grabación
+        """
+        print("=== DETENIENDO GRABACIÓN ===")
         
-        # ... todo el código existente de stop_recording ...
+        was_recording = self.is_recording
         
-        # === NUEVA LÓGICA: FORZAR CAMBIO A MODO LIVE DESPUÉS DE GRABACIÓN ===
+        # Estados
+        self.is_recording = False
+        self.is_calibrating = False
+        self.recording_start_time = None
+        self.last_update_time = None
+        self.graph_time = 0.0
+        self.send_to_graph = False
+        
+        # Detener almacenamiento de datos
+        if was_recording:
+            self.data_storage.stop_recording()
+            
+            # Mostrar estadísticas finales
+            stats = self.data_storage.get_statistics()
+            print(f"Grabación completada:")
+            print(f"  - Total de muestras: {stats.get('total_samples', 0)}")
+            print(f"  - Duración: {stats.get('duration_seconds', 0):.1f}s")
+            print(f"  - Tasa de muestreo: {stats.get('sample_rate', 0):.1f} Hz")
+            print(f"  - Detección ojo izq: {stats.get('left_eye_detection_rate', 0):.1f}%")
+            print(f"  - Detección ojo der: {stats.get('right_eye_detection_rate', 0):.1f}%")
+        
+        # === DETENER Y GUARDAR VIDEO ===
+        if self.video_recorder and self.video_recorder.is_recording:
+            video_path = self.video_recorder.stop_recording()
+            if video_path:
+                # Guardar en .siev
+                success = self.video_recorder.save_to_siev(video_path)
+                if success:
+                    print("Video guardado exitosamente en archivo .siev")
+                else:
+                    print("Error guardando video en archivo .siev")
+            else:
+                print("Error: No se pudo obtener el archivo de video")
+        
+        # Configurar gráfica para exploración
+        if self.plot_widget:
+            self.plot_widget.set_recording_state(False)
+        
+        # UI
+        self.ui.btn_start.setText("Iniciar")
+        self.ui.lbl_time.setText("00:00 / 05:00")
+        
+        # Actualizar estado del sistema de pruebas
+        self.update_test_ui_state()
+        
+        print("Grabación detenida")
+        
         try:
             # Después de guardar y completar la grabación
             if self.video_widget and hasattr(self.video_widget, 'is_in_player_mode'):
@@ -1407,7 +1452,6 @@ class MainWindow(QMainWindow):
                 print("Programado cambio a modo live post-grabación")
         except Exception as e:
             print(f"Error programando cambio a modo live: {e}")
-
 
 
     def update_recording_time(self):
@@ -1932,7 +1976,6 @@ class MainWindow(QMainWindow):
 
 
 
-
     def debug_video_mode(self):
         """Método de debug para verificar estado del video"""
         if self.video_widget:
@@ -1980,6 +2023,7 @@ class MainWindow(QMainWindow):
                     
         except Exception as e:
             print(f"Error en debug .siev: {e}")
+            
 
     def keyPressEvent(self, event):
         """Manejar teclas de acceso rápido"""
