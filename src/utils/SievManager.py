@@ -563,6 +563,7 @@ class SievManager:
         
     # AGREGAR ESTE MÉTODO A LA CLASE SievManager:
 
+  
     def extract_test_video_data(self, siev_path: str, test_id: str) -> bytes:
         """
         Extraer datos de video de una prueba específica desde archivo .siev
@@ -630,6 +631,7 @@ class SievManager:
         except Exception as e:
             print(f"Error verificando video en .siev: {e}")
             return False
+
 
     def get_test_video_info(self, siev_path: str, test_id: str) -> dict:
         """
