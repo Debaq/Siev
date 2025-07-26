@@ -1,10 +1,8 @@
-import json
 import os
-import sys
 import time
 from PySide6.QtWidgets import (QMainWindow, QMenu, QWidgetAction, QSlider, 
                             QHBoxLayout, QWidget, QLabel, QCheckBox, 
-                            QMessageBox, QPushButton, QDialog, QFileDialog, QTreeWidgetItem)
+                            QMessageBox, QDialog, QFileDialog, QTreeWidgetItem)
 
 from PySide6.QtCore import Qt, QTimer
 
