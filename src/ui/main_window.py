@@ -1457,7 +1457,7 @@ class MainWindow(QMainWindow):
             return
             
         try:
-            from ui.calibration_dialog import CalibrationDialog
+            from ui.dialogs.calibration_dialog import CalibrationDialog
             dialog = CalibrationDialog(
                 calibration_manager=self.calibration_manager,
                 parent_window=self
