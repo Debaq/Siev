@@ -2,8 +2,8 @@ import numpy as np
 from PySide6.QtCore import QThread, Signal,QObject
 from PySide6.QtGui import QImage, QPixmap
 import time
-from utils.video.video_thread import VideoThread
-from utils.video.video_player_thread import VideoPlayerThread
+from libs.video.video_thread import VideoThread
+from libs.video.video_player_thread import VideoPlayerThread
 from PySide6.QtCore import QTimer
 
 class VideoWidget(QObject):
@@ -398,7 +398,7 @@ class VideoWidget(QObject):
             slider_brightness = next((slider for slider in self.sliders if slider.objectName() == "slider_brightness"), None)
             
             # Crear VideoThread
-            from utils.video.video_thread import VideoThread
+            from libs.video.video_thread import VideoThread
             self.video_thread = VideoThread(
                 camera_id=camera_id,
                 cap_width=width,

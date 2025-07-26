@@ -1,12 +1,11 @@
 import sys
 import os
 import subprocess
-import json
 from pathlib import Path
-from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
-                            QLabel, QProgressBar, QPushButton, QTextEdit, QDialog)
+from PySide6.QtWidgets import (QApplication, QVBoxLayout, QHBoxLayout, 
+                            QLabel, QProgressBar, QPushButton, QDialog)
 from PySide6.QtCore import QThread, Signal, QTimer, Qt
-from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtGui import QFont
 from PySide6.QtCore import QTranslator, QLocale
 
 

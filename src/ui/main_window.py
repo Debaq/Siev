@@ -7,25 +7,23 @@ from PySide6.QtWidgets import (QMainWindow, QMenu, QWidgetAction, QSlider,
 from PySide6.QtCore import Qt, QTimer
 
 # Diálogos
-from ui.dialogs.protocol_dialog import ProtocolSelectionDialog
 from ui.dialogs.tracking_dialog import TrackingCalibrationDialog
 
-# Utils
-from utils.serial_thread import SerialReadThread
-from utils.stimulus_system import StimulusManager
-from utils.SerialHandler import SerialHandler
-from utils.video.video_widget import VideoWidget
-from utils.DetectorNistagmo import DetectorNistagmo
-from utils.EyeDataProcessor import EyeDataProcessor
-from utils.CalibrationManager import CalibrationManager
-from utils.data_storage import DataStorage
-from utils.graphing.triple_plot_widget import TriplePlotWidget, PlotConfigurations
-from utils.config_manager import ConfigManager
-from utils.CameraResolutionDetector import CameraResolutionDetector
-from utils.utils import select_max_resolution
+from libs.hardware.serial_thread import SerialReadThread
+from libs.hardware.serial_handler import SerialHandler
+from libs.stimulus.stimulus_system import StimulusManager
+from libs.video.video_widget import VideoWidget
+from libs.core.detector_nystamus import DetectorNistagmo #????
+from libs.data.eye_data_processor import EyeDataProcessor # ???
+from libs.core.calibration_manager import CalibrationManager
+from libs.data.data_storage import DataStorage
+from libs.ui.graphing.triple_plot_widget import TriplePlotWidget, PlotConfigurations
+from libs.core.config_manager import ConfigManager
+from libs.hardware.camera_resolution_detector import CameraResolutionDetector
+from libs.common.utils import select_max_resolution
 from ui.dialogs.user_dialog import NewUserDialog
-from utils.SievManager import SievManager
-from utils.protocol_manager import ProtocolManager
+from libs.core.siev_manager import SievManager
+from libs.core.protocol_manager import ProtocolManager
 from datetime import datetime
 
 
@@ -99,8 +97,7 @@ class MainWindow(QMainWindow):
             self.video_widget.set_ui_references(self.ui.slider_time, self.ui.btn_start)
             print("Referencias UI configuradas para VideoWidget")
         
-        # === MOSTRAR PROTOCOLO ===
-        #QTimer.singleShot(500, self.show_protocol_selection)
+
         
         self.showMaximized()
         print("=== SISTEMA VNG INICIADO CORRECTAMENTE ===")
@@ -117,7 +114,7 @@ class MainWindow(QMainWindow):
     def init_video_recorder(self):
         """Inicializar grabador de video"""
         try:
-            from utils.VideoRecorder import VideoRecorder
+            from libs.video.video_recorder import VideoRecorder
             self.video_recorder = VideoRecorder(self)
             print("VideoRecorder inicializado")
         except Exception as e:
@@ -883,32 +880,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error conectando eventos: {e}")
 
-    def show_protocol_selection(self):
-        """Mostrar selección completa de protocolo - ACTUALIZADO"""
-        dialog = ProtocolSelectionDialog(self)
-        result = dialog.exec()
-        
-        if result == QDialog.Accepted:
-            selected_protocol = dialog.get_selected_protocol()
-            spontaneous_enabled = dialog.is_spontaneous_enabled()
-            
-            print(f"Protocolo seleccionado: {selected_protocol}")
-            print(f"Nistagmo espontáneo: {'SÍ' if spontaneous_enabled else 'NO'}")
-            
-            # Guardar configuración para uso posterior
-            self.current_protocol = selected_protocol
-            self.spontaneous_test_enabled = spontaneous_enabled
-            
-            if selected_protocol != "sin_protocolo":
-                # Si hay protocolo, mostrar opción de seguimiento
-                QTimer.singleShot(500, self.show_tracking_calibration_choice)
-            else:
-                print("Iniciando sin protocolo - sistema listo")
-        else:
-            # Usar protocolo por defecto
-            print("Usando protocolo por defecto: sin protocolo")
-            self.current_protocol = "sin_protocolo"
-            self.spontaneous_test_enabled = False
 
 
     def show_tracking_calibration_choice(self):

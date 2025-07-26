@@ -6,13 +6,7 @@ from typing import Optional, List, Dict
 import time
 
 # Importar el buffer optimizado
-try:
-    from ..optimized_buffer import OptimizedBuffer
-except ImportError:
-    try:
-        from utils.optimized_buffer import OptimizedBuffer
-    except ImportError:
-        from optimized_buffer import OptimizedBuffer
+from libs.data.optimized_buffer import OptimizedBuffer
 
 
 class ConfigurablePlotWidget(QWidget):

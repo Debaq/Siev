@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from PySide6.QtCore import QThread, Signal, QTimer
 import time
-from utils.video.video_processes import VideoProcesses
+from libs.video.video_processes import VideoProcesses
 
     
 class VideoThread(QThread):
