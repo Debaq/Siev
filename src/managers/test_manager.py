@@ -9,7 +9,6 @@ from libs.core.protocol_manager import ProtocolManager
 from libs.core.siev_manager import SievManager
 from libs.stimulus.stimulus_system import StimulusManager
 from ui.dialogs.user_dialog import NewUserDialog
-from ui.dialogs.protocol_dialog import ProtocolSelectionDialog
 
 
 class TestManager(QObject):
@@ -313,37 +312,7 @@ class TestManager(QObject):
         except Exception as e:
             print(f"Error poblando árbol de tests: {e}")
     
-    # === GESTIÓN DE PROTOCOLOS ===
     
-    def show_protocol_selection(self) -> bool:
-        """
-        Muestra diálogo de selección de protocolo.
-        
-        Returns:
-            bool: True si se seleccionó un protocolo
-        """
-        try:
-            if not self.current_user_siev:
-                QMessageBox.warning(
-                    self.main_window,
-                    "Sin Usuario",
-                    "Debe crear o abrir un usuario antes de iniciar una prueba."
-                )
-                return False
-            
-            dialog = ProtocolSelectionDialog(self.main_window)
-            result = dialog.exec()
-            
-            if result == QDialog.Accepted:
-                protocol_data = dialog.get_protocol_data()
-                if protocol_data:
-                    return self.create_new_test(protocol_data)
-            
-            return False
-            
-        except Exception as e:
-            QMessageBox.critical(self.main_window, "Error", f"Error en selección de protocolo: {e}")
-            return False
     
     def create_new_test(self, protocol_data: Dict) -> bool:
         """
