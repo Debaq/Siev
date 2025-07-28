@@ -346,7 +346,7 @@ class MainWindow(QMainWindow):
                     imu_y = float(row.get('imu_y', 0))
                     
                     # USAR TIEMPO RELATIVO PARA EL GRÁFICO
-                    data_point = [right_eye, left_eye, imu_x, imu_y, relative_time]
+                    data_point = [left_eye, right_eye, imu_x, imu_y, relative_time]
                     self.plot_widget.updatePlots(data_point)
                     
                 except (ValueError, TypeError) as e:
