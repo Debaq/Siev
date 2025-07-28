@@ -1255,7 +1255,8 @@ class MainWindow(QMainWindow):
             # Actualizar botón a estado final
             self.ui.btn_start.setText("Finalizado")
             self.ui.btn_start.setEnabled(False)
-            
+            self.update_test_ui_state()  # Actualizar UI inmediatamente
+
             print(f"Prueba {current_test_id} finalizada")
             
         except Exception as e:
@@ -1279,7 +1280,8 @@ class MainWindow(QMainWindow):
             # Actualizar botón a estado final
             self.ui.btn_start.setText("Finalizado")
             self.ui.btn_start.setEnabled(False)
-            
+            self.update_test_ui_state()  # Actualizar UI inmediatamente
+
             print(f"Prueba {current_test_id} finalizada automáticamente")
             
         except Exception as e:
@@ -1870,7 +1872,7 @@ class MainWindow(QMainWindow):
 
 
             # Habilitar botón de iniciar
-            self.ui.btn_start.setEnabled(enabled)
+            #self.ui.btn_start.setEnabled(enabled)
             
             # Habilitar menús de pruebas CALÓRICAS
             if hasattr(self.ui, 'actionOD_44'):
