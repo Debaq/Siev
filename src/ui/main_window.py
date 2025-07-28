@@ -1103,7 +1103,7 @@ class MainWindow(QMainWindow):
             if not self.is_recording and not self.is_calibrating:
                 self.start_recording()
             else:
-                self.stop_recording()
+                self.stop_test_recording()  # ← CAMBIAR AQUÍ
         except Exception as e:
             print(f"Error en toggle_recording: {e}")
 
