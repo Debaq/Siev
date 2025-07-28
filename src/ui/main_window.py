@@ -289,15 +289,9 @@ class MainWindow(QMainWindow):
                 
         except Exception as e:
             print(f"Error actualizando gráfico para selección: {e}")
-            
+
     def load_test_data_to_graph(self, test_id, test_data):
-        """
-        Cargar datos CSV de una prueba completada al gráfico
-        
-        Args:
-            test_id: ID de la prueba
-            test_data: Metadatos de la prueba
-        """
+        """Cargar datos CSV de una prueba completada al gráfico"""
         try:
             if not self.siev_manager or not self.current_user_siev:
                 print("Sistema de archivos no disponible")
@@ -318,29 +312,83 @@ class MainWindow(QMainWindow):
             
             print(f"Cargando {len(csv_data)} puntos de datos al gráfico")
             
-            # Cargar datos punto por punto al gráfico
-            for row in csv_data:
+            # CONVERTIR TIMESTAMPS A TIEMPO RELATIVO
+            first_timestamp = None
+            right_eye_x_values = []
+            relative_timestamps = []
+            
+            for i, row in enumerate(csv_data):
                 try:
-                    # Extraer datos según formato esperado por GraphHandler
-                    left_eye = [row.get('left_eye_x', 0), row.get('left_eye_y', 0)] if row.get('left_eye_detected', False) else None
-                    right_eye = [row.get('right_eye_x', 0), row.get('right_eye_y', 0)] if row.get('right_eye_detected', False) else None
-                    imu_x = row.get('imu_x', 0)
-                    imu_y = row.get('imu_y', 0)
-                    timestamp = row.get('timestamp', 0)
+                    timestamp = float(row.get('timestamp', 0))
                     
-                    # Enviar datos al gráfico en formato esperado
-                    data_point = [right_eye, left_eye, imu_x, imu_y, timestamp]
+                    # Establecer tiempo de referencia
+                    if first_timestamp is None:
+                        first_timestamp = timestamp
+                    
+                    # Convertir a tiempo relativo (segundos desde el inicio)
+                    relative_time = timestamp - first_timestamp
+                    
+                    right_eye = None  
+                    if row.get('right_eye_detected', False) and row.get('right_eye_x') is not None:
+                        right_eye_x = float(row.get('right_eye_x', 0))
+                        right_eye_y = float(row.get('right_eye_y', 0))
+                        right_eye = [right_eye_x, right_eye_y]
+                        
+                        # RECOLECTAR DATOS PARA DEBUG
+                        right_eye_x_values.append(right_eye_x)
+                        relative_timestamps.append(relative_time)
+                    
+                    left_eye = None
+                    if row.get('left_eye_detected', False) and row.get('left_eye_x') is not None:
+                        left_eye = [float(row.get('left_eye_x', 0)), float(row.get('left_eye_y', 0))]
+                    
+                    imu_x = float(row.get('imu_x', 0))
+                    imu_y = float(row.get('imu_y', 0))
+                    
+                    # USAR TIEMPO RELATIVO PARA EL GRÁFICO
+                    data_point = [right_eye, left_eye, imu_x, imu_y, relative_time]
                     self.plot_widget.updatePlots(data_point)
                     
-                except Exception as e:
-                    print(f"Error procesando punto de datos: {e}")
+                except (ValueError, TypeError) as e:
+                    print(f"Error procesando punto {i}: {e}")
                     continue
             
-            print(f"Datos de prueba {test_id} cargados exitosamente al gráfico")
+            # === AJUSTE AUTOMÁTICO MEJORADO ===
+            if right_eye_x_values and hasattr(self.plot_widget, 'plots') and self.plot_widget.plots:
+                print("=== AJUSTANDO ZOOM MEJORADO ===")
+                
+                min_x = min(right_eye_x_values)
+                max_x = max(right_eye_x_values)
+                min_time = min(relative_timestamps)
+                max_time = max(relative_timestamps)
+                
+                print(f"Datos finales:")
+                print(f"  Tiempo: 0 → {max_time:.2f} segundos")
+                print(f"  Posición X: {min_x} → {max_x}")
+                print(f"  Variación: {max_x - min_x} píxeles")
+                
+                # Margen más agresivo para ver la curva
+                x_margin = max(10, (max_x - min_x) * 0.2)  # Mínimo 10 píxeles de margen
+                time_margin = max(0.5, (max_time - min_time) * 0.1)  # Mínimo 0.5s de margen
+                
+                # Ajustar cada gráfico
+                for i, plot in enumerate(self.plot_widget.plots):
+                    # Rango temporal (eje X del gráfico)
+                    plot.setXRange(min_time - time_margin, max_time + time_margin, padding=0)
+                    # Rango de datos (eje Y del gráfico)
+                    plot.setYRange(min_x - x_margin, max_x + x_margin, padding=0)
+                    
+                    print(f"Gráfico {i+1} ajustado:")
+                    print(f"  Tiempo: {min_time - time_margin:.2f} → {max_time + time_margin:.2f}s")
+                    print(f"  Valores: {min_x - x_margin:.1f} → {max_x + x_margin:.1f}")
+                    
+                    # Forzar redibujado
+                    plot.getViewBox().updateAutoRange()
+            
+            print(f"Datos cargados con tiempo relativo (0 → {max_time:.2f}s)")
             
         except Exception as e:
             print(f"Error cargando datos al gráfico: {e}")
-
 
     def get_selected_test_data(self):
         """Obtener datos de la prueba seleccionada"""
@@ -766,23 +814,27 @@ class MainWindow(QMainWindow):
         """Inicializar sistema de procesamiento de datos"""
         try:
             self.eye_processor = EyeDataProcessor()
-            
+            self.eye_processor.set_processing_enabled(False)  # ← DESACTIVAR PROCESAMIENTO
+            self.eye_processor.set_smoothing_enabled(False)   # ← SIN SUAVIZADO
+            self.eye_processor.set_interpolation_enabled(False) # ← SIN INTERPOLACIÓN
+            self.eye_processor.set_kalman_enabled(False)      # ← SIN KALMAN
+            self.eye_processor.set_extra_smoothing(False)     # ← SIN SUAVIZADO EXTRA
             # Configuración optimizada
-            self.eye_processor.set_filter_strength(0.4)
-            self.eye_processor.set_interpolation_steps(2)
-            self.eye_processor.set_history_size(3)
-            self.eye_processor.set_smoothing_enabled(True)
-            self.eye_processor.set_interpolation_enabled(True)
+            #self.eye_processor.set_filter_strength(0.4)
+            #self.eye_processor.set_interpolation_steps(2)
+            #self.eye_processor.set_history_size(3)
+            #self.eye_processor.set_smoothing_enabled(True)
+            #self.eye_processor.set_interpolation_enabled(True)
             
             # Kalman filter
-            self.eye_processor.set_kalman_enabled(True)
-            self.eye_processor.set_kalman_parameters(
-                process_noise=0.001,
-                measurement_noise=0.3,
-                stability_factor=0.01
-            )
+            #self.eye_processor.set_kalman_enabled(True)
+            #self.eye_processor.set_kalman_parameters(
+            #    process_noise=0.001,
+            #    measurement_noise=0.3,
+            #    stability_factor=0.01
+            #)
             
-            self.eye_processor.set_extra_smoothing(True, buffer_size=5)
+            #self.eye_processor.set_extra_smoothing(True, buffer_size=5)
             
             # Detector de nistagmos
             self.nistagmo_detector = DetectorNistagmo(frecuencia_muestreo=200)
@@ -805,9 +857,9 @@ class MainWindow(QMainWindow):
         self.graph_timer.start(self.graph_update_interval)
         
         # Timer para nistagmos
-        self.nistagmo_timer = QTimer()
-        self.nistagmo_timer.timeout.connect(self.process_nystagmus)
-        self.nistagmo_timer.start(2000)
+        #self.nistagmo_timer = QTimer()
+        #self.nistagmo_timer.timeout.connect(self.process_nystagmus)
+        #self.nistagmo_timer.start(2000)
 
     def setup_menu_and_controls(self):
         """Configurar menú y controles adicionales"""
@@ -1029,35 +1081,52 @@ class MainWindow(QMainWindow):
                 processed_left = left_eye
                 processed_right = right_eye
             
-            # Procesar a través del EyeDataProcessor
-            processed_points = self.eye_processor.process_eye_data(
-                processed_left, 
-                processed_right, 
-                float(self.pos_hit[0]),  # IMU X
-                float(self.pos_hit[1]),  # IMU Y
-                self.graph_time
-            )
-            
-            # === ALMACENAMIENTO COMPLETO (TODOS LOS PUNTOS) ===
+            # ===============================================
+            # DATOS CRUDOS PARA CSV - SIN PROCESAMIENTO
+            # ===============================================
             if self.is_recording:
-                for point in processed_points:
-                    processed_left, processed_right, imu_x, imu_y, point_time = point
-                    self.data_storage.add_data_point(
-                        processed_left, processed_right, imu_x, imu_y, point_time
-                    )
-                    self.total_data_points += 1
+                # Datos completamente crudos - sin procesar NADA
+                raw_left = processed_left
+                raw_right = processed_right
+                raw_imu_x = float(self.pos_hit[0])
+                raw_imu_y = float(self.pos_hit[1])
+                raw_timestamp = time.time()
+                
+                # Almacenar datos tal como vienen de la cámara
+                self.data_storage.add_data_point(
+                    raw_left, raw_right, raw_imu_x, raw_imu_y, raw_timestamp
+                )
+                self.total_data_points += 1
+                
+                # Debug cada 100 puntos para ver qué se está guardando
+                if self.total_data_points % 100 == 0:
+                    print(f"DATOS CRUDOS #{self.total_data_points}:")
+                    print(f"  Left: {raw_left}")
+                    print(f"  Right: {raw_right}")
+                    print(f"  IMU: ({raw_imu_x}, {raw_imu_y})")
+                    print(f"  Timestamp: {raw_timestamp}")
             
-            # === VISUALIZACIÓN OPTIMIZADA ===
+            # ===============================================
+            # GRÁFICA CON DATOS CRUDOS TAMBIÉN
+            # ===============================================
             current_time = time.time()
             if current_time - self.last_graph_update >= (self.graph_update_interval / 1000.0):
-                if processed_points:
-                    # Añadir al buffer de gráficos (solo los últimos puntos para eficiencia)
-                    latest_point = processed_points[-1]
-                    self.graph_data_buffer.append(latest_point)
-                    self.last_graph_update = current_time
-                    
+                # Enviar datos crudos a la gráfica (sin procesamiento)
+                raw_left = processed_left
+                raw_right = processed_right
+                raw_imu_x = float(self.pos_hit[0])
+                raw_imu_y = float(self.pos_hit[1])
+                
+                # Crear un solo punto crudo para la gráfica
+                graph_point = (raw_left, raw_right, raw_imu_x, raw_imu_y, self.graph_time)
+                self.graph_data_buffer.append(graph_point)
+                self.last_graph_update = current_time
+            
         except Exception as e:
-            print(f"Error procesando posiciones oculares: {e}")
+            print(f"Error en handle_eye_positions: {e}")
+            import traceback
+            traceback.print_exc()
+        
 
     def flush_graph_buffer(self):
         """Enviar datos acumulados a los gráficos - SISTEMA COMPLETO"""
@@ -1552,15 +1621,7 @@ class MainWindow(QMainWindow):
             for plot in self.plot_widget.plots:
                 plot.setYRange(min_limit, max_limit)
 
-    def process_nystagmus(self):
-        """Procesar detección de nistagmos"""
-        if len(self.eye_positions_buffer) > 100:
-            try:
-                resultados = self.nistagmo_detector.procesar_datos(self.eye_positions_buffer)
-                if resultados['total_nistagmos'] > 0:
-                    print(f"Nistagmos: {resultados['total_nistagmos']}, VCL: {resultados['vcl_promedio']:.2f}°/s")
-            except Exception as e:
-                print(f"Error procesando nistagmos: {e}")
+
 
     def on_yolo_toggled(self, checked):
         """Manejar cambio de YOLO"""

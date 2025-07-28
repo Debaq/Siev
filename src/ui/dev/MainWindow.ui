@@ -45,7 +45,7 @@
          <widget class="QTreeWidget" name="listTestWidget">
           <column>
            <property name="text">
-            <string> </string>
+            <string/>
            </property>
           </column>
          </widget>
@@ -480,6 +480,9 @@
     </property>
     <addaction name="actionAbrir"/>
     <addaction name="actionNewUser"/>
+    <addaction name="separator"/>
+    <addaction name="actionTestNoSave"/>
+    <addaction name="separator"/>
     <addaction name="actionExit"/>
    </widget>
    <widget class="QMenu" name="menuConfiguraci_n">
@@ -618,6 +621,11 @@
   <action name="actionCambiar_evaluador">
    <property name="text">
     <string>Cambiar evaluador</string>
+   </property>
+  </action>
+  <action name="actionTestNoSave">
+   <property name="text">
+    <string>Test de Seguimiento sin guardar</string>
    </property>
   </action>
  </widget>
