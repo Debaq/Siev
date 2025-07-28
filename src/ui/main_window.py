@@ -1385,6 +1385,8 @@ class MainWindow(QMainWindow):
         
         # Actualizar UI usando el nuevo sistema
         self.update_test_ui_state()
+        self.send_to_graph = True  
+
 
     def stop_recording(self):
         """
