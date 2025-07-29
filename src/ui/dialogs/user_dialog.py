@@ -53,23 +53,23 @@ class NewUserDialog(QDialog):
         personal_layout.addRow("RUT/ID Paciente:", self.rut_edit)
         
         # Edad
-        #self.edad_spin = QSpinBox()
-        #self.edad_spin.setRange(0, 120)
-        #self.edad_spin.setValue(30)
-        #self.edad_spin.setSuffix(" años")
-        #personal_layout.addRow("Edad:", self.edad_spin)
+        self.edad_spin = QSpinBox()
+        self.edad_spin.setRange(0, 120)
+        self.edad_spin.setValue(30)
+        self.edad_spin.setSuffix(" años")
+        personal_layout.addRow("Edad:", self.edad_spin)
         
         # Género
-        #self.genero_combo = QComboBox()
-        #self.genero_combo.addItems(["Seleccionar...", "Masculino", "Femenino", "Otro", "Prefiero no decir"])
-        #personal_layout.addRow("Género:", self.genero_combo)
+        self.genero_combo = QComboBox()
+        self.genero_combo.addItems(["Seleccionar...", "Masculino", "Femenino", "Otro", "Prefiero no decir"])
+        personal_layout.addRow("Género:", self.genero_combo)
         
         # Fecha de nacimiento
-        #self.fecha_nacimiento = QDateEdit()
-        #self.fecha_nacimiento.setCalendarPopup(True)
-        #self.fecha_nacimiento.setDate(QDate.currentDate().addYears(-30))
-        #self.fecha_nacimiento.setMaximumDate(QDate.currentDate())
-        #personal_layout.addRow("Fecha de nacimiento:", self.fecha_nacimiento)
+        self.fecha_nacimiento = QDateEdit()
+        self.fecha_nacimiento.setCalendarPopup(True)
+        self.fecha_nacimiento.setDate(QDate.currentDate().addYears(-30))
+        self.fecha_nacimiento.setMaximumDate(QDate.currentDate())
+        personal_layout.addRow("Fecha de nacimiento:", self.fecha_nacimiento)
         
         layout.addWidget(personal_group)
         
@@ -78,44 +78,44 @@ class NewUserDialog(QDialog):
         medical_layout = QFormLayout(medical_group)
         
         # Médico tratante
-        #self.medico_edit = QLineEdit()
-        #self.medico_edit.setPlaceholderText("Nombre del médico tratante")
-        #medical_layout.addRow("Médico tratante:", self.medico_edit)
+        self.medico_edit = QLineEdit()
+        self.medico_edit.setPlaceholderText("Nombre del médico tratante")
+        medical_layout.addRow("Médico tratante:", self.medico_edit)
         
         # Diagnóstico preliminar
-        #self.diagnostico_edit = QLineEdit()
-        #self.diagnostico_edit.setPlaceholderText("Diagnóstico o motivo de consulta")
-        #medical_layout.addRow("Diagnóstico/Motivo:", self.diagnostico_edit)
+        self.diagnostico_edit = QLineEdit()
+        self.diagnostico_edit.setPlaceholderText("Diagnóstico o motivo de consulta")
+        medical_layout.addRow("Diagnóstico/Motivo:", self.diagnostico_edit)
         
         # Historia clínica relevante
-        #self.historia_text = QTextEdit()
-        #self.historia_text.setPlaceholderText("Antecedentes médicos relevantes, medicamentos, cirugías previas, etc.")
-        #self.historia_text.setMaximumHeight(80)
-        #medical_layout.addRow("Historia clínica:", self.historia_text)
+        self.historia_text = QTextEdit()
+        self.historia_text.setPlaceholderText("Antecedentes médicos relevantes, medicamentos, cirugías previas, etc.")
+        self.historia_text.setMaximumHeight(80)
+        medical_layout.addRow("Historia clínica:", self.historia_text)
         
-        #layout.addWidget(medical_group)
+        layout.addWidget(medical_group)
         
         # Información del estudio
-        #study_group = QGroupBox("Información del Estudio")
-        #study_layout = QFormLayout(study_group)
+        study_group = QGroupBox("Información del Estudio")
+        study_layout = QFormLayout(study_group)
         
         # Institución
-        #self.institucion_edit = QLineEdit()
-        #self.institucion_edit.setPlaceholderText("Hospital, clínica o centro médico")
-        #study_layout.addRow("Institución:", self.institucion_edit)
+        self.institucion_edit = QLineEdit()
+        self.institucion_edit.setPlaceholderText("Hospital, clínica o centro médico")
+        study_layout.addRow("Institución:", self.institucion_edit)
         
         # Número de estudio
-        #self.numero_estudio_edit = QLineEdit()
-        #self.numero_estudio_edit.setPlaceholderText("Número de caso o estudio")
-        #study_layout.addRow("N° Estudio:", self.numero_estudio_edit)
+        self.numero_estudio_edit = QLineEdit()
+        self.numero_estudio_edit.setPlaceholderText("Número de caso o estudio")
+        study_layout.addRow("N° Estudio:", self.numero_estudio_edit)
         
         # Observaciones generales
-        #self.observaciones_text = QTextEdit()
-        #self.observaciones_text.setPlaceholderText("Observaciones generales del paciente")
-        #self.observaciones_text.setMaximumHeight(60)
-        #study_layout.addRow("Observaciones:", self.observaciones_text)
+        self.observaciones_text = QTextEdit()
+        self.observaciones_text.setPlaceholderText("Observaciones generales del paciente")
+        self.observaciones_text.setMaximumHeight(60)
+        study_layout.addRow("Observaciones:", self.observaciones_text)
         
-        #layout.addWidget(study_group)
+        layout.addWidget(study_group)
         
         # Información de contacto
         contact_group = QGroupBox("Contacto (Opcional)")
@@ -200,18 +200,18 @@ class NewUserDialog(QDialog):
         self.user_data = {
             "nombre": self.nombre_edit.text().strip(),
             "rut_id": self.rut_edit.text().strip() or None,
-            #"edad": self.edad_spin.value(),
-            #"genero": self.genero_combo.currentText() if self.genero_combo.currentIndex() > 0 else None,
-            #"fecha_nacimiento": self.fecha_nacimiento.date().toString("yyyy-MM-dd"),
-            #"medico_tratante": self.medico_edit.text().strip() or None,
-            #"diagnostico": self.diagnostico_edit.text().strip() or None,
-            #"historia_clinica": self.historia_text.toPlainText().strip() or None,
-            #"institucion": self.institucion_edit.text().strip() or None,
-            #"numero_estudio": self.numero_estudio_edit.text().strip() or None,
-            #"observaciones": self.observaciones_text.toPlainText().strip() or None,
-            #"telefono": self.telefono_edit.text().strip() or None,
-            #"email": self.email_edit.text().strip() or None,
-            #"fecha_creacion": time.time(),
+            "edad": self.edad_spin.value(),
+            "genero": self.genero_combo.currentText() if self.genero_combo.currentIndex() > 0 else None,
+            "fecha_nacimiento": self.fecha_nacimiento.date().toString("yyyy-MM-dd"),
+            "medico_tratante": self.medico_edit.text().strip() or None,
+            "diagnostico": self.diagnostico_edit.text().strip() or None,
+            "historia_clinica": self.historia_text.toPlainText().strip() or None,
+            "institucion": self.institucion_edit.text().strip() or None,
+            "numero_estudio": self.numero_estudio_edit.text().strip() or None,
+            "observaciones": self.observaciones_text.toPlainText().strip() or None,
+            "telefono": self.telefono_edit.text().strip() or None,
+            "email": self.email_edit.text().strip() or None,
+            "fecha_creacion": time.time(),
             "creado_por": "Sistema VNG"
         }
         
