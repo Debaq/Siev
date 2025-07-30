@@ -86,7 +86,6 @@ class MainWindow(QMainWindow):
         self.init_processing_system()
         self.init_user_system()
 
-        self.setup_video_graph_sync()
         # === TIMERS ===
         self.setup_timers()
         self.init_stimulus_system()
@@ -97,7 +96,9 @@ class MainWindow(QMainWindow):
         if self.video_widget:
             self.video_widget.set_ui_references(self.ui.slider_time, self.ui.btn_start)
             print("Referencias UI configuradas para VideoWidget")
-        
+            
+        self.setup_video_graph_sync()
+
         # === MOSTRAR PROTOCOLO ===
         #QTimer.singleShot(500, self.show_protocol_selection)
         
@@ -1176,10 +1177,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error en toggle_recording: {e}")
 
-
-
-
-
     def setup_video_graph_sync(self):
         """
         Configura la sincronización bidireccional entre video y gráficos.
@@ -1216,6 +1213,7 @@ class MainWindow(QMainWindow):
         Callback cuando cambia el slider del video.
         Sincroniza las líneas del gráfico.
         """
+        print("ajustando la linea vertical")
         try:
             # Convertir valor del slider a segundos
             time_seconds = slider_value / 100.0

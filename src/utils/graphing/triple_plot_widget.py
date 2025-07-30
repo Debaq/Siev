@@ -22,7 +22,8 @@ class ConfigurablePlotWidget(QWidget):
     """
     
     linePositionChanged = Signal(float)
-    
+    video_sync_signal = Signal(float)  # AGREGAR ESTA LÍNEA
+
     def __init__(self, parent=None, visible_window=60.0, update_fps=10, plot_config=None):
         super().__init__(parent)
         
@@ -184,7 +185,7 @@ class ConfigurablePlotWidget(QWidget):
                 pen=pg.mkPen(color=(255, 0, 0), width=2)  # Línea roja visible
             )
             plot.addItem(vLine)
-            vLine.sigPositionChanged.connect(self._line_moved_event)
+            vLine.sigPositionChanged.connect(self.line_moved_event)
             self.vLines.append(vLine)
             
             # Conectar eventos de rango
@@ -374,7 +375,7 @@ class ConfigurablePlotWidget(QWidget):
         except Exception as e:
             print(f"Error actualizando regiones de parpadeo: {e}")
     
-    def _line_moved_event(self):
+    def line_moved_event(self):
         """Maneja el movimiento de la línea vertical."""
         try:
             sender = self.sender()
@@ -386,6 +387,8 @@ class ConfigurablePlotWidget(QWidget):
                     vLine.setValue(newX)
             
             self.linePositionChanged.emit(newX)
+            self.video_sync_signal.emit(newX)  # AGREGAR ESTA LÍNEA
+
         except Exception as e:
             print(f"Error en line_moved_event: {e}")
     
