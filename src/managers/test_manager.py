@@ -203,11 +203,13 @@ class TestManager(QObject):
         """
         try:
             from PySide6.QtWidgets import QFileDialog
-            
+            import os
+            initial_dir = os.path.expanduser("~/siev_data/users")
+
             file_path, _ = QFileDialog.getOpenFileName(
                 self.main_window,
                 "Abrir Archivo de Usuario",
-                "",
+                initial_dir,
                 "Archivos SIEV (*.siev);;Todos los archivos (*)"
             )
             

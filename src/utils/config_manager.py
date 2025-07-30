@@ -173,20 +173,12 @@ class ConfigManager:
         return self.config.get("slider_settings", {}).get(slider_name, default_value)
     
     def set_slider_value(self, slider_name, value):
-        """Establecer valor específico de un slider y guardar inmediatamente"""
+        """Establecer valor específico de un slider"""
         if "slider_settings" not in self.config:
             self.config["slider_settings"] = {}
         
         self.config["slider_settings"][slider_name] = value
-        
-        # Guardar inmediatamente al archivo JSON
-        success = self.save_config()
-        if success:
-            print(f"Slider {slider_name} guardado con valor {value}")
-        else:
-            print(f"Error guardando slider {slider_name}")
-        
-        return success
+        return self.save_config()
     
     def get_app_info(self):
         """Obtener información de la aplicación"""

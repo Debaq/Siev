@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'MainWindowcDApLE.ui'
+## Form generated from reading UI file 'MainWindowAqOsSw.ui'
 ##
 ## Created by: Qt User Interface Compiler version 6.9.1
 ##
@@ -72,6 +72,8 @@ class Ui_MainWindow(object):
         self.actionAbrir.setObjectName(u"actionAbrir")
         self.actionCambiar_evaluador = QAction(MainWindow)
         self.actionCambiar_evaluador.setObjectName(u"actionCambiar_evaluador")
+        self.actionTestNoSave = QAction(MainWindow)
+        self.actionTestNoSave.setObjectName(u"actionTestNoSave")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
         self.verticalLayout_4 = QVBoxLayout(self.centralwidget)
@@ -373,6 +375,9 @@ class Ui_MainWindow(object):
         self.menuOculomotoras.addAction(self.actionSacadas)
         self.menuArchivo.addAction(self.actionAbrir)
         self.menuArchivo.addAction(self.actionNewUser)
+        self.menuArchivo.addSeparator()
+        self.menuArchivo.addAction(self.actionTestNoSave)
+        self.menuArchivo.addSeparator()
         self.menuArchivo.addAction(self.actionExit)
         self.menuConfiguraci_n.addAction(self.actionCalibrar)
         self.menuConfiguraci_n.addAction(self.actionCambiar_evaluador)
@@ -405,6 +410,7 @@ class Ui_MainWindow(object):
         self.actionCalibrar.setText(QCoreApplication.translate("MainWindow", u"Calibrar", None))
         self.actionAbrir.setText(QCoreApplication.translate("MainWindow", u"Abrir...", None))
         self.actionCambiar_evaluador.setText(QCoreApplication.translate("MainWindow", u"Cambiar evaluador", None))
+        self.actionTestNoSave.setText(QCoreApplication.translate("MainWindow", u"Test de Seguimiento sin guardar", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"Pruebas", None))
         self.btn_FullScreen.setText(QCoreApplication.translate("MainWindow", u"FullScreen", None))
 #if QT_CONFIG(shortcut)

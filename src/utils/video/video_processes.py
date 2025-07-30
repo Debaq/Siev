@@ -6,8 +6,8 @@ import multiprocessing as mp
 from multiprocessing import Value, Array
 import time
 import ctypes
-from libs.common.path_utils import get_model_file_path
-from libs.video.simulated_box import SimulatedBox
+from utils.path_utils import get_model_file_path
+from utils.video.simulated_box import SimulatedBox
 
 
 class VideoProcesses:

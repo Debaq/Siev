@@ -6,7 +6,13 @@ from typing import Optional, List, Dict
 import time
 
 # Importar el buffer optimizado
-from libs.data.optimized_buffer import OptimizedBuffer
+try:
+    from ..optimized_buffer import OptimizedBuffer
+except ImportError:
+    try:
+        from utils.optimized_buffer import OptimizedBuffer
+    except ImportError:
+        from optimized_buffer import OptimizedBuffer
 
 
 class ConfigurablePlotWidget(QWidget):
@@ -16,7 +22,8 @@ class ConfigurablePlotWidget(QWidget):
     """
     
     linePositionChanged = Signal(float)
-    
+    video_sync_signal = Signal(float)  # AGREGAR ESTA LÍNEA
+
     def __init__(self, parent=None, visible_window=60.0, update_fps=10, plot_config=None):
         super().__init__(parent)
         
@@ -172,21 +179,25 @@ class ConfigurablePlotWidget(QWidget):
                 curves_created += 1
             
             # Solo crear línea vertical si hay curvas
-            if curves_created > 0:
-                vLine = pg.InfiniteLine(angle=90, movable=True)
-                plot.addItem(vLine)
-                vLine.sigPositionChanged.connect(self._line_moved_event)
-                self.vLines.append(vLine)
-                
-                # Conectar eventos de rango
-                plot.sigRangeChanged.connect(self._on_range_changed)
-                
-                # Almacenar referencias
-                self.plots.append(plot)
-                self.blink_regions.append([])
-                self.layout.addWidget(plot)
-                
-                print(f"Gráfico {i+1} configurado: {label} ({curves_created} curvas)")
+            vLine = pg.InfiniteLine(
+                angle=90, 
+                movable=True,
+                pen=pg.mkPen(color=(255, 0, 0), width=2)  # Línea roja visible
+            )
+            plot.addItem(vLine)
+            vLine.sigPositionChanged.connect(self.line_moved_event)
+            self.vLines.append(vLine)
+            
+            # Conectar eventos de rango
+            plot.sigRangeChanged.connect(self._on_range_changed)
+            
+            # Almacenar referencias
+            self.plots.append(plot)
+            self.blink_regions.append([])
+            self.layout.addWidget(plot)
+            
+            print(f"Gráfico {i+1} configurado: {label} ({curves_created} curvas, línea infinita creada)")
+
         
         # Vincular ejes X para sincronización
         for i in range(1, len(self.plots)):
@@ -364,7 +375,7 @@ class ConfigurablePlotWidget(QWidget):
         except Exception as e:
             print(f"Error actualizando regiones de parpadeo: {e}")
     
-    def _line_moved_event(self):
+    def line_moved_event(self):
         """Maneja el movimiento de la línea vertical."""
         try:
             sender = self.sender()
@@ -376,6 +387,8 @@ class ConfigurablePlotWidget(QWidget):
                     vLine.setValue(newX)
             
             self.linePositionChanged.emit(newX)
+            self.video_sync_signal.emit(newX)  # AGREGAR ESTA LÍNEA
+
         except Exception as e:
             print(f"Error en line_moved_event: {e}")
     
@@ -619,3 +632,53 @@ class TriplePlotWidget(ConfigurablePlotWidget):
     def clearPlots(self):
         """Método de compatibilidad."""
         self.clear_data()
+        
+    
+    def set_video_time_position(self, seconds: float):
+        """
+        Sincroniza las líneas infinitas con el tiempo del video.
+        
+        Args:
+            seconds: Posición en segundos del video
+        """
+        try:
+            # Desconectar temporalmente las señales para evitar loops
+            for vLine in self.vLines:
+                vLine.sigPositionChanged.disconnect()
+            
+            # Actualizar posición de todas las líneas
+            for vLine in self.vLines:
+                vLine.setPos(seconds)
+            
+            # Reconectar señales
+            for vLine in self.vLines:
+                vLine.sigPositionChanged.connect(self.line_moved_event)
+                
+            print(f"Líneas del triple gráfico sincronizadas a: {seconds:.2f}s")
+            
+        except Exception as e:
+            print(f"Error sincronizando líneas con video: {e}")
+
+    def line_moved_event(self, line):
+        """
+        Maneja el movimiento de las líneas infinitas y emite señal para sincronizar video.
+        MODIFICAR el método existente para agregar emisión de señal.
+        """
+        try:
+            sender = self.sender()
+            newX = sender.value()
+            
+            # Sincronizar todas las líneas (código existente)
+            for vLine in self.vLines:
+                if vLine != sender:
+                    vLine.setValue(newX)
+            
+            # Emitir señal existente
+            self.linePositionChanged.emit(newX)
+            
+            # NUEVA LÍNEA: Emitir señal específica para sincronización de video
+            if hasattr(self, 'video_sync_signal'):
+                self.video_sync_signal.emit(newX)
+            
+        except Exception as e:
+            print(f"Error en line_moved_event: {e}")
