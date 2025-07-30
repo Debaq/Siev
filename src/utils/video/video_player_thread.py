@@ -47,6 +47,8 @@ class VideoPlayerThread(QThread):
         # === PROCESAMIENTO DE PUPILA ===
         # No usar PupilAnalyzer específico, usar análisis básico integrado
         self.pupil_analyzer = None
+        self.auto_crop_enabled = True  # Activado por defecto
+        self.crop_area = None  # (x, y, width, height)
     
     def load_video_from_data(self):
         """Cargar video desde datos binarios"""
@@ -73,6 +75,10 @@ class VideoPlayerThread(QThread):
             
             print(f"Video cargado: {self.total_frames} frames, {self.fps} FPS, {self.duration:.2f}s")
             
+            
+            # Inicializar auto-crop
+            if self.auto_crop_enabled:
+                self.initialize_auto_crop()
             # Emitir señales
             self.video_loaded.emit(True)
             self.duration_changed.emit(self.duration)
@@ -318,3 +324,147 @@ class VideoPlayerThread(QThread):
             time.sleep(0.001)
         
         print("VideoPlayerThread finalizado")
+        
+        
+    def detect_crop_area(self, frame, threshold=30):
+        """
+        Detecta automáticamente el área de recorte para eliminar espacios negros
+        
+        Args:
+            frame: Frame de OpenCV (BGR)
+            threshold: Umbral para considerar un píxel como "negro" (0-255)
+            
+        Returns:
+            tuple: (x, y, width, height) del área útil
+        """
+        try:
+            # Convertir a escala de grises
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            
+            # Crear máscara de píxeles que NO son negros
+            mask = gray > threshold
+            
+            # Encontrar coordenadas de píxeles no negros
+            coords = np.where(mask)
+            
+            if len(coords[0]) == 0:
+                # Si no hay píxeles útiles, devolver frame completo
+                return 0, 0, frame.shape[1], frame.shape[0]
+            
+            # Calcular bounding box
+            y_min, y_max = coords[0].min(), coords[0].max()
+            x_min, x_max = coords[1].min(), coords[1].max()
+            
+            # Añadir pequeño margen de seguridad
+            margin = 5
+            y_min = max(0, y_min - margin)
+            x_min = max(0, x_min - margin)
+            y_max = min(frame.shape[0], y_max + margin)
+            x_max = min(frame.shape[1], x_max + margin)
+            
+            width = x_max - x_min
+            height = y_max - y_min
+            
+            print(f"Área de recorte detectada: x={x_min}, y={y_min}, w={width}, h={height}")
+            
+            return x_min, y_min, width, height
+            
+        except Exception as e:
+            print(f"Error detectando área de recorte: {e}")
+            return 0, 0, frame.shape[1], frame.shape[0]
+    
+    def apply_auto_crop(self, frame):
+        """
+        Aplica el recorte automático al frame
+        
+        Args:
+            frame: Frame de OpenCV (BGR)
+            
+        Returns:
+            Frame recortado
+        """
+        if not hasattr(self, 'crop_area') or self.crop_area is None:
+            return frame
+            
+        try:
+            x, y, w, h = self.crop_area
+            
+            # Validar coordenadas
+            if (x + w <= frame.shape[1] and y + h <= frame.shape[0] and 
+                x >= 0 and y >= 0 and w > 0 and h > 0):
+                
+                cropped = frame[y:y+h, x:x+w]
+                return cropped
+            else:
+                print("Coordenadas de recorte inválidas, usando frame original")
+                return frame
+                
+        except Exception as e:
+            print(f"Error aplicando recorte: {e}")
+            return frame
+    
+    def initialize_auto_crop(self):
+        """
+        Inicializa el auto-crop analizando el primer frame del video
+        """
+        try:
+            if not self.cap:
+                return
+                
+            # Guardar posición actual
+            current_pos = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+            
+            # Ir al primer frame
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            
+            # Leer primer frame
+            ret, frame = self.cap.read()
+            
+            if ret and frame is not None:
+                # Detectar área de recorte
+                self.crop_area = self.detect_crop_area(frame)
+                self.auto_crop_enabled = True
+                
+                # Calcular factor de escalado para mostrar información
+                original_area = frame.shape[0] * frame.shape[1]
+                crop_area_size = self.crop_area[2] * self.crop_area[3]
+                reduction_percent = ((original_area - crop_area_size) / original_area) * 100
+                
+                print(f"Auto-crop inicializado:")
+                print(f"  Resolución original: {frame.shape[1]}x{frame.shape[0]}")
+                print(f"  Resolución recortada: {self.crop_area[2]}x{self.crop_area[3]}")
+                print(f"  Reducción de área: {reduction_percent:.1f}%")
+                
+            else:
+                print("No se pudo leer el primer frame para auto-crop")
+                self.crop_area = None
+                self.auto_crop_enabled = False
+            
+            # Restaurar posición original
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, current_pos)
+            
+        except Exception as e:
+            print(f"Error inicializando auto-crop: {e}")
+            self.crop_area = None
+            self.auto_crop_enabled = False
+    
+    def toggle_auto_crop(self, enabled=None):
+        """
+        Activa/desactiva el auto-crop
+        
+        Args:
+            enabled: True/False para forzar estado, None para alternar
+        """
+        if enabled is None:
+            self.auto_crop_enabled = not getattr(self, 'auto_crop_enabled', False)
+        else:
+            self.auto_crop_enabled = enabled
+            
+        if self.auto_crop_enabled and not hasattr(self, 'crop_area'):
+            # Inicializar auto-crop si no se ha hecho
+            self.initialize_auto_crop()
+        
+        status = "activado" if self.auto_crop_enabled else "desactivado"
+        print(f"Auto-crop {status}")
+        
+        return self.auto_crop_enabled
