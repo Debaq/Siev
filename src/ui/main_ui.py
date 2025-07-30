@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'MainWindowAqOsSw.ui'
+## Form generated from reading UI file 'MainWindowtqwFGj.ui'
 ##
 ## Created by: Qt User Interface Compiler version 6.9.1
 ##
@@ -276,17 +276,17 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_2.addWidget(self.lbl_test)
 
+        self.lbl_time = QLabel(self.centralwidget)
+        self.lbl_time.setObjectName(u"lbl_time")
+        self.lbl_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.verticalLayout_2.addWidget(self.lbl_time)
+
 
         self.horizontalLayout_2.addLayout(self.verticalLayout_2)
 
         self.verticalLayout = QVBoxLayout()
         self.verticalLayout.setObjectName(u"verticalLayout")
-        self.lbl_time = QLabel(self.centralwidget)
-        self.lbl_time.setObjectName(u"lbl_time")
-        self.lbl_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.verticalLayout.addWidget(self.lbl_time)
-
         self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.verticalLayout.addItem(self.horizontalSpacer)

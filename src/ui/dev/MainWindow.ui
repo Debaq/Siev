@@ -357,10 +357,6 @@
           </property>
          </widget>
         </item>
-       </layout>
-      </item>
-      <item>
-       <layout class="QVBoxLayout" name="verticalLayout">
         <item>
          <widget class="QLabel" name="lbl_time">
           <property name="text">
@@ -371,6 +367,10 @@
           </property>
          </widget>
         </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="verticalLayout">
         <item>
          <spacer name="horizontalSpacer">
           <property name="orientation">
