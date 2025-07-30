@@ -8,7 +8,6 @@ from PySide6.QtCore import QTimer
 
 class VideoWidget(QObject):
     sig_pos = Signal(list)
-
     def __init__(self, camera_frame, sliders, cbres, camera_id=2, video_callback=None):
         super().__init__()
 
@@ -36,34 +35,70 @@ class VideoWidget(QObject):
         slider_contrast = next((slider for slider in self.sliders if slider.objectName() == "slider_contrast"), None)
         slider_brightness = next((slider for slider in self.sliders if slider.objectName() == "slider_brightness"), None)
 
-        #brightness = sliders[]
-
-        # Conectar señales
-        self.resolution_changed()
-        self.sliders_changed()
+        # Verificar si hay resoluciones disponibles
         resolucion = self.cbres.currentText()
-        # Crear el hilo de video
-        res_partes = resolucion.split('@')
-        width, height = map(int, res_partes[0].split('x'))
-        fps = int(res_partes[1])
         
-        self.video_thread = VideoThread(camera_id=camera_id, 
-                                        cap_width=width, 
-                                        cap_height=height, 
-                                        cap_fps=fps, brightness=slider_brightness.value(), 
-                                        contrast=slider_contrast.value())
-        self.video_thread.frame_ready.connect(self.update_frame)
-                
-        self.current_fps = 0
-        self.video_thread.start(QThread.HighPriority)
+        if not resolucion or resolucion.strip() == "":
+            # Modo dummy - sin cámara
+            print("No se detectaron resoluciones de cámara. Iniciando en modo dummy.")
+            self._create_dummy_display()
+            self.video_thread = None
+            # Conectar señales básicas para compatibilidad
+            self.resolution_changed()
+            self.sliders_changed()
+        else:
+            # Modo normal - con cámara
+            # Conectar señales
+            self.resolution_changed()
+            self.sliders_changed()
+            
+            # Crear el hilo de video
+            res_partes = resolucion.split('@')
+            width, height = map(int, res_partes[0].split('x'))
+            fps = int(res_partes[1])
+            
+            self.video_thread = VideoThread(camera_id=camera_id, 
+                                            cap_width=width, 
+                                            cap_height=height, 
+                                            cap_fps=fps, brightness=slider_brightness.value(), 
+                                            contrast=slider_contrast.value())
+            self.video_thread.frame_ready.connect(self.update_frame)
+                    
+            self.current_fps = 0
+            self.video_thread.start(QThread.HighPriority)
 
-    #def set_video_color(self, text_label, value):
-        """Método para cambiar el brillo o contraste de la cámara"""
-    #    try:
-            # Llamar al método correspondiente en el hilo de video
-    #        self.video_thread.set_video_color(text_label, value)
-    #    except Exception as e:
-    #        print(f"Error al cambiar configuración de color: {e}")
+    def _create_dummy_display(self):
+        """Crea una imagen dummy de 640x200 con texto 'sin cámara'"""
+        from PySide6.QtGui import QPainter, QFont, QColor
+        
+        # Crear imagen negra de 640x200
+        width, height = 640, 200
+        dummy_image = QImage(width, height, QImage.Format_RGB888)
+        dummy_image.fill(QColor(0, 0, 0))  # Negro
+        
+        # Dibujar texto centrado
+        painter = QPainter(dummy_image)
+        painter.setPen(QColor(255, 255, 255))  # Texto blanco
+        font = QFont()
+        font.setPointSize(16)
+        font.setBold(True)
+        painter.setFont(font)
+        
+        text = "sin cámara"
+        text_rect = painter.fontMetrics().boundingRect(text)
+        x = (width - text_rect.width()) // 2
+        y = (height + text_rect.height()) // 2
+        
+        painter.drawText(x, y, text)
+        painter.end()
+        
+        # Convertir a QPixmap y mostrar
+        pixmap = QPixmap.fromImage(dummy_image)
+        self.camera_frame.setPixmap(pixmap)
+        self.camera_frame.setFixedSize(width, height)
+        
+        print(f"VideoWidget dummy creado: {width}x{height}")
+        
 
     def resolution_changed(self):
         """Conecta el cambio de resolución"""
