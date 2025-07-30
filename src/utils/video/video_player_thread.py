@@ -49,7 +49,7 @@ class VideoPlayerThread(QThread):
         self.pupil_analyzer = None
         self.auto_crop_enabled = True  # Activado por defecto
         self.crop_area = None  # (x, y, width, height)
-    
+        
     def load_video_from_data(self):
         """Cargar video desde datos binarios"""
         try:
@@ -75,10 +75,19 @@ class VideoPlayerThread(QThread):
             
             print(f"Video cargado: {self.total_frames} frames, {self.fps} FPS, {self.duration:.2f}s")
             
-            
-            # Inicializar auto-crop
+            # Inicializar auto-crop ANTES de procesar primer frame
             if self.auto_crop_enabled:
                 self.initialize_auto_crop()
+            
+            # === MOSTRAR PRIMER FRAME INMEDIATAMENTE ===
+            # Ir al primer frame
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            self.current_frame_index = 0
+            self.current_time = 0.0
+            
+            # Leer y procesar primer frame
+            self._read_and_process_current_frame()
+            
             # Emitir señales
             self.video_loaded.emit(True)
             self.duration_changed.emit(self.duration)
@@ -409,6 +418,7 @@ class VideoPlayerThread(QThread):
         """
         try:
             if not self.cap:
+                print("Error: No hay captura de video disponible para auto-crop")
                 return
                 
             # Guardar posición actual
@@ -423,17 +433,20 @@ class VideoPlayerThread(QThread):
             if ret and frame is not None:
                 # Detectar área de recorte
                 self.crop_area = self.detect_crop_area(frame)
-                self.auto_crop_enabled = True
                 
-                # Calcular factor de escalado para mostrar información
-                original_area = frame.shape[0] * frame.shape[1]
-                crop_area_size = self.crop_area[2] * self.crop_area[3]
-                reduction_percent = ((original_area - crop_area_size) / original_area) * 100
-                
-                print(f"Auto-crop inicializado:")
-                print(f"  Resolución original: {frame.shape[1]}x{frame.shape[0]}")
-                print(f"  Resolución recortada: {self.crop_area[2]}x{self.crop_area[3]}")
-                print(f"  Reducción de área: {reduction_percent:.1f}%")
+                if self.crop_area:
+                    # Calcular factor de escalado para mostrar información
+                    original_area = frame.shape[0] * frame.shape[1]
+                    crop_area_size = self.crop_area[2] * self.crop_area[3]
+                    reduction_percent = ((original_area - crop_area_size) / original_area) * 100
+                    
+                    print(f"Auto-crop inicializado:")
+                    print(f"  Resolución original: {frame.shape[1]}x{frame.shape[0]}")
+                    print(f"  Resolución recortada: {self.crop_area[2]}x{self.crop_area[3]}")
+                    print(f"  Reducción de área: {reduction_percent:.1f}%")
+                else:
+                    print("No se pudo detectar área de recorte válida")
+                    self.auto_crop_enabled = False
                 
             else:
                 print("No se pudo leer el primer frame para auto-crop")
