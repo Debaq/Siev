@@ -625,3 +625,53 @@ class TriplePlotWidget(ConfigurablePlotWidget):
     def clearPlots(self):
         """Método de compatibilidad."""
         self.clear_data()
+        
+    
+    def set_video_time_position(self, seconds: float):
+        """
+        Sincroniza las líneas infinitas con el tiempo del video.
+        
+        Args:
+            seconds: Posición en segundos del video
+        """
+        try:
+            # Desconectar temporalmente las señales para evitar loops
+            for vLine in self.vLines:
+                vLine.sigPositionChanged.disconnect()
+            
+            # Actualizar posición de todas las líneas
+            for vLine in self.vLines:
+                vLine.setPos(seconds)
+            
+            # Reconectar señales
+            for vLine in self.vLines:
+                vLine.sigPositionChanged.connect(self.line_moved_event)
+                
+            print(f"Líneas del triple gráfico sincronizadas a: {seconds:.2f}s")
+            
+        except Exception as e:
+            print(f"Error sincronizando líneas con video: {e}")
+
+    def line_moved_event(self, line):
+        """
+        Maneja el movimiento de las líneas infinitas y emite señal para sincronizar video.
+        MODIFICAR el método existente para agregar emisión de señal.
+        """
+        try:
+            sender = self.sender()
+            newX = sender.value()
+            
+            # Sincronizar todas las líneas (código existente)
+            for vLine in self.vLines:
+                if vLine != sender:
+                    vLine.setValue(newX)
+            
+            # Emitir señal existente
+            self.linePositionChanged.emit(newX)
+            
+            # NUEVA LÍNEA: Emitir señal específica para sincronización de video
+            if hasattr(self, 'video_sync_signal'):
+                self.video_sync_signal.emit(newX)
+            
+        except Exception as e:
+            print(f"Error en line_moved_event: {e}")

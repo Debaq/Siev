@@ -86,7 +86,7 @@ class MainWindow(QMainWindow):
         self.init_processing_system()
         self.init_user_system()
 
-        
+        self.setup_video_graph_sync()
         # === TIMERS ===
         self.setup_timers()
         self.init_stimulus_system()
@@ -1177,6 +1177,82 @@ class MainWindow(QMainWindow):
             print(f"Error en toggle_recording: {e}")
 
 
+
+
+
+    def setup_video_graph_sync(self):
+        """
+        Configura la sincronización bidireccional entre video y gráficos.
+        """
+        if not (self.video_widget and self.plot_widget):
+            return
+        
+        try:
+            # Crear señal para sincronización video->gráfico
+            from PySide6.QtCore import Signal
+            
+            # Agregar atributo de señal al plot_widget si no existe
+            if not hasattr(self.plot_widget, 'video_sync_signal'):
+                self.plot_widget.video_sync_signal = Signal(float)
+            
+            # Conectar: cuando cambie slider del video -> actualizar líneas del gráfico
+            if hasattr(self.video_widget, 'slider_time'):
+                self.video_widget.slider_time.valueChanged.connect(
+                    self.on_video_slider_changed
+                )
+            
+            # Conectar: cuando se mueva línea del gráfico -> actualizar video
+            self.plot_widget.video_sync_signal.connect(
+                self.on_graph_line_moved
+            )
+            
+            print("Sincronización video-gráfico configurada")
+            
+        except Exception as e:
+            print(f"Error configurando sincronización: {e}")
+
+    def on_video_slider_changed(self, slider_value):
+        """
+        Callback cuando cambia el slider del video.
+        Sincroniza las líneas del gráfico.
+        """
+        try:
+            # Convertir valor del slider a segundos
+            time_seconds = slider_value / 100.0
+            
+            # Actualizar líneas del gráfico
+            if (self.plot_widget and 
+                hasattr(self.plot_widget, 'set_video_time_position')):
+                self.plot_widget.set_video_time_position(time_seconds)
+                
+        except Exception as e:
+            print(f"Error sincronizando desde video a gráfico: {e}")
+
+    def on_graph_line_moved(self, seconds):
+        """
+        Callback cuando se mueve una línea del gráfico.
+        Sincroniza el video a esa posición.
+        """
+        try:
+            if (self.video_widget and 
+                hasattr(self.video_widget, 'video_player_thread') and
+                self.video_widget.video_player_thread and
+                self.video_widget.is_in_player_mode):
+                
+                # Sincronizar video a la nueva posición
+                self.video_widget.video_player_thread.seek_to_time(seconds)
+                
+                # Actualizar slider del video
+                if hasattr(self.video_widget, 'slider_time'):
+                    slider_value = int(seconds * 100)
+                    self.video_widget.slider_time.blockSignals(True)
+                    self.video_widget.slider_time.setValue(slider_value)
+                    self.video_widget.slider_time.blockSignals(False)
+                    
+            print(f"Video sincronizado a: {seconds:.2f}s")
+            
+        except Exception as e:
+            print(f"Error sincronizando desde gráfico a video: {e}")
 
 
 
