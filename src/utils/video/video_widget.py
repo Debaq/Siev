@@ -14,7 +14,7 @@ class VideoWidget(QObject):
         self.video_callback = video_callback
 
         # Guardar referencias a los widgets de UI
-        self.cbres = cbres        
+        self.cbres = cbres
         self.sliders = sliders
         self.camera_frame = camera_frame
         self.pos_eye = []
