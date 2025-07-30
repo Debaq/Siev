@@ -178,21 +178,25 @@ class ConfigurablePlotWidget(QWidget):
                 curves_created += 1
             
             # Solo crear línea vertical si hay curvas
-            if curves_created > 0:
-                vLine = pg.InfiniteLine(angle=90, movable=True)
-                plot.addItem(vLine)
-                vLine.sigPositionChanged.connect(self._line_moved_event)
-                self.vLines.append(vLine)
-                
-                # Conectar eventos de rango
-                plot.sigRangeChanged.connect(self._on_range_changed)
-                
-                # Almacenar referencias
-                self.plots.append(plot)
-                self.blink_regions.append([])
-                self.layout.addWidget(plot)
-                
-                print(f"Gráfico {i+1} configurado: {label} ({curves_created} curvas)")
+            vLine = pg.InfiniteLine(
+                angle=90, 
+                movable=True,
+                pen=pg.mkPen(color=(255, 0, 0), width=2)  # Línea roja visible
+            )
+            plot.addItem(vLine)
+            vLine.sigPositionChanged.connect(self._line_moved_event)
+            self.vLines.append(vLine)
+            
+            # Conectar eventos de rango
+            plot.sigRangeChanged.connect(self._on_range_changed)
+            
+            # Almacenar referencias
+            self.plots.append(plot)
+            self.blink_regions.append([])
+            self.layout.addWidget(plot)
+            
+            print(f"Gráfico {i+1} configurado: {label} ({curves_created} curvas, línea infinita creada)")
+
         
         # Vincular ejes X para sincronización
         for i in range(1, len(self.plots)):
