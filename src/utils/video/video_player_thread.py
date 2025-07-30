@@ -158,30 +158,59 @@ class VideoPlayerThread(QThread):
                 print("Archivo temporal eliminado")
             except:
                 pass
-    
+        
     def _read_and_process_current_frame(self):
         """Leer y procesar el frame actual"""
+        print(">>> _read_and_process_current_frame llamado")
+        
         if not self.cap:
+            print("  No hay captura disponible")
             return
             
         ret, frame = self.cap.read()
         if not ret:
+            print("  No se pudo leer frame")
             return
+        
+        print(f"  Frame leído: {frame.shape}")
         
         # Procesar frame
         processed_frame, pupil_positions, gray_frame = self._process_frame(frame)
         
+        print(f"  Frame procesado: {processed_frame.shape}")
+        
         # Emitir resultado
+        print("  Emitiendo frame_ready...")
         self.frame_ready.emit(processed_frame, pupil_positions, gray_frame)
+        print("  frame_ready emitido")
     
-  
     def _process_frame(self, frame):
         """Procesar frame para análisis de pupila"""
         try:
+            print(f"=== PROCESANDO FRAME ===")
+            print(f"Frame original: {frame.shape}")
+            print(f"Auto-crop enabled: {getattr(self, 'auto_crop_enabled', False)}")
+            print(f"Tiene crop_area: {hasattr(self, 'crop_area')}")
+            
+            if hasattr(self, 'crop_area'):
+                print(f"Crop area: {self.crop_area}")
+                print(f"Crop area es None: {self.crop_area is None}")
+                print(f"Crop area evaluación bool: {bool(self.crop_area)}")
+            
             # === APLICAR AUTO-CROP PRIMERO ===
-            if self.auto_crop_enabled and hasattr(self, 'crop_area') and self.crop_area:
+            if self.auto_crop_enabled and hasattr(self, 'crop_area') and self.crop_area is not None:
+                print(">>> Aplicando auto-crop...")
+                original_shape = frame.shape
                 frame = self.apply_auto_crop(frame)
-                print(f"Auto-crop aplicado - Nueva resolución: {frame.shape[1]}x{frame.shape[0]}")
+                print(f"Auto-crop aplicado - Resolución original: {original_shape[1]}x{original_shape[0]} → Nueva: {frame.shape[1]}x{frame.shape[0]}")
+            else:
+                print(">>> Auto-crop NO aplicado")
+                if not self.auto_crop_enabled:
+                    print("  - Razón: auto_crop_enabled = False")
+                if not hasattr(self, 'crop_area'):
+                    print("  - Razón: no tiene crop_area")
+                if hasattr(self, 'crop_area') and self.crop_area is None:
+                    print("  - Razón: crop_area es None")
             
             # Convertir a gray
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -205,13 +234,19 @@ class VideoPlayerThread(QThread):
             # Convertir a RGB para Qt
             display_frame_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
             
+            print(f"Frame final enviado: {display_frame_rgb.shape}")
+            print(f"=== FIN PROCESAMIENTO ===")
+            
             return display_frame_rgb, pupil_positions, gray
             
         except Exception as e:
             print(f"Error procesando frame: {e}")
+            import traceback
+            traceback.print_exc()
             # Retornar frame sin procesar
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             return frame_rgb, [None, None], None
+    
 
     
     def _basic_pupil_analysis(self, gray_frame):
@@ -413,27 +448,38 @@ class VideoPlayerThread(QThread):
         Returns:
             Frame recortado
         """
+        print(f">>> apply_auto_crop llamado")
+        print(f"    Frame shape: {frame.shape}")
+        
         if not hasattr(self, 'crop_area') or self.crop_area is None:
+            print(f"    No hay crop_area válida")
             return frame
             
         try:
             x, y, w, h = self.crop_area
+            print(f"    Crop area: x={x}, y={y}, w={w}, h={h}")
             
             # Validar coordenadas
             if (x + w <= frame.shape[1] and y + h <= frame.shape[0] and 
                 x >= 0 and y >= 0 and w > 0 and h > 0):
                 
+                print(f"    Coordenadas válidas - aplicando recorte...")
                 cropped = frame[y:y+h, x:x+w]
+                print(f"    Frame recortado: {cropped.shape}")
                 return cropped
             else:
-                print(f"Coordenadas de recorte inválidas: x={x}, y={y}, w={w}, h={h}")
-                print(f"Frame shape: {frame.shape}")
+                print(f"    Coordenadas de recorte inválidas:")
+                print(f"      Frame shape: {frame.shape}")
+                print(f"      x+w ({x}+{w}={x+w}) <= frame.width ({frame.shape[1]}): {x+w <= frame.shape[1]}")
+                print(f"      y+h ({y}+{h}={y+h}) <= frame.height ({frame.shape[0]}): {y+h <= frame.shape[0]}")
                 return frame
                 
         except Exception as e:
-            print(f"Error aplicando recorte: {e}")
+            print(f"    Error aplicando recorte: {e}")
+            import traceback
+            traceback.print_exc()
             return frame
-
+        
     def toggle_auto_crop(self, enabled=None):
         """
         Activa/desactiva el auto-crop
@@ -460,22 +506,28 @@ class VideoPlayerThread(QThread):
         Inicializa el auto-crop analizando el primer frame del video
         """
         try:
+            print(">>> initialize_auto_crop iniciado")
+            
             if not self.cap:
                 print("Error: No hay captura de video disponible para auto-crop")
                 return
                 
             # Guardar posición actual
             current_pos = self.cap.get(cv2.CAP_PROP_POS_FRAMES)
+            print(f"Posición actual guardada: {current_pos}")
             
             # Ir al primer frame
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             
             # Leer primer frame
             ret, frame = self.cap.read()
+            print(f"Primer frame leído: ret={ret}, shape={frame.shape if ret else 'None'}")
             
             if ret and frame is not None:
                 # Detectar área de recorte
+                print("Detectando área de recorte...")
                 self.crop_area = self.detect_crop_area(frame)
+                print(f"Crop area detectada: {self.crop_area}")
                 
                 if self.crop_area and self.crop_area != (0, 0, frame.shape[1], frame.shape[0]):
                     # Calcular factor de escalado para mostrar información
@@ -488,9 +540,13 @@ class VideoPlayerThread(QThread):
                     print(f"  Resolución recortada: {self.crop_area[2]}x{self.crop_area[3]}")
                     print(f"  Reducción de área: {reduction_percent:.1f}%")
                     print(f"  Área de recorte: x={self.crop_area[0]}, y={self.crop_area[1]}")
+                    
+                    # Confirmar que auto_crop_enabled sigue siendo True
+                    print(f"  auto_crop_enabled después de inicializar: {self.auto_crop_enabled}")
                 else:
-                    print("No se detectó área de recorte significativa, usando frame completo")
+                    print("No se detectó área de recorte significativa, desactivando auto-crop")
                     self.auto_crop_enabled = False
+                    self.crop_area = None
                 
             else:
                 print("No se pudo leer el primer frame para auto-crop")
@@ -499,10 +555,16 @@ class VideoPlayerThread(QThread):
             
             # Restaurar posición original
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, current_pos)
+            print(f"Posición restaurada a: {current_pos}")
+            
+            print(f">>> initialize_auto_crop terminado. Estado final:")
+            print(f"    auto_crop_enabled: {self.auto_crop_enabled}")
+            print(f"    crop_area: {getattr(self, 'crop_area', 'No definida')}")
             
         except Exception as e:
             print(f"Error inicializando auto-crop: {e}")
+            import traceback
+            traceback.print_exc()
             self.crop_area = None
-        self.auto_crop_enabled = False
-    
+            self.auto_crop_enabled = False
   
