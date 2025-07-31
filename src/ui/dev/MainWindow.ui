@@ -489,7 +489,6 @@
     <property name="title">
      <string>Configuración</string>
     </property>
-    <addaction name="actionCalibrar"/>
     <addaction name="actionCambiar_evaluador"/>
    </widget>
    <widget class="QMenu" name="menuPosicionales">
@@ -500,10 +499,19 @@
      <string>Posicionales</string>
     </property>
    </widget>
+   <widget class="QMenu" name="menuHerramientas">
+    <property name="title">
+     <string>Herramientas</string>
+    </property>
+    <addaction name="actionCalculadora_hipo_dp"/>
+    <addaction name="separator"/>
+    <addaction name="actionCalibrar"/>
+   </widget>
    <addaction name="menuArchivo"/>
    <addaction name="menuCalofrica"/>
    <addaction name="menuOculomotoras"/>
    <addaction name="menuPosicionales"/>
+   <addaction name="menuHerramientas"/>
    <addaction name="menuConfiguraci_n"/>
   </widget>
   <action name="actionSalir">
@@ -626,6 +634,11 @@
   <action name="actionTestNoSave">
    <property name="text">
     <string>Test de Seguimiento sin guardar</string>
+   </property>
+  </action>
+  <action name="actionCalculadora_hipo_dp">
+   <property name="text">
+    <string>Calculadora hipo/dp</string>
    </property>
   </action>
  </widget>

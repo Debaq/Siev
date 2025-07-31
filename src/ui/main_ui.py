@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'MainWindowtqwFGj.ui'
+## Form generated from reading UI file 'MainWindowNsrAIk.ui'
 ##
 ## Created by: Qt User Interface Compiler version 6.9.1
 ##
@@ -74,6 +74,8 @@ class Ui_MainWindow(object):
         self.actionCambiar_evaluador.setObjectName(u"actionCambiar_evaluador")
         self.actionTestNoSave = QAction(MainWindow)
         self.actionTestNoSave.setObjectName(u"actionTestNoSave")
+        self.actionCalculadora_hipo_dp = QAction(MainWindow)
+        self.actionCalculadora_hipo_dp.setObjectName(u"actionCalculadora_hipo_dp")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
         self.verticalLayout_4 = QVBoxLayout(self.centralwidget)
@@ -357,12 +359,15 @@ class Ui_MainWindow(object):
         self.menuPosicionales = QMenu(self.menubar)
         self.menuPosicionales.setObjectName(u"menuPosicionales")
         self.menuPosicionales.setEnabled(False)
+        self.menuHerramientas = QMenu(self.menubar)
+        self.menuHerramientas.setObjectName(u"menuHerramientas")
         MainWindow.setMenuBar(self.menubar)
 
         self.menubar.addAction(self.menuArchivo.menuAction())
         self.menubar.addAction(self.menuCalofrica.menuAction())
         self.menubar.addAction(self.menuOculomotoras.menuAction())
         self.menubar.addAction(self.menuPosicionales.menuAction())
+        self.menubar.addAction(self.menuHerramientas.menuAction())
         self.menubar.addAction(self.menuConfiguraci_n.menuAction())
         self.menuCalofrica.addAction(self.actionEspont_neo)
         self.menuCalofrica.addAction(self.menuPruebas_Calor_cas.menuAction())
@@ -379,8 +384,10 @@ class Ui_MainWindow(object):
         self.menuArchivo.addAction(self.actionTestNoSave)
         self.menuArchivo.addSeparator()
         self.menuArchivo.addAction(self.actionExit)
-        self.menuConfiguraci_n.addAction(self.actionCalibrar)
         self.menuConfiguraci_n.addAction(self.actionCambiar_evaluador)
+        self.menuHerramientas.addAction(self.actionCalculadora_hipo_dp)
+        self.menuHerramientas.addSeparator()
+        self.menuHerramientas.addAction(self.actionCalibrar)
 
         self.retranslateUi(MainWindow)
 
@@ -411,6 +418,7 @@ class Ui_MainWindow(object):
         self.actionAbrir.setText(QCoreApplication.translate("MainWindow", u"Abrir...", None))
         self.actionCambiar_evaluador.setText(QCoreApplication.translate("MainWindow", u"Cambiar evaluador", None))
         self.actionTestNoSave.setText(QCoreApplication.translate("MainWindow", u"Test de Seguimiento sin guardar", None))
+        self.actionCalculadora_hipo_dp.setText(QCoreApplication.translate("MainWindow", u"Calculadora hipo/dp", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"Pruebas", None))
         self.btn_FullScreen.setText(QCoreApplication.translate("MainWindow", u"FullScreen", None))
 #if QT_CONFIG(shortcut)
@@ -435,5 +443,6 @@ class Ui_MainWindow(object):
         self.menuArchivo.setTitle(QCoreApplication.translate("MainWindow", u"Archivo", None))
         self.menuConfiguraci_n.setTitle(QCoreApplication.translate("MainWindow", u"Configuraci\u00f3n", None))
         self.menuPosicionales.setTitle(QCoreApplication.translate("MainWindow", u"Posicionales", None))
+        self.menuHerramientas.setTitle(QCoreApplication.translate("MainWindow", u"Herramientas", None))
     # retranslateUi
 

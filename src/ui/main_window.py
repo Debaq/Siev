@@ -108,6 +108,8 @@ class MainWindow(QMainWindow):
         print("=== SISTEMA VNG INICIADO CORRECTAMENTE ===")
                 # Conectar todos los sliders
 
+    def calculadora_hipo_dp(self):
+        print("se habre ventana")
 
     def handle_gray_frame_for_video(self, gray_frame):
         """Callback para manejar frames gray para grabación"""
@@ -944,7 +946,8 @@ class MainWindow(QMainWindow):
             # Conectar calibración
             if hasattr(self.ui, 'actionCalibrar'):
                 self.ui.actionCalibrar.triggered.connect(self.start_calibration)
-                    
+            if hasattr(self.ui, 'actionCalculadora_hipo_dp'):
+                self.ui.actionCalculadora_hipo_dp.triggered.connect(self.calculadora_hipo_dp)
         except Exception as e:
             print(f"Error conectando eventos: {e}")
 
