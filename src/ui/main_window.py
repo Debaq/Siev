@@ -28,6 +28,7 @@ from utils.protocol_manager import ProtocolManager
 from datetime import datetime
 from ui.views.video_fullscreen_widget import VideoFullscreenWidget
 from ui.dialogs.calculadora_hipo_dp_dialog import CalculadoraHipoDpDialog
+from ui.dialogs.report_wizard import open_report_wizard
 
 
 class MainWindow(QMainWindow):
@@ -111,6 +112,7 @@ class MainWindow(QMainWindow):
         
         self.showMaximized()
         print("=== SISTEMA VNG INICIADO CORRECTAMENTE ===")
+
                 # Conectar todos los sliders
 
     def calculadora_hipo_dp(self):
@@ -954,8 +956,18 @@ class MainWindow(QMainWindow):
                 self.ui.actionCalibrar.triggered.connect(self.start_calibration)
             if hasattr(self.ui, 'actionCalculadora_hipo_dp'):
                 self.ui.actionCalculadora_hipo_dp.triggered.connect(self.calculadora_hipo_dp)
+            if hasattr(self.ui, 'actionInforme'):
+                self.ui.actionInforme.triggered.connect(self.openInforme)
+                
+                
+
         except Exception as e:
             print(f"Error conectando eventos: {e}")
+
+
+    def openInforme(self):
+        open_report_wizard(self)
+
 
     def show_protocol_selection(self):
         """Mostrar selección completa de protocolo - ACTUALIZADO"""
