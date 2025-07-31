@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         self.protocol_manager = ProtocolManager(self)
         self.current_evaluator = None  # Por compatibilidad, aunque se maneja en protocol_manager
         self.fixed_on_flag = False
+        
 
         self.calculadorahidp = CalculadoraHipoDpDialog()
 
@@ -1665,11 +1666,11 @@ class MainWindow(QMainWindow):
                 minutes = int(self.graph_time // 60)
                 seconds = int(self.graph_time % 60)
                 self.ui.lbl_time.setText(f"{minutes:02d}:{seconds:02d} / 02:00")
-                if 3 <= seconds >= 5:
-                    print("Tiempo de grabación casi completo, preparando para detener...")
-                    self.fixed_on_flag = True
-                    self.fixed_on()
-                else:
+                if 90 <= seconds < 100:
+                    if not self.fixed_on_flag:
+                        self.fixed_on_flag = True
+                        self.fixed_on()
+                elif seconds >= 100:
                     if self.fixed_on_flag:
                         self.fixed_off()
                         self.fixed_on_flag = False
