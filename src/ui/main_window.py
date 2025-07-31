@@ -27,6 +27,7 @@ from utils.SievManager import SievManager
 from utils.protocol_manager import ProtocolManager
 from datetime import datetime
 from ui.views.video_fullscreen_widget import VideoFullscreenWidget
+from ui.dialogs.calculadora_hipo_dp_dialog import CalculadoraHipoDpDialog
 
 
 class MainWindow(QMainWindow):
@@ -67,6 +68,10 @@ class MainWindow(QMainWindow):
         # === GESTOR DE PROTOCOLOS ===
         self.protocol_manager = ProtocolManager(self)
         self.current_evaluator = None  # Por compatibilidad, aunque se maneja en protocol_manager
+
+
+        self.calculadorahidp = CalculadoraHipoDpDialog()
+
 
         self.enable_test_functions(False)
 
@@ -109,7 +114,8 @@ class MainWindow(QMainWindow):
                 # Conectar todos los sliders
 
     def calculadora_hipo_dp(self):
-        print("se habre ventana")
+        self.calculadorahidp.exec()
+
 
     def handle_gray_frame_for_video(self, gray_frame):
         """Callback para manejar frames gray para grabación"""
