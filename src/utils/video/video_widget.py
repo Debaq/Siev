@@ -597,7 +597,26 @@ class VideoWidget(QObject):
             self.slider_time.blockSignals(True)
             self.slider_time.setValue(slider_value)
             self.slider_time.blockSignals(False)
+            
+            
+            self._update_graph_line_position(current_time)
 
+
+    def _update_graph_line_position(self, time_seconds):
+        """Actualizar posición de línea del gráfico durante reproducción automática"""
+        try:
+            # Buscar main_window a través de parent hierarchy
+            widget = self.camera_frame
+            while widget and not hasattr(widget, 'plot_widget'):
+                widget = widget.parent()
+            
+            if (widget and hasattr(widget, 'plot_widget') and 
+                hasattr(widget.plot_widget, 'set_video_time_position')):
+                widget.plot_widget.set_video_time_position(time_seconds)
+                
+        except Exception as e:
+            print(f"Error actualizando línea del gráfico: {e}")
+        
 
     def cleanup(self):
         """Limpia los recursos al cerrar la aplicación"""
