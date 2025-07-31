@@ -928,10 +928,10 @@ class MainWindow(QMainWindow):
                 self.ui.actionOD_44.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OD_44"))
             if hasattr(self.ui, 'actionOI_44'):
                 self.ui.actionOI_44.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OI_44"))
-            if hasattr(self.ui, 'actionOD_37'):
-                self.ui.actionOD_37.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OD_37"))
-            if hasattr(self.ui, 'actionOI37'):
-                self.ui.actionOI37.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OI_37"))
+            if hasattr(self.ui, 'actionOD_30'):
+                self.ui.actionOD_30.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OD_30"))
+            if hasattr(self.ui, 'actionOI_30'):
+                self.ui.actionOI_30.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OI_30"))
 
             # Conectar protocolos oculomotores
             if hasattr(self.ui, 'actionSeguimiento_Lento'):
@@ -2042,10 +2042,10 @@ class MainWindow(QMainWindow):
                 self.ui.actionOD_44.setEnabled(enabled)
             if hasattr(self.ui, 'actionOI_44'):
                 self.ui.actionOI_44.setEnabled(enabled)
-            if hasattr(self.ui, 'actionOD_37'):
-                self.ui.actionOD_37.setEnabled(enabled)
-            if hasattr(self.ui, 'actionOI37'):
-                self.ui.actionOI37.setEnabled(enabled)
+            if hasattr(self.ui, 'actionOD_30'):
+                self.ui.actionOD_30.setEnabled(enabled)
+            if hasattr(self.ui, 'actionOI_30'):
+                self.ui.actionOI_30.setEnabled(enabled)
             
             # AGREGAR ESTAS LÍNEAS para habilitar pruebas OCULOMOTORAS:
             if hasattr(self.ui, 'actionEspont_neo'):

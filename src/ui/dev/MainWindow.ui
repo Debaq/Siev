@@ -460,8 +460,8 @@
      </property>
      <addaction name="actionOD_44"/>
      <addaction name="actionOI_44"/>
-     <addaction name="actionOD_37"/>
-     <addaction name="actionOI37"/>
+     <addaction name="actionOD_30"/>
+     <addaction name="actionOI_30"/>
     </widget>
     <addaction name="actionEspont_neo"/>
     <addaction name="menuPruebas_Calor_cas"/>
@@ -555,20 +555,20 @@
     <string>OI 44</string>
    </property>
   </action>
-  <action name="actionOD_37">
+  <action name="actionOD_30">
    <property name="enabled">
     <bool>false</bool>
    </property>
    <property name="text">
-    <string>OD 37</string>
+    <string>OD 30</string>
    </property>
   </action>
-  <action name="actionOI37">
+  <action name="actionOI_30">
    <property name="enabled">
     <bool>false</bool>
    </property>
    <property name="text">
-    <string>OI 37</string>
+    <string>OI 30</string>
    </property>
   </action>
   <action name="actionEspont_neo">

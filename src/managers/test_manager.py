@@ -56,8 +56,8 @@ class TestManager(QObject):
         self.protocol_names = {
             "OD_44": "OD 44°C",
             "OI_44": "OI 44°C", 
-            "OD_37": "OD 37°C",
-            "OI_37": "OI 37°C",
+            "OD_30": "OD 30°C",
+            "OI_30": "OI 30°C",
             "seguimiento_lento": "Seguimiento Lento",
             "optoquinetico": "Optoquinético",
             "sacadas": "Sacadas",
