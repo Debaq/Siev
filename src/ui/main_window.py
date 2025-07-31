@@ -59,7 +59,7 @@ class MainWindow(QMainWindow):
         self.recording_start_time = None
         self.graph_time = 0.0
         self.last_update_time = None
-        self.MAX_RECORDING_TIME = 5 * 60  # 5 minutos
+        self.MAX_RECORDING_TIME = 2 * 60  # 5 minutos
         self.CALIBRATION_TIME = 1  # 1 segundo
 
         # === GESTOR DE USUARIOS ===
@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
         # === GESTOR DE PROTOCOLOS ===
         self.protocol_manager = ProtocolManager(self)
         self.current_evaluator = None  # Por compatibilidad, aunque se maneja en protocol_manager
-
+        self.fixed_on_flag = False
 
         self.calculadorahidp = CalculadoraHipoDpDialog()
 
@@ -915,12 +915,23 @@ class MainWindow(QMainWindow):
                 
         except Exception as e:
             print(f"Error configurando menú: {e}")
+    
+    def fixed_on(self):
+        print("me prendieron")
+        self.ui.btn_fixed.setText("Encendido")
+        self.serial_handler.send_data("L_12_ON")
+    def fixed_off(self):
+        print("me apagaron")
+        self.ui.btn_fixed.setText("Apagado")
+        self.serial_handler.send_data("L_12_OFF")
 
     def connect_events(self):
         """Conectar eventos principales"""
         try:
             # Botón de grabación
             self.ui.btn_start.clicked.connect(self.handle_btn_start_click)
+            self.ui.btn_fixed.pressed.connect(self.fixed_on)
+            self.ui.btn_fixed.released.connect(self.fixed_off)
             
             # Conectar acciones del menú archivo
             self.ui.actionNewUser.triggered.connect(self.open_new_user_dialog)
@@ -1143,13 +1154,7 @@ class MainWindow(QMainWindow):
                 )
                 self.total_data_points += 1
                 
-                # Debug cada 100 puntos para ver qué se está guardando
-                if self.total_data_points % 100 == 0:
-                    print(f"DATOS CRUDOS #{self.total_data_points}:")
-                    print(f"  Left: {raw_left}")
-                    print(f"  Right: {raw_right}")
-                    print(f"  IMU: ({raw_imu_x}, {raw_imu_y})")
-                    print(f"  Timestamp: {raw_timestamp}")
+
             
             # ===============================================
             # GRÁFICA CON DATOS CRUDOS TAMBIÉN
@@ -1659,7 +1664,16 @@ class MainWindow(QMainWindow):
                 
                 minutes = int(self.graph_time // 60)
                 seconds = int(self.graph_time % 60)
-                self.ui.lbl_time.setText(f"{minutes:02d}:{seconds:02d} / 05:00")
+                self.ui.lbl_time.setText(f"{minutes:02d}:{seconds:02d} / 02:00")
+                if 3 <= seconds >= 5:
+                    print("Tiempo de grabación casi completo, preparando para detener...")
+                    self.fixed_on_flag = True
+                    self.fixed_on()
+                else:
+                    if self.fixed_on_flag:
+                        self.fixed_off()
+                        self.fixed_on_flag = False
+                
                 
             elif self.is_calibrating:
                 elapsed = current_time - self.recording_start_time
