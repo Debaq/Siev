@@ -525,7 +525,7 @@ class VideoWidget(QObject):
             self.slider_time.setValue(0)
         
         if self.btn_start:
-            self.btn_start.setText("Play")
+            self.btn_start.setText("Reproducir")
 
     def _on_video_loaded(self, success):
         """Callback cuando se carga el video"""

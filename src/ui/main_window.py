@@ -897,7 +897,7 @@ class MainWindow(QMainWindow):
         """Conectar eventos principales"""
         try:
             # Botón de grabación
-            self.ui.btn_start.clicked.connect(self.toggle_recording)
+            self.ui.btn_start.clicked.connect(self.handle_btn_start_click)
             
             # Conectar acciones del menú archivo
             self.ui.actionNewUser.triggered.connect(self.open_new_user_dialog)
@@ -1029,7 +1029,7 @@ class MainWindow(QMainWindow):
                 self.ui.btn_start.clicked.disconnect()
             except:
                 pass
-            self.ui.btn_start.clicked.connect(self.toggle_recording)
+            self.ui.btn_start.clicked.connect(self.handle_btn_start_click)
         
         # Restaurar label
         if hasattr(self.ui, 'lbl_time'):
@@ -1039,6 +1039,16 @@ class MainWindow(QMainWindow):
         # Iniciar calibración
         QTimer.singleShot(500, self.start_calibration)
 
+
+    def handle_btn_start_click(self):
+        """Manejar click del botón start según el modo actual"""
+        if (hasattr(self.video_widget, 'is_in_player_mode') and 
+            self.video_widget.is_in_player_mode):
+            # Modo reproductor - delegar al video_widget
+            self.video_widget.toggle_playback()
+        else:
+            # Modo normal - función de grabación
+            self.toggle_recording()
 
     def handle_serial_data(self, data):
         """Procesar datos seriales del IMU"""
