@@ -26,6 +26,7 @@ from ui.dialogs.user_dialog import NewUserDialog
 from utils.SievManager import SievManager
 from utils.protocol_manager import ProtocolManager
 from datetime import datetime
+from ui.views.video_fullscreen_widget import VideoFullscreenWidget
 
 
 class MainWindow(QMainWindow):
@@ -77,6 +78,7 @@ class MainWindow(QMainWindow):
 
         # === INICIALIZAR COMPONENTES ===
         self.init_video_system()
+        self.init_fullscreen_system()
         self.init_serial_system()
         self.init_calibration_system()
         self.init_graphics_system()
@@ -113,7 +115,17 @@ class MainWindow(QMainWindow):
             self.video_recorder.is_recording and 
             self.is_recording):
             self.video_recorder.add_frame(gray_frame)
-                
+            
+    def init_fullscreen_system(self):
+        """Inicializar sistema de pantalla completa"""
+        self.fullscreen_widget = None
+        
+        # Conectar botón fullscreen
+        self.ui.btn_FullScreen.clicked.connect(self.toggle_fullscreen)
+        
+        print("Sistema fullscreen inicializado")
+
+
     def init_video_recorder(self):
         """Inicializar grabador de video"""
         try:
@@ -180,6 +192,7 @@ class MainWindow(QMainWindow):
                     video_data = self.load_video_for_test(test_id)
                     if video_data and self.video_widget:
                         self.video_widget.switch_to_player_mode(video_data)
+                        self.enable_fullscreen_button()
                     else:
                         print("No se encontró video para la prueba o no hay VideoWidget")
                         # Cambiar a modo live como fallback
@@ -1634,6 +1647,8 @@ class MainWindow(QMainWindow):
                 self.ui.lbl_time.setText(f"Calibrando: {int(remaining)}s")
         
         self.last_update_time = current_time
+        self.update_fullscreen_time()
+
 
     def start_calibration(self):
         """Iniciar calibración del sistema"""
@@ -2122,54 +2137,79 @@ class MainWindow(QMainWindow):
 
 
 
-    def debug_video_mode(self):
-        """Método de debug para verificar estado del video"""
-        if self.video_widget:
-            mode = "PLAYER" if getattr(self.video_widget, 'is_in_player_mode', False) else "LIVE"
-            has_player = bool(getattr(self.video_widget, 'video_player_thread', None))
-            has_live = bool(getattr(self.video_widget, 'video_thread', None))
-            
-            print(f"=== DEBUG VIDEO MODE ===")
-            print(f"Modo actual: {mode}")
-            print(f"Tiene PlayerThread: {has_player}")
-            print(f"Tiene VideoThread: {has_live}")
-            print(f"Slider time habilitado: {self.ui.slider_time.isEnabled()}")
-            print(f"Texto botón: {self.ui.btn_start.text()}")
-            print("========================")
 
+    def toggle_fullscreen(self):
+        """Alternar ventana fullscreen"""
+        if self.fullscreen_widget is None:
+            self.open_fullscreen()
+        else:
+            self.close_fullscreen()
 
-
-    def debug_siev_content(self, test_id):
-        """Debug: Mostrar contenido del .siev para una prueba"""
+    def open_fullscreen(self):
+        """Abrir ventana fullscreen"""
         try:
-            import tarfile
-            
-            if not self.current_user_siev:
-                print("No hay archivo .siev cargado")
+            if self.video_widget is None:
+                print("No hay video disponible para fullscreen")
                 return
             
-            print(f"=== DEBUG .SIEV PARA {test_id} ===")
+            # Crear ventana fullscreen
+            self.fullscreen_widget = VideoFullscreenWidget(self.video_widget)
             
-            with tarfile.open(self.current_user_siev, 'r:gz') as tar:
-                # Listar todos los archivos
-                members = tar.getnames()
-                print(f"Archivos en .siev: {members}")
-                
-                # Buscar archivos relacionados con la prueba
-                test_files = [m for m in members if test_id in m]
-                print(f"Archivos de la prueba {test_id}: {test_files}")
-                
-                # Verificar específicamente el video
-                video_path = f"videos/{test_id}.mp4"
-                if video_path in members:
-                    video_member = tar.getmember(video_path)
-                    print(f"Video encontrado: {video_path} ({video_member.size} bytes)")
-                else:
-                    print(f"Video NO encontrado: {video_path}")
-                    
+            # Conectar señal de video del video_widget
+            if hasattr(self.video_widget, 'sig_frame'):
+                self.video_widget.sig_frame.connect(self.fullscreen_widget.update_video_frame)
+            
+            # Sincronizar tiempo inicial
+            current_time = self.ui.lbl_time.text()
+            self.fullscreen_widget.update_time_display(current_time)
+            
+            # Cambiar texto del botón
+            self.ui.btn_FullScreen.setText("Cerrar FullScreen")
+            
+            print("Ventana fullscreen abierta")
+            
         except Exception as e:
-            print(f"Error en debug .siev: {e}")
-            
+            print(f"Error abriendo fullscreen: {e}")
+
+    def close_fullscreen(self):
+        """Cerrar ventana fullscreen"""
+        try:
+            if self.fullscreen_widget:
+                # Desconectar señales
+                if hasattr(self.video_widget, 'sig_frame'):
+                    try:
+                        self.video_widget.sig_frame.disconnect(self.fullscreen_widget.update_video_frame)
+                    except:
+                        pass
+                
+                # Cerrar ventana
+                self.fullscreen_widget.close()
+                self.fullscreen_widget = None
+                
+                # Restaurar texto del botón
+                self.ui.btn_FullScreen.setText("FullScreen")
+                
+                print("Ventana fullscreen cerrada")
+                
+        except Exception as e:
+            print(f"Error cerrando fullscreen: {e}")
+
+    def update_fullscreen_time(self):
+        """Actualizar tiempo en ventana fullscreen (llamar desde update_recording_time)"""
+        if self.fullscreen_widget:
+            current_time = self.ui.lbl_time.text()
+            self.fullscreen_widget.update_time_display(current_time)
+
+    def enable_fullscreen_button(self):
+        """Habilitar botón fullscreen cuando hay video"""
+        self.ui.btn_FullScreen.setEnabled(True)
+
+    def disable_fullscreen_button(self):
+        """Deshabilitar botón fullscreen"""
+        self.ui.btn_FullScreen.setEnabled(False)
+        if self.fullscreen_widget:
+            self.close_fullscreen()
+
 
     def keyPressEvent(self, event):
         """Manejar teclas de acceso rápido"""
@@ -2230,6 +2270,11 @@ class MainWindow(QMainWindow):
                 self.recording_timer.stop()
             if hasattr(self, 'graph_timer'):
                 self.graph_timer.stop()
+            
+            
+            if self.fullscreen_widget:
+                self.close_fullscreen()
+                
                 
             print("Aplicación cerrada correctamente")
         except Exception as e:

@@ -1,7 +1,8 @@
-"""
-VideoPlayerThread.py
-Thread para reproducir videos grabados frame por frame con análisis de pupila
-"""
+SILENT_MODE = True
+
+def print(*args, **kwargs):
+    if not SILENT_MODE:
+        __builtins__['print'](*args, **kwargs)
 
 import cv2
 import numpy as np

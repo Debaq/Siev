@@ -1,3 +1,4 @@
+        
 import numpy as np
 from PySide6.QtCore import QThread, Signal,QObject
 from PySide6.QtGui import QImage, QPixmap
@@ -394,7 +395,7 @@ class VideoWidget(QObject):
     def switch_to_player_mode(self, video_data):
         """Cambiar a modo reproductor de video"""
         print("=== CAMBIANDO A MODO REPRODUCTOR ===")
-        
+
         # 1. Destruir VideoThread si existe
         if hasattr(self, 'video_thread') and self.video_thread:
             print("Destruyendo VideoThread...")
@@ -417,6 +418,7 @@ class VideoWidget(QObject):
         # 5. Iniciar timer de actualización
         self.time_update_timer.start(100)  # Actualizar cada 100ms
         
+
         print("Modo reproductor activado")
 
     def _create_new_video_thread(self, camera_id):
