@@ -773,6 +773,10 @@ class MainWindow(QMainWindow):
             self.serial_thread = SerialReadThread(self.serial_handler)
             self.serial_thread.data_received.connect(self.handle_serial_data)
             self.serial_thread.start()
+            self.serial_handler.send_data("PAUSE")
+            self.serial_handler.send_data("L_12_OFF")
+            self.serial_handler.send_data("L_14_OFF")
+
             print("Sistema serial inicializado")
         except Exception as e:
             print(f"Error inicializando serial: {e}")
