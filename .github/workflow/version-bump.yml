@@ -1,0 +1,45 @@
+name: Auto Version Bump
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Bump version
+      run: |
+        python -c "
+        import json
+
+        with open('src/VERSION.json', 'r') as f:
+            data = json.load(f)
+
+        version = data['version'].split('.')
+        version[2] = str(int(version[2]) + 1)
+        data['version'] = '.'.join(version)
+
+        with open('src/VERSION.json', 'w') as f:
+            json.dump(data, f, indent=2)
+
+        print(f'Version bumped to {data[\"version\"]}')
+        "
+
+    - name: Commit version bump
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add src/VERSION.json
+        git commit -m "Auto bump version [skip ci]" || exit 0
+        git push
