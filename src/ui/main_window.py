@@ -627,12 +627,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error actualizando display de reproducción: {e}")
 
-
-
-
-
-
-
     def fill_cmbres(self, cb_resolution, resoluciones, max_res):
         """
         Llena un combobox con las resoluciones disponibles
