@@ -2,7 +2,7 @@ name: Auto Version Bump
 
 on:
   push:
-    branches: [ main ]
+    branches: [ development ]
 
 jobs:
   bump-version:
