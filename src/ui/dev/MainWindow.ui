@@ -50,6 +50,13 @@
           </column>
          </widget>
         </item>
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_6">
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+         </layout>
+        </item>
        </layout>
       </item>
       <item>
@@ -357,10 +364,6 @@
           </property>
          </widget>
         </item>
-       </layout>
-      </item>
-      <item>
-       <layout class="QVBoxLayout" name="verticalLayout">
         <item>
          <widget class="QLabel" name="lbl_time">
           <property name="text">
@@ -371,6 +374,10 @@
           </property>
          </widget>
         </item>
+       </layout>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="verticalLayout">
         <item>
          <spacer name="horizontalSpacer">
           <property name="orientation">
@@ -405,6 +412,180 @@
       </property>
       <item>
        <layout class="QVBoxLayout" name="verticalLayout_5"/>
+      </item>
+      <item>
+       <layout class="QGridLayout" name="gridLayout_2">
+        <property name="leftMargin">
+         <number>30</number>
+        </property>
+        <item row="2" column="3">
+         <widget class="QLabel" name="label_5">
+          <property name="text">
+           <string>Amplitud</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="4">
+         <widget class="QSpinBox" name="spin_frec"/>
+        </item>
+        <item row="3" column="2">
+         <widget class="QComboBox" name="cb_ritm">
+          <item>
+           <property name="text">
+            <string>Regular</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Irregular</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item row="3" column="4">
+         <widget class="QSpinBox" name="spin_vert">
+          <property name="maximum">
+           <number>3</number>
+          </property>
+         </widget>
+        </item>
+        <item row="5" column="2">
+         <spacer name="verticalSpacer_3">
+          <property name="orientation">
+           <enum>Qt::Orientation::Vertical</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>40</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item row="3" column="0">
+         <widget class="QLabel" name="label_6">
+          <property name="text">
+           <string>Ritmo</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="3">
+         <widget class="QLabel" name="label_4">
+          <property name="text">
+           <string>Frecuencia</string>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="4">
+         <widget class="QComboBox" name="cb_ofi">
+          <item>
+           <property name="text">
+            <string>Positivo</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Negativo</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item row="1" column="2">
+         <widget class="QComboBox" name="cb_dir">
+          <item>
+           <property name="text">
+            <string>Derecha</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Izquierda</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item row="2" column="0">
+         <widget class="QLabel" name="label_3">
+          <property name="text">
+           <string>VCL</string>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="3">
+         <widget class="QLabel" name="label_7">
+          <property name="text">
+           <string>OFI</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="0">
+         <widget class="QLabel" name="label_2">
+          <property name="text">
+           <string>Dirección</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="4">
+         <widget class="QComboBox" name="cb_amp">
+          <item>
+           <property name="text">
+            <string>Pequeña</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Mediana</string>
+           </property>
+          </item>
+          <item>
+           <property name="text">
+            <string>Grande</string>
+           </property>
+          </item>
+         </widget>
+        </item>
+        <item row="3" column="3">
+         <widget class="QLabel" name="label_8">
+          <property name="text">
+           <string>Vertigo</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="2">
+         <widget class="QDoubleSpinBox" name="spin_vcl">
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="0">
+         <widget class="QCheckBox" name="chbx_nausea">
+          <property name="text">
+           <string>Náuseas</string>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="2">
+         <widget class="QCheckBox" name="chbx_vomito">
+          <property name="text">
+           <string>Vómito</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="2">
+         <spacer name="verticalSpacer_4">
+          <property name="orientation">
+           <enum>Qt::Orientation::Vertical</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>40</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
       </item>
       <item>
        <layout class="QVBoxLayout" name="verticalLayout_8">
@@ -460,8 +641,8 @@
      </property>
      <addaction name="actionOD_44"/>
      <addaction name="actionOI_44"/>
-     <addaction name="actionOD_37"/>
-     <addaction name="actionOI37"/>
+     <addaction name="actionOD_30"/>
+     <addaction name="actionOI_30"/>
     </widget>
     <addaction name="actionEspont_neo"/>
     <addaction name="menuPruebas_Calor_cas"/>
@@ -489,7 +670,6 @@
     <property name="title">
      <string>Configuración</string>
     </property>
-    <addaction name="actionCalibrar"/>
     <addaction name="actionCambiar_evaluador"/>
    </widget>
    <widget class="QMenu" name="menuPosicionales">
@@ -500,10 +680,21 @@
      <string>Posicionales</string>
     </property>
    </widget>
+   <widget class="QMenu" name="menuHerramientas">
+    <property name="title">
+     <string>Herramientas</string>
+    </property>
+    <addaction name="actionInforme"/>
+    <addaction name="separator"/>
+    <addaction name="actionCalculadora_hipo_dp"/>
+    <addaction name="separator"/>
+    <addaction name="actionCalibrar"/>
+   </widget>
    <addaction name="menuArchivo"/>
    <addaction name="menuCalofrica"/>
    <addaction name="menuOculomotoras"/>
    <addaction name="menuPosicionales"/>
+   <addaction name="menuHerramientas"/>
    <addaction name="menuConfiguraci_n"/>
   </widget>
   <action name="actionSalir">
@@ -547,20 +738,20 @@
     <string>OI 44</string>
    </property>
   </action>
-  <action name="actionOD_37">
+  <action name="actionOD_30">
    <property name="enabled">
     <bool>false</bool>
    </property>
    <property name="text">
-    <string>OD 37</string>
+    <string>OD 30</string>
    </property>
   </action>
-  <action name="actionOI37">
+  <action name="actionOI_30">
    <property name="enabled">
     <bool>false</bool>
    </property>
    <property name="text">
-    <string>OI 37</string>
+    <string>OI 30</string>
    </property>
   </action>
   <action name="actionEspont_neo">
@@ -626,6 +817,16 @@
   <action name="actionTestNoSave">
    <property name="text">
     <string>Test de Seguimiento sin guardar</string>
+   </property>
+  </action>
+  <action name="actionCalculadora_hipo_dp">
+   <property name="text">
+    <string>Calculadora hipo/dp</string>
+   </property>
+  </action>
+  <action name="actionInforme">
+   <property name="text">
+    <string>Informe</string>
    </property>
   </action>
  </widget>

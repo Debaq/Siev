@@ -17,11 +17,14 @@ class ConfigManager:
 
         self.config_path = os.path.join(data_path, "config", self.config_filename)
         
-        # Configuración por defecto
+        # Cargar versión desde VERSION.json
+        version_from_file = self._load_version_from_json()
+        
+        # Configuración por defecto (con versión cargada)
         self.default_config = {
             "app_name": "vng",
             "window_title": "VNG Application",
-            "version": "0.0.2",
+            "version": version_from_file,  # <-- CAMBIO AQUÍ
             "author": {
                 "name": "Nicolás Baier",
                 "email": "david.avila@uach.cl",
@@ -33,7 +36,7 @@ class ConfigManager:
                 "width": 800,
                 "height": 600
             },
-            "data_path": "~/siev_data",  # Cambiado para usar home del usuario
+            "data_path": "~/siev_data",
             "slider_settings": {
                 "slider_th_right": 16,
                 "slider_th_left": 19,
@@ -47,6 +50,9 @@ class ConfigManager:
         }
         
         self.load_config()
+        self.config["version"] = version_from_file
+        self.save_config()
+        
     
     def _get_base_path(self):
         """Obtener el directorio base de la aplicación"""
@@ -54,6 +60,21 @@ class ConfigManager:
             return os.path.dirname(sys.executable)
         else:
             return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        
+        
+
+    def _load_version_from_json(self):
+        """Cargar versión desde VERSION.json en src/"""
+        try:
+            version_path = os.path.join(self.base_path, "src", "VERSION.json")
+            with open(version_path, "r", encoding='utf-8') as f:
+                version_data = json.load(f)
+                return version_data.get("version", "ERROR")
+        except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+            print(f"No se pudo cargar VERSION.json: {e}")
+            return "ERROR"
+
+    
     
     def load_config(self):
         """Cargar configuración desde archivo JSON"""
@@ -151,8 +172,12 @@ class ConfigManager:
     
     def get_window_config(self):
         """Obtener configuración de ventana"""
+        version = self.config.get("version", "ERROR")
+        base_title = self.config.get("window_title", "VNG Application")
+        title_with_version = f"{base_title} v{version}"
+        
         return {
-            "title": self.config.get("window_title", "VNG Application"),
+            "title": title_with_version,
             "size": self.config.get("window_size", {"width": 800, "height": 600})
         }
     

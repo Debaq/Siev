@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 ################################################################################
-## Form generated from reading UI file 'MainWindowAqOsSw.ui'
+## Form generated from reading UI file 'MainWindowqIlEOJ.ui'
 ##
 ## Created by: Qt User Interface Compiler version 6.9.1
 ##
@@ -16,11 +16,12 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
     QIcon, QImage, QKeySequence, QLinearGradient,
     QPainter, QPalette, QPixmap, QRadialGradient,
     QTransform)
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFrame,
-    QHBoxLayout, QHeaderView, QLabel, QMainWindow,
-    QMenu, QMenuBar, QPushButton, QSizePolicy,
-    QSlider, QSpacerItem, QStatusBar, QToolButton,
-    QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBox,
+    QFrame, QGridLayout, QHBoxLayout, QHeaderView,
+    QLabel, QMainWindow, QMenu, QMenuBar,
+    QPushButton, QSizePolicy, QSlider, QSpacerItem,
+    QSpinBox, QStatusBar, QToolButton, QTreeWidget,
+    QTreeWidgetItem, QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -43,12 +44,12 @@ class Ui_MainWindow(object):
         self.actionOI_44 = QAction(MainWindow)
         self.actionOI_44.setObjectName(u"actionOI_44")
         self.actionOI_44.setEnabled(False)
-        self.actionOD_37 = QAction(MainWindow)
-        self.actionOD_37.setObjectName(u"actionOD_37")
-        self.actionOD_37.setEnabled(False)
-        self.actionOI37 = QAction(MainWindow)
-        self.actionOI37.setObjectName(u"actionOI37")
-        self.actionOI37.setEnabled(False)
+        self.actionOD_30 = QAction(MainWindow)
+        self.actionOD_30.setObjectName(u"actionOD_30")
+        self.actionOD_30.setEnabled(False)
+        self.actionOI_30 = QAction(MainWindow)
+        self.actionOI_30.setObjectName(u"actionOI_30")
+        self.actionOI_30.setEnabled(False)
         self.actionEspont_neo = QAction(MainWindow)
         self.actionEspont_neo.setObjectName(u"actionEspont_neo")
         self.actionEspont_neo.setEnabled(False)
@@ -74,6 +75,10 @@ class Ui_MainWindow(object):
         self.actionCambiar_evaluador.setObjectName(u"actionCambiar_evaluador")
         self.actionTestNoSave = QAction(MainWindow)
         self.actionTestNoSave.setObjectName(u"actionTestNoSave")
+        self.actionCalculadora_hipo_dp = QAction(MainWindow)
+        self.actionCalculadora_hipo_dp.setObjectName(u"actionCalculadora_hipo_dp")
+        self.actionInforme = QAction(MainWindow)
+        self.actionInforme.setObjectName(u"actionInforme")
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
         self.verticalLayout_4 = QVBoxLayout(self.centralwidget)
@@ -100,6 +105,12 @@ class Ui_MainWindow(object):
         self.listTestWidget.setObjectName(u"listTestWidget")
 
         self.verticalLayout_3.addWidget(self.listTestWidget)
+
+        self.horizontalLayout_6 = QHBoxLayout()
+        self.horizontalLayout_6.setObjectName(u"horizontalLayout_6")
+        self.horizontalLayout_6.setContentsMargins(-1, 0, -1, -1)
+
+        self.verticalLayout_3.addLayout(self.horizontalLayout_6)
 
 
         self.horizontalLayout_2.addLayout(self.verticalLayout_3)
@@ -276,17 +287,17 @@ class Ui_MainWindow(object):
 
         self.verticalLayout_2.addWidget(self.lbl_test)
 
+        self.lbl_time = QLabel(self.centralwidget)
+        self.lbl_time.setObjectName(u"lbl_time")
+        self.lbl_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.verticalLayout_2.addWidget(self.lbl_time)
+
 
         self.horizontalLayout_2.addLayout(self.verticalLayout_2)
 
         self.verticalLayout = QVBoxLayout()
         self.verticalLayout.setObjectName(u"verticalLayout")
-        self.lbl_time = QLabel(self.centralwidget)
-        self.lbl_time.setObjectName(u"lbl_time")
-        self.lbl_time.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.verticalLayout.addWidget(self.lbl_time)
-
         self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.verticalLayout.addItem(self.horizontalSpacer)
@@ -309,6 +320,111 @@ class Ui_MainWindow(object):
         self.verticalLayout_5.setObjectName(u"verticalLayout_5")
 
         self.horizontalLayout_4.addLayout(self.verticalLayout_5)
+
+        self.gridLayout_2 = QGridLayout()
+        self.gridLayout_2.setObjectName(u"gridLayout_2")
+        self.gridLayout_2.setContentsMargins(30, -1, -1, -1)
+        self.label_5 = QLabel(self.centralwidget)
+        self.label_5.setObjectName(u"label_5")
+
+        self.gridLayout_2.addWidget(self.label_5, 2, 3, 1, 1)
+
+        self.spin_frec = QSpinBox(self.centralwidget)
+        self.spin_frec.setObjectName(u"spin_frec")
+
+        self.gridLayout_2.addWidget(self.spin_frec, 1, 4, 1, 1)
+
+        self.cb_ritm = QComboBox(self.centralwidget)
+        self.cb_ritm.addItem("")
+        self.cb_ritm.addItem("")
+        self.cb_ritm.setObjectName(u"cb_ritm")
+
+        self.gridLayout_2.addWidget(self.cb_ritm, 3, 2, 1, 1)
+
+        self.spin_vert = QSpinBox(self.centralwidget)
+        self.spin_vert.setObjectName(u"spin_vert")
+        self.spin_vert.setMaximum(3)
+
+        self.gridLayout_2.addWidget(self.spin_vert, 3, 4, 1, 1)
+
+        self.verticalSpacer_3 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.gridLayout_2.addItem(self.verticalSpacer_3, 5, 2, 1, 1)
+
+        self.label_6 = QLabel(self.centralwidget)
+        self.label_6.setObjectName(u"label_6")
+
+        self.gridLayout_2.addWidget(self.label_6, 3, 0, 1, 1)
+
+        self.label_4 = QLabel(self.centralwidget)
+        self.label_4.setObjectName(u"label_4")
+
+        self.gridLayout_2.addWidget(self.label_4, 1, 3, 1, 1)
+
+        self.cb_ofi = QComboBox(self.centralwidget)
+        self.cb_ofi.addItem("")
+        self.cb_ofi.addItem("")
+        self.cb_ofi.setObjectName(u"cb_ofi")
+
+        self.gridLayout_2.addWidget(self.cb_ofi, 4, 4, 1, 1)
+
+        self.cb_dir = QComboBox(self.centralwidget)
+        self.cb_dir.addItem("")
+        self.cb_dir.addItem("")
+        self.cb_dir.setObjectName(u"cb_dir")
+
+        self.gridLayout_2.addWidget(self.cb_dir, 1, 2, 1, 1)
+
+        self.label_3 = QLabel(self.centralwidget)
+        self.label_3.setObjectName(u"label_3")
+
+        self.gridLayout_2.addWidget(self.label_3, 2, 0, 1, 1)
+
+        self.label_7 = QLabel(self.centralwidget)
+        self.label_7.setObjectName(u"label_7")
+
+        self.gridLayout_2.addWidget(self.label_7, 4, 3, 1, 1)
+
+        self.label_2 = QLabel(self.centralwidget)
+        self.label_2.setObjectName(u"label_2")
+
+        self.gridLayout_2.addWidget(self.label_2, 1, 0, 1, 1)
+
+        self.cb_amp = QComboBox(self.centralwidget)
+        self.cb_amp.addItem("")
+        self.cb_amp.addItem("")
+        self.cb_amp.addItem("")
+        self.cb_amp.setObjectName(u"cb_amp")
+
+        self.gridLayout_2.addWidget(self.cb_amp, 2, 4, 1, 1)
+
+        self.label_8 = QLabel(self.centralwidget)
+        self.label_8.setObjectName(u"label_8")
+
+        self.gridLayout_2.addWidget(self.label_8, 3, 3, 1, 1)
+
+        self.spin_vcl = QDoubleSpinBox(self.centralwidget)
+        self.spin_vcl.setObjectName(u"spin_vcl")
+        self.spin_vcl.setEnabled(False)
+
+        self.gridLayout_2.addWidget(self.spin_vcl, 2, 2, 1, 1)
+
+        self.chbx_nausea = QCheckBox(self.centralwidget)
+        self.chbx_nausea.setObjectName(u"chbx_nausea")
+
+        self.gridLayout_2.addWidget(self.chbx_nausea, 4, 0, 1, 1)
+
+        self.chbx_vomito = QCheckBox(self.centralwidget)
+        self.chbx_vomito.setObjectName(u"chbx_vomito")
+
+        self.gridLayout_2.addWidget(self.chbx_vomito, 4, 2, 1, 1)
+
+        self.verticalSpacer_4 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.gridLayout_2.addItem(self.verticalSpacer_4, 0, 2, 1, 1)
+
+
+        self.horizontalLayout_4.addLayout(self.gridLayout_2)
 
         self.verticalLayout_8 = QVBoxLayout()
         self.verticalLayout_8.setObjectName(u"verticalLayout_8")
@@ -357,19 +473,22 @@ class Ui_MainWindow(object):
         self.menuPosicionales = QMenu(self.menubar)
         self.menuPosicionales.setObjectName(u"menuPosicionales")
         self.menuPosicionales.setEnabled(False)
+        self.menuHerramientas = QMenu(self.menubar)
+        self.menuHerramientas.setObjectName(u"menuHerramientas")
         MainWindow.setMenuBar(self.menubar)
 
         self.menubar.addAction(self.menuArchivo.menuAction())
         self.menubar.addAction(self.menuCalofrica.menuAction())
         self.menubar.addAction(self.menuOculomotoras.menuAction())
         self.menubar.addAction(self.menuPosicionales.menuAction())
+        self.menubar.addAction(self.menuHerramientas.menuAction())
         self.menubar.addAction(self.menuConfiguraci_n.menuAction())
         self.menuCalofrica.addAction(self.actionEspont_neo)
         self.menuCalofrica.addAction(self.menuPruebas_Calor_cas.menuAction())
         self.menuPruebas_Calor_cas.addAction(self.actionOD_44)
         self.menuPruebas_Calor_cas.addAction(self.actionOI_44)
-        self.menuPruebas_Calor_cas.addAction(self.actionOD_37)
-        self.menuPruebas_Calor_cas.addAction(self.actionOI37)
+        self.menuPruebas_Calor_cas.addAction(self.actionOD_30)
+        self.menuPruebas_Calor_cas.addAction(self.actionOI_30)
         self.menuOculomotoras.addAction(self.actionSeguimiento_Lento)
         self.menuOculomotoras.addAction(self.actionOptoquinetico)
         self.menuOculomotoras.addAction(self.actionSacadas)
@@ -379,8 +498,12 @@ class Ui_MainWindow(object):
         self.menuArchivo.addAction(self.actionTestNoSave)
         self.menuArchivo.addSeparator()
         self.menuArchivo.addAction(self.actionExit)
-        self.menuConfiguraci_n.addAction(self.actionCalibrar)
         self.menuConfiguraci_n.addAction(self.actionCambiar_evaluador)
+        self.menuHerramientas.addAction(self.actionInforme)
+        self.menuHerramientas.addSeparator()
+        self.menuHerramientas.addAction(self.actionCalculadora_hipo_dp)
+        self.menuHerramientas.addSeparator()
+        self.menuHerramientas.addAction(self.actionCalibrar)
 
         self.retranslateUi(MainWindow)
 
@@ -399,8 +522,8 @@ class Ui_MainWindow(object):
         self.actionPosicional.setText(QCoreApplication.translate("MainWindow", u"Posicional", None))
         self.actionOD_44.setText(QCoreApplication.translate("MainWindow", u"OD 44", None))
         self.actionOI_44.setText(QCoreApplication.translate("MainWindow", u"OI 44", None))
-        self.actionOD_37.setText(QCoreApplication.translate("MainWindow", u"OD 37", None))
-        self.actionOI37.setText(QCoreApplication.translate("MainWindow", u"OI 37", None))
+        self.actionOD_30.setText(QCoreApplication.translate("MainWindow", u"OD 30", None))
+        self.actionOI_30.setText(QCoreApplication.translate("MainWindow", u"OI 30", None))
         self.actionEspont_neo.setText(QCoreApplication.translate("MainWindow", u"Espont\u00e1neo", None))
         self.actionSeguimiento_Lento.setText(QCoreApplication.translate("MainWindow", u"Seguimiento Lento", None))
         self.actionOptoquinetico.setText(QCoreApplication.translate("MainWindow", u"Optoquinetico", None))
@@ -411,6 +534,8 @@ class Ui_MainWindow(object):
         self.actionAbrir.setText(QCoreApplication.translate("MainWindow", u"Abrir...", None))
         self.actionCambiar_evaluador.setText(QCoreApplication.translate("MainWindow", u"Cambiar evaluador", None))
         self.actionTestNoSave.setText(QCoreApplication.translate("MainWindow", u"Test de Seguimiento sin guardar", None))
+        self.actionCalculadora_hipo_dp.setText(QCoreApplication.translate("MainWindow", u"Calculadora hipo/dp", None))
+        self.actionInforme.setText(QCoreApplication.translate("MainWindow", u"Informe", None))
         self.label.setText(QCoreApplication.translate("MainWindow", u"Pruebas", None))
         self.btn_FullScreen.setText(QCoreApplication.translate("MainWindow", u"FullScreen", None))
 #if QT_CONFIG(shortcut)
@@ -429,11 +554,34 @@ class Ui_MainWindow(object):
         self.lbl_test.setText("")
         self.lbl_time.setText("")
         self.lbl_text_temp.setText("")
+        self.label_5.setText(QCoreApplication.translate("MainWindow", u"Amplitud", None))
+        self.cb_ritm.setItemText(0, QCoreApplication.translate("MainWindow", u"Regular", None))
+        self.cb_ritm.setItemText(1, QCoreApplication.translate("MainWindow", u"Irregular", None))
+
+        self.label_6.setText(QCoreApplication.translate("MainWindow", u"Ritmo", None))
+        self.label_4.setText(QCoreApplication.translate("MainWindow", u"Frecuencia", None))
+        self.cb_ofi.setItemText(0, QCoreApplication.translate("MainWindow", u"Positivo", None))
+        self.cb_ofi.setItemText(1, QCoreApplication.translate("MainWindow", u"Negativo", None))
+
+        self.cb_dir.setItemText(0, QCoreApplication.translate("MainWindow", u"Derecha", None))
+        self.cb_dir.setItemText(1, QCoreApplication.translate("MainWindow", u"Izquierda", None))
+
+        self.label_3.setText(QCoreApplication.translate("MainWindow", u"VCL", None))
+        self.label_7.setText(QCoreApplication.translate("MainWindow", u"OFI", None))
+        self.label_2.setText(QCoreApplication.translate("MainWindow", u"Direcci\u00f3n", None))
+        self.cb_amp.setItemText(0, QCoreApplication.translate("MainWindow", u"Peque\u00f1a", None))
+        self.cb_amp.setItemText(1, QCoreApplication.translate("MainWindow", u"Mediana", None))
+        self.cb_amp.setItemText(2, QCoreApplication.translate("MainWindow", u"Grande", None))
+
+        self.label_8.setText(QCoreApplication.translate("MainWindow", u"Vertigo", None))
+        self.chbx_nausea.setText(QCoreApplication.translate("MainWindow", u"N\u00e1useas", None))
+        self.chbx_vomito.setText(QCoreApplication.translate("MainWindow", u"V\u00f3mito", None))
         self.menuCalofrica.setTitle(QCoreApplication.translate("MainWindow", u"VNG", None))
         self.menuPruebas_Calor_cas.setTitle(QCoreApplication.translate("MainWindow", u"Pruebas Calor\u00edcas", None))
         self.menuOculomotoras.setTitle(QCoreApplication.translate("MainWindow", u"Oculomotoras", None))
         self.menuArchivo.setTitle(QCoreApplication.translate("MainWindow", u"Archivo", None))
         self.menuConfiguraci_n.setTitle(QCoreApplication.translate("MainWindow", u"Configuraci\u00f3n", None))
         self.menuPosicionales.setTitle(QCoreApplication.translate("MainWindow", u"Posicionales", None))
+        self.menuHerramientas.setTitle(QCoreApplication.translate("MainWindow", u"Herramientas", None))
     # retranslateUi
 

@@ -385,10 +385,10 @@ class MainWindow(QMainWindow):
             self.ui.actionOD_44.triggered.connect(lambda: self.show_protocol_selection("OD_44"))
         if hasattr(self.ui, 'actionOI_44'):
             self.ui.actionOI_44.triggered.connect(lambda: self.show_protocol_selection("OI_44"))
-        if hasattr(self.ui, 'actionOD_37'):
-            self.ui.actionOD_37.triggered.connect(lambda: self.show_protocol_selection("OD_37"))
-        if hasattr(self.ui, 'actionOI37'):
-            self.ui.actionOI37.triggered.connect(lambda: self.show_protocol_selection("OI_37"))
+        if hasattr(self.ui, 'actionOD_30'):
+            self.ui.actionOD_30.triggered.connect(lambda: self.show_protocol_selection("OD_37"))
+        if hasattr(self.ui, 'actionOI_30'):
+            self.ui.actionOI_30.triggered.connect(lambda: self.show_protocol_selection("OI_37"))
 
         # Protocolos oculomotores
         if hasattr(self.ui, 'actionSeguimiento_Lento'):
@@ -410,7 +410,7 @@ class MainWindow(QMainWindow):
             self.ui.btn_start.setEnabled(enabled)
         
         # Menús calóricos
-        for action_name in ['actionOD_44', 'actionOI_44', 'actionOD_37', 'actionOI37']:
+        for action_name in ['actionOD_44', 'actionOI_44', 'actionOD_30', 'actionOI_30']:
             if hasattr(self.ui, action_name):
                 getattr(self.ui, action_name).setEnabled(enabled)
         

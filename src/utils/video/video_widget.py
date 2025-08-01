@@ -1,3 +1,4 @@
+        
 import numpy as np
 from PySide6.QtCore import QThread, Signal,QObject
 from PySide6.QtGui import QImage, QPixmap
@@ -394,7 +395,7 @@ class VideoWidget(QObject):
     def switch_to_player_mode(self, video_data):
         """Cambiar a modo reproductor de video"""
         print("=== CAMBIANDO A MODO REPRODUCTOR ===")
-        
+
         # 1. Destruir VideoThread si existe
         if hasattr(self, 'video_thread') and self.video_thread:
             print("Destruyendo VideoThread...")
@@ -417,6 +418,7 @@ class VideoWidget(QObject):
         # 5. Iniciar timer de actualización
         self.time_update_timer.start(100)  # Actualizar cada 100ms
         
+
         print("Modo reproductor activado")
 
     def _create_new_video_thread(self, camera_id):
@@ -525,7 +527,9 @@ class VideoWidget(QObject):
             self.slider_time.setValue(0)
         
         if self.btn_start:
-            self.btn_start.setText("Play")
+            self.btn_start.setText("Reproducir")
+            self.btn_start.setEnabled(True)  
+
 
     def _on_video_loaded(self, success):
         """Callback cuando se carga el video"""
@@ -595,7 +599,26 @@ class VideoWidget(QObject):
             self.slider_time.blockSignals(True)
             self.slider_time.setValue(slider_value)
             self.slider_time.blockSignals(False)
+            
+            
+            self._update_graph_line_position(current_time)
 
+
+    def _update_graph_line_position(self, time_seconds):
+        """Actualizar posición de línea del gráfico durante reproducción automática"""
+        try:
+            # Buscar main_window a través de parent hierarchy
+            widget = self.camera_frame
+            while widget and not hasattr(widget, 'plot_widget'):
+                widget = widget.parent()
+            
+            if (widget and hasattr(widget, 'plot_widget') and 
+                hasattr(widget.plot_widget, 'set_video_time_position')):
+                widget.plot_widget.set_video_time_position(time_seconds)
+                
+        except Exception as e:
+            print(f"Error actualizando línea del gráfico: {e}")
+        
 
     def cleanup(self):
         """Limpia los recursos al cerrar la aplicación"""

@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QMainWindow, QMenu, QWidgetAction, QSlider,
 
 from PySide6.QtCore import Qt, QTimer
 
-# Diálogos
+# Diálogos y versionado funciona?ddd
 from ui.dialogs.tracking_dialog import TrackingCalibrationDialog
 
 # Utils
@@ -26,6 +26,9 @@ from ui.dialogs.user_dialog import NewUserDialog
 from utils.SievManager import SievManager
 from utils.protocol_manager import ProtocolManager
 from datetime import datetime
+from ui.views.video_fullscreen_widget import VideoFullscreenWidget
+from ui.dialogs.calculadora_hipo_dp_dialog import CalculadoraHipoDpDialog
+from ui.dialogs.report_wizard import open_report_wizard
 
 
 class MainWindow(QMainWindow):
@@ -56,7 +59,7 @@ class MainWindow(QMainWindow):
         self.recording_start_time = None
         self.graph_time = 0.0
         self.last_update_time = None
-        self.MAX_RECORDING_TIME = 5 * 60  # 5 minutos
+        self.MAX_RECORDING_TIME = 2 * 60  # 5 minutos
         self.CALIBRATION_TIME = 1  # 1 segundo
 
         # === GESTOR DE USUARIOS ===
@@ -66,6 +69,11 @@ class MainWindow(QMainWindow):
         # === GESTOR DE PROTOCOLOS ===
         self.protocol_manager = ProtocolManager(self)
         self.current_evaluator = None  # Por compatibilidad, aunque se maneja en protocol_manager
+        self.fixed_on_flag = False
+        
+
+        self.calculadorahidp = CalculadoraHipoDpDialog()
+
 
         self.enable_test_functions(False)
 
@@ -77,6 +85,7 @@ class MainWindow(QMainWindow):
 
         # === INICIALIZAR COMPONENTES ===
         self.init_video_system()
+        self.init_fullscreen_system()
         self.init_serial_system()
         self.init_calibration_system()
         self.init_graphics_system()
@@ -104,7 +113,11 @@ class MainWindow(QMainWindow):
         
         self.showMaximized()
         print("=== SISTEMA VNG INICIADO CORRECTAMENTE ===")
+
                 # Conectar todos los sliders
+
+    def calculadora_hipo_dp(self):
+        self.calculadorahidp.exec()
 
 
     def handle_gray_frame_for_video(self, gray_frame):
@@ -113,7 +126,17 @@ class MainWindow(QMainWindow):
             self.video_recorder.is_recording and 
             self.is_recording):
             self.video_recorder.add_frame(gray_frame)
-                
+            
+    def init_fullscreen_system(self):
+        """Inicializar sistema de pantalla completa"""
+        self.fullscreen_widget = None
+        
+        # Conectar botón fullscreen
+        self.ui.btn_FullScreen.clicked.connect(self.toggle_fullscreen)
+        
+        print("Sistema fullscreen inicializado")
+
+
     def init_video_recorder(self):
         """Inicializar grabador de video"""
         try:
@@ -180,6 +203,7 @@ class MainWindow(QMainWindow):
                     video_data = self.load_video_for_test(test_id)
                     if video_data and self.video_widget:
                         self.video_widget.switch_to_player_mode(video_data)
+                        self.enable_fullscreen_button()
                     else:
                         print("No se encontró video para la prueba o no hay VideoWidget")
                         # Cambiar a modo live como fallback
@@ -603,12 +627,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error actualizando display de reproducción: {e}")
 
-
-
-
-
-
-
     def fill_cmbres(self, cb_resolution, resoluciones, max_res):
         """
         Llena un combobox con las resoluciones disponibles
@@ -749,6 +767,10 @@ class MainWindow(QMainWindow):
             self.serial_thread = SerialReadThread(self.serial_handler)
             self.serial_thread.data_received.connect(self.handle_serial_data)
             self.serial_thread.start()
+            self.serial_handler.send_data("PAUSE")
+            self.serial_handler.send_data("L_12_OFF")
+            self.serial_handler.send_data("L_14_OFF")
+
             print("Sistema serial inicializado")
         except Exception as e:
             print(f"Error inicializando serial: {e}")
@@ -892,12 +914,23 @@ class MainWindow(QMainWindow):
                 
         except Exception as e:
             print(f"Error configurando menú: {e}")
+    
+    def fixed_on(self):
+        print("me prendieron")
+        self.ui.btn_fixed.setText("Encendido")
+        self.serial_handler.send_data("L_12_ON")
+    def fixed_off(self):
+        print("me apagaron")
+        self.ui.btn_fixed.setText("Apagado")
+        self.serial_handler.send_data("L_12_OFF")
 
     def connect_events(self):
         """Conectar eventos principales"""
         try:
             # Botón de grabación
-            self.ui.btn_start.clicked.connect(self.toggle_recording)
+            self.ui.btn_start.clicked.connect(self.handle_btn_start_click)
+            self.ui.btn_fixed.pressed.connect(self.fixed_on)
+            self.ui.btn_fixed.released.connect(self.fixed_off)
             
             # Conectar acciones del menú archivo
             self.ui.actionNewUser.triggered.connect(self.open_new_user_dialog)
@@ -913,10 +946,10 @@ class MainWindow(QMainWindow):
                 self.ui.actionOD_44.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OD_44"))
             if hasattr(self.ui, 'actionOI_44'):
                 self.ui.actionOI_44.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OI_44"))
-            if hasattr(self.ui, 'actionOD_37'):
-                self.ui.actionOD_37.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OD_37"))
-            if hasattr(self.ui, 'actionOI37'):
-                self.ui.actionOI37.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OI_37"))
+            if hasattr(self.ui, 'actionOD_30'):
+                self.ui.actionOD_30.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OD_30"))
+            if hasattr(self.ui, 'actionOI_30'):
+                self.ui.actionOI_30.triggered.connect(lambda: self.protocol_manager.open_protocol_dialog("OI_30"))
 
             # Conectar protocolos oculomotores
             if hasattr(self.ui, 'actionSeguimiento_Lento'):
@@ -931,9 +964,20 @@ class MainWindow(QMainWindow):
             # Conectar calibración
             if hasattr(self.ui, 'actionCalibrar'):
                 self.ui.actionCalibrar.triggered.connect(self.start_calibration)
-                    
+            if hasattr(self.ui, 'actionCalculadora_hipo_dp'):
+                self.ui.actionCalculadora_hipo_dp.triggered.connect(self.calculadora_hipo_dp)
+            if hasattr(self.ui, 'actionInforme'):
+                self.ui.actionInforme.triggered.connect(self.openInforme)
+                
+                
+
         except Exception as e:
             print(f"Error conectando eventos: {e}")
+
+
+    def openInforme(self):
+        open_report_wizard(self)
+
 
     def show_protocol_selection(self):
         """Mostrar selección completa de protocolo - ACTUALIZADO"""
@@ -1029,7 +1073,7 @@ class MainWindow(QMainWindow):
                 self.ui.btn_start.clicked.disconnect()
             except:
                 pass
-            self.ui.btn_start.clicked.connect(self.toggle_recording)
+            self.ui.btn_start.clicked.connect(self.handle_btn_start_click)
         
         # Restaurar label
         if hasattr(self.ui, 'lbl_time'):
@@ -1039,6 +1083,16 @@ class MainWindow(QMainWindow):
         # Iniciar calibración
         QTimer.singleShot(500, self.start_calibration)
 
+
+    def handle_btn_start_click(self):
+        """Manejar click del botón start según el modo actual"""
+        if (hasattr(self.video_widget, 'is_in_player_mode') and 
+            self.video_widget.is_in_player_mode):
+            # Modo reproductor - delegar al video_widget
+            self.video_widget.toggle_playback()
+        else:
+            # Modo normal - función de grabación
+            self.toggle_recording()
 
     def handle_serial_data(self, data):
         """Procesar datos seriales del IMU"""
@@ -1099,13 +1153,7 @@ class MainWindow(QMainWindow):
                 )
                 self.total_data_points += 1
                 
-                # Debug cada 100 puntos para ver qué se está guardando
-                if self.total_data_points % 100 == 0:
-                    print(f"DATOS CRUDOS #{self.total_data_points}:")
-                    print(f"  Left: {raw_left}")
-                    print(f"  Right: {raw_right}")
-                    print(f"  IMU: ({raw_imu_x}, {raw_imu_y})")
-                    print(f"  Timestamp: {raw_timestamp}")
+
             
             # ===============================================
             # GRÁFICA CON DATOS CRUDOS TAMBIÉN
@@ -1615,7 +1663,16 @@ class MainWindow(QMainWindow):
                 
                 minutes = int(self.graph_time // 60)
                 seconds = int(self.graph_time % 60)
-                self.ui.lbl_time.setText(f"{minutes:02d}:{seconds:02d} / 05:00")
+                self.ui.lbl_time.setText(f"{minutes:02d}:{seconds:02d} / 02:00")
+                if 90 <= seconds < 100:
+                    if not self.fixed_on_flag:
+                        self.fixed_on_flag = True
+                        self.fixed_on()
+                elif seconds >= 100:
+                    if self.fixed_on_flag:
+                        self.fixed_off()
+                        self.fixed_on_flag = False
+                
                 
             elif self.is_calibrating:
                 elapsed = current_time - self.recording_start_time
@@ -1624,6 +1681,8 @@ class MainWindow(QMainWindow):
                 self.ui.lbl_time.setText(f"Calibrando: {int(remaining)}s")
         
         self.last_update_time = current_time
+        self.update_fullscreen_time()
+
 
     def start_calibration(self):
         """Iniciar calibración del sistema"""
@@ -2014,10 +2073,10 @@ class MainWindow(QMainWindow):
                 self.ui.actionOD_44.setEnabled(enabled)
             if hasattr(self.ui, 'actionOI_44'):
                 self.ui.actionOI_44.setEnabled(enabled)
-            if hasattr(self.ui, 'actionOD_37'):
-                self.ui.actionOD_37.setEnabled(enabled)
-            if hasattr(self.ui, 'actionOI37'):
-                self.ui.actionOI37.setEnabled(enabled)
+            if hasattr(self.ui, 'actionOD_30'):
+                self.ui.actionOD_30.setEnabled(enabled)
+            if hasattr(self.ui, 'actionOI_30'):
+                self.ui.actionOI_30.setEnabled(enabled)
             
             # AGREGAR ESTAS LÍNEAS para habilitar pruebas OCULOMOTORAS:
             if hasattr(self.ui, 'actionEspont_neo'):
@@ -2112,54 +2171,79 @@ class MainWindow(QMainWindow):
 
 
 
-    def debug_video_mode(self):
-        """Método de debug para verificar estado del video"""
-        if self.video_widget:
-            mode = "PLAYER" if getattr(self.video_widget, 'is_in_player_mode', False) else "LIVE"
-            has_player = bool(getattr(self.video_widget, 'video_player_thread', None))
-            has_live = bool(getattr(self.video_widget, 'video_thread', None))
-            
-            print(f"=== DEBUG VIDEO MODE ===")
-            print(f"Modo actual: {mode}")
-            print(f"Tiene PlayerThread: {has_player}")
-            print(f"Tiene VideoThread: {has_live}")
-            print(f"Slider time habilitado: {self.ui.slider_time.isEnabled()}")
-            print(f"Texto botón: {self.ui.btn_start.text()}")
-            print("========================")
 
+    def toggle_fullscreen(self):
+        """Alternar ventana fullscreen"""
+        if self.fullscreen_widget is None:
+            self.open_fullscreen()
+        else:
+            self.close_fullscreen()
 
-
-    def debug_siev_content(self, test_id):
-        """Debug: Mostrar contenido del .siev para una prueba"""
+    def open_fullscreen(self):
+        """Abrir ventana fullscreen"""
         try:
-            import tarfile
-            
-            if not self.current_user_siev:
-                print("No hay archivo .siev cargado")
+            if self.video_widget is None:
+                print("No hay video disponible para fullscreen")
                 return
             
-            print(f"=== DEBUG .SIEV PARA {test_id} ===")
+            # Crear ventana fullscreen
+            self.fullscreen_widget = VideoFullscreenWidget(self.video_widget)
             
-            with tarfile.open(self.current_user_siev, 'r:gz') as tar:
-                # Listar todos los archivos
-                members = tar.getnames()
-                print(f"Archivos en .siev: {members}")
-                
-                # Buscar archivos relacionados con la prueba
-                test_files = [m for m in members if test_id in m]
-                print(f"Archivos de la prueba {test_id}: {test_files}")
-                
-                # Verificar específicamente el video
-                video_path = f"videos/{test_id}.mp4"
-                if video_path in members:
-                    video_member = tar.getmember(video_path)
-                    print(f"Video encontrado: {video_path} ({video_member.size} bytes)")
-                else:
-                    print(f"Video NO encontrado: {video_path}")
-                    
+            # Conectar señal de video del video_widget
+            if hasattr(self.video_widget, 'sig_frame'):
+                self.video_widget.sig_frame.connect(self.fullscreen_widget.update_video_frame)
+            
+            # Sincronizar tiempo inicial
+            current_time = self.ui.lbl_time.text()
+            self.fullscreen_widget.update_time_display(current_time)
+            
+            # Cambiar texto del botón
+            self.ui.btn_FullScreen.setText("Cerrar FullScreen")
+            
+            print("Ventana fullscreen abierta")
+            
         except Exception as e:
-            print(f"Error en debug .siev: {e}")
-            
+            print(f"Error abriendo fullscreen: {e}")
+
+    def close_fullscreen(self):
+        """Cerrar ventana fullscreen"""
+        try:
+            if self.fullscreen_widget:
+                # Desconectar señales
+                if hasattr(self.video_widget, 'sig_frame'):
+                    try:
+                        self.video_widget.sig_frame.disconnect(self.fullscreen_widget.update_video_frame)
+                    except:
+                        pass
+                
+                # Cerrar ventana
+                self.fullscreen_widget.close()
+                self.fullscreen_widget = None
+                
+                # Restaurar texto del botón
+                self.ui.btn_FullScreen.setText("FullScreen")
+                
+                print("Ventana fullscreen cerrada")
+                
+        except Exception as e:
+            print(f"Error cerrando fullscreen: {e}")
+
+    def update_fullscreen_time(self):
+        """Actualizar tiempo en ventana fullscreen (llamar desde update_recording_time)"""
+        if self.fullscreen_widget:
+            current_time = self.ui.lbl_time.text()
+            self.fullscreen_widget.update_time_display(current_time)
+
+    def enable_fullscreen_button(self):
+        """Habilitar botón fullscreen cuando hay video"""
+        self.ui.btn_FullScreen.setEnabled(True)
+
+    def disable_fullscreen_button(self):
+        """Deshabilitar botón fullscreen"""
+        self.ui.btn_FullScreen.setEnabled(False)
+        if self.fullscreen_widget:
+            self.close_fullscreen()
+
 
     def keyPressEvent(self, event):
         """Manejar teclas de acceso rápido"""
@@ -2220,6 +2304,11 @@ class MainWindow(QMainWindow):
                 self.recording_timer.stop()
             if hasattr(self, 'graph_timer'):
                 self.graph_timer.stop()
+            
+            
+            if self.fullscreen_widget:
+                self.close_fullscreen()
+                
                 
             print("Aplicación cerrada correctamente")
         except Exception as e:
