@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QMainWindow, QMenu, QWidgetAction, QSlider,
 
 from PySide6.QtCore import Qt, QTimer
 
-# Diálogos
+# Diálogos y versiona
 from ui.dialogs.tracking_dialog import TrackingCalibrationDialog
 
 # Utils
