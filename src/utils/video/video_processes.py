@@ -442,15 +442,17 @@ class VideoProcesses:
             
 
             # Agregar punto verde si fixed_on está activo
-            if self.fixed_on_flag.value:
-                center = (w - 25, 35)  # Posición del punto (al lado del FPS)
-                radius = 8
-                color = (0, 255, 0)  # Verde en RGB
-                cv2.circle(final_frame, center, radius, color, -1)  # -1 para rellenar el círculo
-    
-                # Opcional: agregar borde más oscuro para mejor visibilidad
-                cv2.circle(final_frame, center, radius, (0, 200, 0), 2)  # Borde verde más oscuro
-
+            try:
+                if self.fixed_on_flag.value:
+                    center = (w - 25, 35)  # Posición del punto (al lado del FPS)
+                    radius = 8
+                    color = (0, 255, 0)  # Verde en RGB
+                    cv2.circle(final_frame, center, radius, color, -1)  # -1 para rellenar el círculo
+        
+                    # Opcional: agregar borde más oscuro para mejor visibilidad
+                    cv2.circle(final_frame, center, radius, (0, 200, 0), 2)  # Borde verde más oscuro
+            except:
+                pass
             # Publicar resultado final para la UI
             output = {
                 'frame': final_frame,

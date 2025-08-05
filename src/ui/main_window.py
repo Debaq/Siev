@@ -29,6 +29,7 @@ from datetime import datetime
 from ui.views.video_fullscreen_widget import VideoFullscreenWidget
 from ui.dialogs.calculadora_hipo_dp_dialog import CalculadoraHipoDpDialog
 from ui.dialogs.report_wizard import open_report_wizard
+from utils.graphing.caloric_graph import CaloricPlotWidget
 
 
 class MainWindow(QMainWindow):
@@ -107,7 +108,7 @@ class MainWindow(QMainWindow):
             print("Referencias UI configuradas para VideoWidget")
             
         self.setup_video_graph_sync()
-
+        self.setup_dynamic_plot_widgets()
         # === MOSTRAR PROTOCOLO ===
         #QTimer.singleShot(500, self.show_protocol_selection)
         
@@ -116,8 +117,115 @@ class MainWindow(QMainWindow):
 
                 # Conectar todos los sliders
 
+    def setup_dynamic_plot_widgets(self):
+        """Configura el sistema de cambio dinámico de widgets de gráficos."""
+        try:
+            # Widget actual (inicialmente TriplePlotWidget)
+            self.current_plot_type = "triple"
+            
+            # Referencias a ambos widgets
+            self.triple_plot_widget = self.plot_widget  # Ya existe
+            self.caloric_plot_widget = None  # Se crea bajo demanda
+            
+            print("Sistema de widgets dinámicos configurado")
+            
+        except Exception as e:
+            print(f"Error configurando widgets dinámicos: {e}")
+        
     def calculadora_hipo_dp(self):
         self.calculadorahidp.exec()
+
+
+
+
+    def switch_to_caloric_plot(self):
+        """Cambia al widget de gráfico calórico."""
+        try:
+            if self.current_plot_type == "caloric":
+                print("Ya está en modo calórico")
+                return True
+            
+            print("Cambiando a CaloricPlotWidget...")
+            
+            # Crear widget calórico si no existe
+            if self.caloric_plot_widget is None:
+                self.caloric_plot_widget = CaloricPlotWidget(
+                    parent=self.ui.layout_graph.parent(),
+                    total_duration=120  # 2 minutos por defecto para calóricas
+                )
+            
+            # Cambiar widget en el layout
+            success = self._switch_plot_widget(self.caloric_plot_widget, "caloric")
+            
+            if success:
+                # Actualizar RecordHandler para usar el nuevo widget
+                if hasattr(self, 'record_handler'):
+                    self.record_handler.plot_widget = self.caloric_plot_widget
+                
+                print("✓ Cambiado a gráfico calórico")
+                return True
+                
+        except Exception as e:
+            print(f"Error cambiando a gráfico calórico: {e}")
+            return False
+
+    def switch_to_triple_plot(self):
+        """Cambia al widget de gráfico triple (normal)."""
+        try:
+            if self.current_plot_type == "triple":
+                print("Ya está en modo triple")
+                return True
+            
+            print("Cambiando a TriplePlotWidget...")
+            
+            # Cambiar widget en el layout
+            success = self._switch_plot_widget(self.triple_plot_widget, "triple")
+            
+            if success:
+                # Actualizar RecordHandler para usar el widget original
+                if hasattr(self, 'record_handler'):
+                    self.record_handler.plot_widget = self.triple_plot_widget
+                
+                print("✓ Cambiado a gráfico triple")
+                return True
+                
+        except Exception as e:
+            print(f"Error cambiando a gráfico triple: {e}")
+            return False
+
+    def _switch_plot_widget(self, new_widget, widget_type):
+        """Método interno para intercambiar widgets en el layout."""
+        try:
+            # Obtener el layout del contenedor de gráficos
+            graphics_layout = self.ui.layout_graph.layout()
+            if not graphics_layout:
+                print("Error: No se encontró layout de gráficos")
+                return False
+            
+            # Remover widget actual del layout (sin eliminarlo)
+            current_widget = self.plot_widget
+            if current_widget:
+                graphics_layout.removeWidget(current_widget)
+                current_widget.setParent(None)  # Desasociar del layout pero no eliminar
+            
+            # Agregar nuevo widget al layout
+            graphics_layout.addWidget(new_widget)
+            
+            # Actualizar referencias
+            self.plot_widget = new_widget
+            self.current_plot_type = widget_type
+            
+            print(f"Widget intercambiado: {widget_type}")
+            return True
+            
+        except Exception as e:
+            print(f"Error intercambiando widget: {e}")
+            return False
+
+    def is_caloric_test(self, test_type):
+        """Determina si un tipo de prueba es calórica."""
+        caloric_tests = ["OD_44", "OI_44", "OD_30", "OI_30"]
+        return test_type in caloric_tests
 
 
     def handle_gray_frame_for_video(self, gray_frame):
@@ -314,6 +422,35 @@ class MainWindow(QMainWindow):
                 
         except Exception as e:
             print(f"Error actualizando gráfico para selección: {e}")
+            
+        # === NUEVA LÓGICA: CAMBIO DINÁMICO DE WIDGET ===
+        try:
+            selected_test_data = self.get_selected_test_data()
+            
+            if selected_test_data:
+                test_data = selected_test_data['test_data']
+                test_type = test_data.get('tipo', '')
+                
+                print(f"Evaluando tipo de prueba: {test_type}")
+                
+                # Determinar si es prueba calórica
+                if self.is_caloric_test(test_type):
+                    print(f"Prueba calórica detectada: {test_type}")
+                    self.switch_to_caloric_plot()
+                else:
+                    print(f"Prueba no calórica: {test_type}")
+                    self.switch_to_triple_plot()
+            else:
+                # Sin selección - usar gráfico triple por defecto
+                print("Sin selección - usando gráfico triple")
+                self.switch_to_triple_plot()
+                
+        except Exception as e:
+            print(f"Error en cambio dinámico de widget: {e}")
+            # En caso de error, mantener gráfico triple
+            self.switch_to_triple_plot()
+        
+        
 
     def load_test_data_to_graph(self, test_id, test_data):
         """Cargar datos CSV de una prueba completada al gráfico"""
