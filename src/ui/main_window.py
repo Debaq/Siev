@@ -60,7 +60,7 @@ class MainWindow(QMainWindow):
         self.recording_start_time = None
         self.graph_time = 0.0
         self.last_update_time = None
-        self.MAX_RECORDING_TIME = 2 * 60  # 5 minutos
+        self.MAX_RECORDING_TIME = 5 * 60  # 5 minutos
         self.CALIBRATION_TIME = 1  # 1 segundo
 
         # === GESTOR DE USUARIOS ===
