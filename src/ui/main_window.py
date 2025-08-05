@@ -872,7 +872,7 @@ class MainWindow(QMainWindow):
         # Timer principal de grabación
         self.recording_timer = QTimer()
         self.recording_timer.timeout.connect(self.update_recording_time)
-        self.recording_timer.start(100)
+        self.recording_timer.start(500) #FAST
         
         # Timer para gráficos
         self.graph_timer = QTimer()
