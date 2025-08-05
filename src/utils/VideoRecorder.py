@@ -116,7 +116,7 @@ class VideoRecorder:
         final_video_path = self._create_final_video_with_correct_fps()
         
         # Limpiar archivo temporal
-        self._cleanup_temp_files()
+        #self._cleanup_temp_files()
         
         # Resetear estado
         self.is_recording = False
