@@ -916,14 +916,26 @@ class MainWindow(QMainWindow):
             print(f"Error configurando menú: {e}")
     
     def fixed_on(self):
-        print("me prendieron")
         self.ui.btn_fixed.setText("Encendido")
-        self.serial_handler.send_data("L_12_ON")
-    def fixed_off(self):
-        print("me apagaron")
-        self.ui.btn_fixed.setText("Apagado")
-        self.serial_handler.send_data("L_12_OFF")
+        if self.serial_handler:
+            self.serial_handler.send_data("L_12_ON")
 
+        self.video_widget.video_thread.vp.fixed_on_flag.value = True
+
+        if self.video_widget:
+            if hasattr(self.video_widget, 'video_processes') and self.video_widget.video_processes:
+                pass
+
+    def fixed_off(self):
+        self.ui.btn_fixed.setText("Apagado")
+        if self.serial_handler:
+            self.serial_handler.send_data("L_12_OFF")
+            self.video_widget.video_thread.vp.fixed_on_flag.value = False
+
+        if self.video_widget:
+            if hasattr(self.video_widget, 'video_processes') and self.video_widget.video_processes:
+                 self.video_widget.video_processes.fixed_on_flag.value = False  
+    
     def connect_events(self):
         """Conectar eventos principales"""
         try:
