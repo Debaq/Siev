@@ -29,7 +29,7 @@ from datetime import datetime
 from ui.views.video_fullscreen_widget import VideoFullscreenWidget
 from ui.dialogs.calculadora_hipo_dp_dialog import CalculadoraHipoDpDialog
 from ui.dialogs.report_wizard import open_report_wizard
-
+from utils.graphing.caloric_graph import CaloricPlotWidget
 
 class MainWindow(QMainWindow):
     """Ventana principal del sistema VNG - Versión limpia y funcional"""
@@ -788,6 +788,9 @@ class MainWindow(QMainWindow):
 
     def init_graphics_system(self):
         """Inicializar sistema de gráficos"""
+        self.plot_widget = CaloricPlotWidget()
+
+        '''            
         try:
             config = PlotConfigurations.get_ultra_minimal()
             self.plot_widget = TriplePlotWidget(
@@ -801,6 +804,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error inicializando gráficos: {e}")
             self.plot_widget = None
+        '''
 
     def init_recording_system(self):
         """Inicializar sistema de grabación"""
