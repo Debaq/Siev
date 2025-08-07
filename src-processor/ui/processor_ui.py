@@ -38,6 +38,7 @@ class SimpleProcessorUI(QMainWindow):
     save_config_toggled = Signal(bool)
     graph_type_changed = Signal(str)
     frame_slider_changed = Signal(int)  # Frame directo en lugar de tiempo
+    torok_region_moved = Signal(float, float)  # start_time, end_time - NUEVA SEÑAL
 
     def __init__(self):
         super().__init__()
@@ -73,6 +74,12 @@ class SimpleProcessorUI(QMainWindow):
         self.simple_curve = None
         self.simple_time_line = None
         self.caloric_graph = None
+        
+        self.torok_plot = None
+        self.torok_curve = None
+        self.torok_region_start = 40.0  # Inicio de región Torok
+        self.torok_region_end = 90.0    # Fin de región Torok
+        self.response_region = None     # Referencia a response_region
         
         self.setup_menu_bar()
         self.setup_ui()
@@ -407,26 +414,83 @@ class SimpleProcessorUI(QMainWindow):
         return group
         
     def create_graph_panel(self) -> QWidget:
-        """Crear panel de gráfico que usa todo el ancho"""
+        """Crear panel de gráfico reorganizado con área Torok"""
         widget = QWidget()
-        layout = QVBoxLayout(widget)
         
-        # Selector de tipo de gráfico
-        graph_control = QHBoxLayout()
-        graph_control.addWidget(QLabel("Tipo de gráfico:"))
+        # Layout horizontal principal
+        main_layout = QHBoxLayout(widget)
+        
+        # === ÁREA IZQUIERDA (2/3) - GRÁFICO PRINCIPAL ===
+        left_widget = QWidget()
+        left_layout = QVBoxLayout(left_widget)
+        
+        # Controles superiores del gráfico principal
+        main_graph_controls = QHBoxLayout()
+        main_graph_controls.addWidget(QLabel("Tipo de gráfico:"))
         
         self.combo_graph_type = QComboBox()
         self.combo_graph_type.addItems(["Espontáneo (Simple)", "Calórico (Avanzado)"])
         self.combo_graph_type.currentTextChanged.connect(self.graph_type_changed.emit)
-        graph_control.addWidget(self.combo_graph_type)
-        graph_control.addStretch()
+        main_graph_controls.addWidget(self.combo_graph_type)
+        main_graph_controls.addStretch()
         
-        layout.addLayout(graph_control)
+        left_layout.addLayout(main_graph_controls)
         
-        # Container para gráficos
+        # Container para gráfico principal
         self.graph_container = QWidget()
         self.graph_layout = QVBoxLayout(self.graph_container)
-        layout.addWidget(self.graph_container)
+        left_layout.addWidget(self.graph_container)
+        
+        # === ÁREA DERECHA (1/3) - TOROK Y CONTROLES ===
+        right_widget = QWidget()
+        right_layout = QVBoxLayout(right_widget)
+        
+        # Controles de región Torok
+        torok_controls_group = QGroupBox("Control Región Torok")
+        torok_controls_layout = QVBoxLayout(torok_controls_group)
+        
+        # Botones de movimiento de región
+        region_buttons_layout = QHBoxLayout()
+        
+        self.btn_region_left = QPushButton("< region")
+        self.btn_region_left.clicked.connect(self.move_torok_region_left)
+        region_buttons_layout.addWidget(self.btn_region_left)
+        
+        self.btn_region_right = QPushButton("region >")
+        self.btn_region_right.clicked.connect(self.move_torok_region_right)
+        region_buttons_layout.addWidget(self.btn_region_right)
+        
+        torok_controls_layout.addLayout(region_buttons_layout)
+        
+        # Label de información de región
+        self.lbl_torok_region = QLabel(f"Región: {self.torok_region_start:.1f}s - {self.torok_region_end:.1f}s")
+        self.lbl_torok_region.setAlignment(Qt.AlignCenter)
+        torok_controls_layout.addWidget(self.lbl_torok_region)
+        
+        right_layout.addWidget(torok_controls_group)
+        
+        # Gráfico de Torok
+        torok_graph_group = QGroupBox("Detalle Torok")
+        torok_graph_layout = QVBoxLayout(torok_graph_group)
+        
+        # Crear gráfico Torok
+        self.torok_plot = pg.PlotWidget(title="Región Torok - Detalle")
+        self.torok_plot.setLabel('left', 'Posición', units='°')
+        self.torok_plot.setLabel('bottom', 'Tiempo', units='s')
+        self.torok_plot.showGrid(x=True, y=True)
+        self.torok_plot.setMaximumHeight(300)  # Limitar altura
+        
+        # Curva de datos Torok
+        self.torok_curve = self.torok_plot.plot([], [], pen='r', name='Detalle')
+        
+        torok_graph_layout.addWidget(self.torok_plot)
+        right_layout.addWidget(torok_graph_group)
+        
+        right_layout.addStretch()
+        
+        # === AGREGAR WIDGETS AL LAYOUT PRINCIPAL ===
+        main_layout.addWidget(left_widget, 2)  # 2/3 del espacio
+        main_layout.addWidget(right_widget, 1)  # 1/3 del espacio
         
         # Inicializar con gráfico simple
         self.setup_simple_graph()
@@ -434,7 +498,7 @@ class SimpleProcessorUI(QMainWindow):
         return widget
         
     def setup_simple_graph(self):
-        """Configurar gráfico simple para espontáneo"""
+        """Configurar gráfico simple con región response actualizable"""
         self.clear_graph_container()
         
         # Gráfico PyQtGraph simple
@@ -446,14 +510,19 @@ class SimpleProcessorUI(QMainWindow):
         # Curva de datos
         self.simple_curve = self.simple_plot.plot([], [], pen='b', name='Ojo Derecho')
         
-        response_region = pg.LinearRegionItem(
-                values=[40, 90],
-                orientation='vertical',
-                brush=pg.mkBrush(255, 150, 100, 50),  # Naranja transparente
-                movable=False
-            )
-        self.simple_plot.addItem(response_region)
-            
+        # Región response (ahora movible)
+        self.response_region = pg.LinearRegionItem(
+            values=[self.torok_region_start, self.torok_region_end],
+            orientation='vertical',
+            brush=pg.mkBrush(255, 150, 100, 50),  # Naranja transparente
+            movable=True,  # AHORA ES MOVIBLE
+            bounds=[0, None]  # Limitado por el lado izquierdo
+        )
+        
+        # Conectar señal de movimiento de región
+        self.response_region.sigRegionChangeFinished.connect(self.on_response_region_moved)
+        
+        self.simple_plot.addItem(self.response_region)
         
         # Línea de tiempo
         self.simple_time_line = pg.InfiniteLine(
@@ -469,7 +538,75 @@ class SimpleProcessorUI(QMainWindow):
         self.current_curve = self.simple_curve
         self.current_time_line = self.simple_time_line
         
-        print("Gráfico simple configurado")
+        print("Gráfico simple configurado con región Torok movible")
+            
+            
+    def move_torok_region_left(self):
+        """Mover región Torok 5 segundos a la izquierda"""
+        new_start = max(0, self.torok_region_start - 5.0)
+        new_end = max(5.0, self.torok_region_end - 5.0)
+        self.update_torok_region(new_start, new_end)
+
+    def move_torok_region_right(self):
+        """Mover región Torok 5 segundos a la derecha"""
+        # Limitar por duración máxima del video si está disponible
+        max_duration = getattr(self, 'video_duration', 300.0)  # Default 5 min
+        
+        new_start = min(max_duration - 50, self.torok_region_start + 5.0)
+        new_end = min(max_duration, self.torok_region_end + 5.0)
+        self.update_torok_region(new_start, new_end)
+
+    def update_torok_region(self, start_time: float, end_time: float):
+        """Actualizar región Torok y sincronizar con gráficos"""
+        self.torok_region_start = start_time
+        self.torok_region_end = end_time
+        
+        # Actualizar label
+        self.lbl_torok_region.setText(f"Región: {start_time:.1f}s - {end_time:.1f}s")
+        
+        # Actualizar región en gráfico principal
+        if hasattr(self, 'response_region') and self.response_region:
+            self.response_region.setRegion([start_time, end_time])
+        
+        # Actualizar rango del gráfico Torok
+        if hasattr(self, 'torok_plot') and self.torok_plot:
+            self.torok_plot.setXRange(start_time, end_time, padding=0.02)
+        
+        # Emitir señal para actualizar datos
+        self.torok_region_moved.emit(start_time, end_time)
+
+    def on_response_region_moved(self):
+        """Manejar movimiento de región desde el gráfico principal"""
+        if hasattr(self, 'response_region') and self.response_region:
+            start, end = self.response_region.getRegion()
+            self.update_torok_region(start, end)
+            
+    def update_torok_data(self, timestamps: list, values: list):
+        """Actualizar datos del gráfico Torok"""
+        if hasattr(self, 'torok_curve') and self.torok_curve:
+            # Filtrar datos solo en el rango Torok
+            filtered_timestamps = []
+            filtered_values = []
+            
+            for t, v in zip(timestamps, values):
+                if self.torok_region_start <= t <= self.torok_region_end:
+                    filtered_timestamps.append(t)
+                    filtered_values.append(v)
+            
+            self.torok_curve.setData(filtered_timestamps, filtered_values)
+
+    def set_video_duration(self, duration: float):
+        """Establecer duración del video para limitar movimientos de región"""
+        self.video_duration = duration
+        
+        # Ajustar región si excede la duración
+        if self.torok_region_end > duration:
+            new_end = duration
+            new_start = max(0, new_end - 50)  # Mantener ventana de 50s
+            self.update_torok_region(new_start, new_end)
+
+
+    
         
     def setup_caloric_graph(self):
         """Configurar gráfico calórico"""

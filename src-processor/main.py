@@ -63,6 +63,10 @@ class SimpleProcessorController(QObject):
         self.ui.save_config_toggled.connect(self.logic.set_save_config_mode)
         self.ui.threshold_changed.connect(self.logic.set_threshold_value)
         
+        
+        #Torok
+        self.ui.torok_region_moved.connect(self.logic.set_torok_region)
+
     def connect_logic_to_ui(self):
         """Conectar señales de lógica hacia UI"""
         
@@ -102,13 +106,17 @@ class SimpleProcessorController(QObject):
             )
         )
                 
+        #Torok
+        self.logic.torok_data_updated.connect(self.ui.update_torok_data)
+
         
     def on_video_loaded(self, success: bool, duration: float):
         """Manejar evento de video cargado"""
         if success:
             # La UI ya recibe la señal adjust_graph_to_duration directamente
             # Solo necesitamos manejar lógica adicional si es necesaria
-            pass
+            self.ui.set_video_duration(duration)
+
         else:
             # Manejar error de carga si es necesario
             pass

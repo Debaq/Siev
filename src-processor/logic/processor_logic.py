@@ -40,7 +40,9 @@ class SimpleProcessorLogic(QObject):
     graph_duration_adjusted = Signal(float)  # duration para ajustar gráfico
     slider_frame_config = Signal(int)  # Emite total de frames para configurar slider
     frame_info_updated = Signal(int, int)  # Emite (current_frame, total_frames)
-        
+    torok_data_updated = Signal(list, list)  # timestamps, values para gráfico Torok - NUEVA SEÑAL
+
+
     def __init__(self):
         super().__init__()
         
@@ -84,6 +86,8 @@ class SimpleProcessorLogic(QObject):
         
         self.last_point = None
         self.last_frame = 0
+        self.torok_region_start = 40.0
+        self.torok_region_end = 90.0
         
     # ========== MÉTODOS DE CARGA DE ARCHIVOS ==========
     
@@ -471,16 +475,19 @@ class SimpleProcessorLogic(QObject):
                     self.graph_data_values = []
                 
                 # Mantener solo últimos 1000 puntos para rendimiento
-                if len(self.graph_data_timestamps) > 1000:
+                if len(self.graph_data_timestamps) > 5000:
                     self.graph_data_timestamps = self.graph_data_timestamps[-500:]
                     self.graph_data_values = self.graph_data_values[-500:]
             
             # Emitir datos actualizados
             self.graph_data_updated.emit(self.graph_data_timestamps, self.graph_data_values)
+            if self.torok_region_start <= timestamp <= self.torok_region_end:
+                self.update_torok_data()
             
         elif "Avanzado" in self.current_graph_type:
             # Para gráfico calórico
             self.caloric_point_added.emit(timestamp, value)
+            
             
     def clear_graph_data(self):
         """Limpiar datos del gráfico"""
@@ -519,3 +526,31 @@ class SimpleProcessorLogic(QObject):
             'timestamps': self.graph_data_timestamps.copy(),
             'values': self.graph_data_values.copy(),
         }
+        
+    #======= TOROK =====
+    
+    def set_torok_region(self, start_time: float, end_time: float):
+        """Establecer nueva región Torok y actualizar datos"""
+        self.torok_region_start = start_time
+        self.torok_region_end = end_time
+        
+        # Re-emitir datos filtrados para Torok
+        if self.graph_data_timestamps and self.graph_data_values:
+            self.update_torok_data()
+
+    def update_torok_data(self):
+        """Actualizar datos del gráfico Torok basado en región actual"""
+        if not self.graph_data_timestamps or not self.graph_data_values:
+            self.torok_data_updated.emit([], [])
+            return
+        
+        # Filtrar datos en el rango Torok
+        filtered_timestamps = []
+        filtered_values = []
+        
+        for t, v in zip(self.graph_data_timestamps, self.graph_data_values):
+            if self.torok_region_start <= t <= self.torok_region_end:
+                filtered_timestamps.append(t)
+                filtered_values.append(v)
+        
+        self.torok_data_updated.emit(filtered_timestamps, filtered_values)
