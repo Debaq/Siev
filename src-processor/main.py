@@ -10,13 +10,9 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QObject
 import pyqtgraph as pg
 
-try:
-    from ui.processor_ui import SimpleProcessorUI
-    from logic.processor_logic import SimpleProcessorLogic
-except ImportError as e:
-    print(f"Error importing modules: {e}")
-    print("Make sure simple_processor_ui.py and simple_processor_logic.py are available")
-    sys.exit(1)
+from ui.processor_ui import SimpleProcessorUI
+from logic.processor_logic import SimpleProcessorLogic
+
 
 
 class SimpleProcessorController(QObject):
