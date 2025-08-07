@@ -404,8 +404,8 @@ class SimpleProcessorUI(QMainWindow):
         
         # INTERFAZ UNIFICADA: establecer referencias actuales
         self.current_graph = self.caloric_graph
-        self.current_curve = self.caloric_graph.simple_curve  # Usa el mismo atributo
-        self.current_time_line = self.caloric_graph.simple_time_line  # Usa el mismo atributo
+        self.current_curve = self.caloric_graph.data_curve  # Usar data_curve directamente
+        self.current_time_line = self.caloric_graph.simple_time_line
         
         print("Gráfico calórico configurado")
     
