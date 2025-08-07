@@ -370,7 +370,7 @@ class SimpleProcessorLogic(QObject):
                 
     def update_current_frame_visualization(self):
         """Actualizar visualización del frame actual"""
-        if not self.current_raw_frame or not self.fast_processor:
+        if self.current_raw_frame is None or not self.fast_processor:
             return
             
         try:

@@ -35,6 +35,7 @@ def get_model_file_path(model_name):
     possible_paths = [
         f"models/{model_name}",
         f"src/models/{model_name}", 
+        f"src-processor/models/{model_name}", 
         f"utils/models/{model_name}",
         f"data/models/{model_name}",
         model_name
