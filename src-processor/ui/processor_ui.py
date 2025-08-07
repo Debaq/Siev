@@ -438,13 +438,22 @@ class SimpleProcessorUI(QMainWindow):
         self.clear_graph_container()
         
         # Gráfico PyQtGraph simple
-        self.simple_plot = pg.PlotWidget(title="Posición Pupila - Ojo Derecho")
-        self.simple_plot.setLabel('left', 'Posición X Pupila', units='px')
+        self.simple_plot = pg.PlotWidget(title="")
+        self.simple_plot.setLabel('left', 'Posición', units='°')
         self.simple_plot.setLabel('bottom', 'Tiempo', units='s')
         self.simple_plot.showGrid(x=True, y=True)
         
         # Curva de datos
         self.simple_curve = self.simple_plot.plot([], [], pen='b', name='Ojo Derecho')
+        
+        response_region = pg.LinearRegionItem(
+                values=[40, 90],
+                orientation='vertical',
+                brush=pg.mkBrush(255, 150, 100, 50),  # Naranja transparente
+                movable=False
+            )
+        self.simple_plot.addItem(response_region)
+            
         
         # Línea de tiempo
         self.simple_time_line = pg.InfiniteLine(

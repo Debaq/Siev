@@ -83,6 +83,7 @@ class SimpleProcessorLogic(QObject):
             )
         
         self.last_point = None
+        self.last_frame = 0
         
     # ========== MÉTODOS DE CARGA DE ARCHIVOS ==========
     
@@ -233,7 +234,7 @@ class SimpleProcessorLogic(QObject):
         
         # Asegurar que el frame está en rango válido
         frame_number = max(0, min(frame_number, self.total_frames - 1))
-        
+        self.current_frame = frame_number
         # Obtener configuración específica para este frame
         frame_config = self.get_frame_config(frame_number)
         
@@ -269,6 +270,7 @@ class SimpleProcessorLogic(QObject):
             # Procesar con FastVideoProcessor si está disponible
             if self.fast_processor:
                 try:
+                    print(f"{self.last_frame} - {self.current_frame}")
                     pupil_x, pupil_y, detected, vis_frame = self.fast_processor.process_frame(frame)
                     # Emitir frame procesado para mostrar
                     self.frame_ready.emit(vis_frame)
@@ -286,14 +288,18 @@ class SimpleProcessorLogic(QObject):
                     if relative_change <= 0.50:  # Cambio aceptable (≤ 20%)
                         current_time = self.video_player.get_current_time() if self.video_player else 0
                         filtered_pupil_x = self.pupil_filter.process_pupil_x(current_time, pupil_x, detected)
-                        self.add_point_to_graph(current_time, filtered_pupil_x)
+                        if self.last_frame < self.current_frame:
+                            self.add_point_to_graph(current_time, filtered_pupil_x)
                         self.last_point = pupil_x  # Actualizamos solo si fue aceptado
+                        
+
                     else:
                         # Opcional: emitir advertencia o usar último valor válido
                         pass
                         #print(f"Cambio excesivo en pupil_x: {self.last_point} -> {pupil_x} (>{20}%) - ignorado")
                         # No actualizamos last_point, y no agregamos el punto
-                
+                    self.last_frame = self.current_frame
+
                 except Exception as e:
                     print(f"Error procesando frame: {e}")
                     self.frame_ready.emit(frame)
