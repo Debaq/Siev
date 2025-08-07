@@ -148,6 +148,9 @@ class SimpleProcessorController(QObject):
         if hasattr(self.logic, 'video_player') and self.logic.video_player:
             self.logic.video_player.stop()
             
+        if hasattr(self.logic, 'cleanup_video_resources'):
+            self.logic.cleanup_video_resources()
+            
         self.ui.close()
 
 

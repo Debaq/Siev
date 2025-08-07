@@ -598,11 +598,11 @@ class SimpleProcessorUI(QMainWindow):
     def set_video_duration(self, duration: float):
         """Establecer duración del video para limitar movimientos de región"""
         self.video_duration = duration
-        
+        self.time_slider.setValue(1)
         # Ajustar región si excede la duración
         if self.torok_region_end > duration:
             new_end = duration
-            new_start = max(0, new_end - 50)  # Mantener ventana de 50s
+            new_start = max(0, new_end - 10)  # Mantener ventana de 50s
             self.update_torok_region(new_start, new_end)
 
 
@@ -740,11 +740,19 @@ class SimpleProcessorUI(QMainWindow):
     
     def update_graph_data(self, timestamps: list[float], values: list[float]):
         """Actualizar datos del gráfico activo - INTERFAZ UNIFICADA"""
+        #print(f"🟦 DEBUG UI: Recibiendo {len(timestamps)} puntos")
+        #print(f"🟦 DEBUG UI: current_curve = {self.current_curve is not None}")
+    
         if hasattr(self, 'current_curve') and self.current_curve:
             try:
                 self.current_curve.setData(timestamps, values)
+                #print(f"🟦 DEBUG UI: Datos actualizados correctamente")
+
             except RuntimeError as e:
-                print(f"Error actualizando gráfico: {e}")
+                pass
+                #print(f"Error actualizando gráfico: {e}")
+                #print(f"🔴 ERROR UI: {e}")
+
     
     def add_point_to_caloric_graph(self, timestamp: float, value: float):
         """Agregar punto al gráfico calórico"""

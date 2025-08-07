@@ -147,7 +147,7 @@ class FastVideoProcessor:
             print(f"Error cargando modelo YOLO: {e}")
             self.model = None
             
-    def process_frame(self, frame: np.ndarray) -> Tuple[float, float, bool, np.ndarray]:
+    def process_frame(self, frame: np.ndarray, mod_last_pos_pupil = True) -> Tuple[float, float, bool, np.ndarray]:
         #print(f"🟦 === INICIO process_frame ===")
         #print(f"🟦 Línea 1: frame type = {type(frame)}")
         #print(f"🟦 Línea 2: frame shape = {frame.shape if frame is not None else 'None'}")
@@ -224,10 +224,9 @@ class FastVideoProcessor:
             # Actualizar cache solo si se detectó correctamente
             if pupil_x > 0 and pupil_y > 0:
                 #print(f"ACTUALIZANDO last_valid: de {self.last_valid_pupil_x} a {pupil_x}")
-                if pupil_x > 5.0:
-                    old_value = self.last_valid_pupil_x  # Guardar valor anterior
+                if mod_last_pos_pupil:
                     self.last_valid_pupil_x = pupil_x
-                    #print(f"🟢 CONFIRMADO: last_valid_pupil_x cambió de {old_value} a {self.last_valid_pupil_x}")
+                #print(f"🟢 CONFIRMADO: last_valid_pupil_x cambió de {old_value} a {self.last_valid_pupil_x}")
     
             return pupil_x, pupil_y, True, vis_frame
             

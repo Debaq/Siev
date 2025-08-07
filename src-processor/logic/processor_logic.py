@@ -178,7 +178,10 @@ class SimpleProcessorLogic(QObject):
         self._load_video_file(file_path)
         
     def _load_video_file(self, file_path: str):
+        
         """Método común para cargar archivos de video"""
+        self.cleanup_video_resources()
+
         # Inicializar procesador rápido
         self.fast_processor = FastVideoProcessor(self.thresholds)
         
@@ -193,11 +196,77 @@ class SimpleProcessorLogic(QObject):
             
             # Iniciar thread
             self.video_player.start()
+            self.clear_graph_data()
             
         except Exception as e:
             print(f"Error cargando video: {e}")
             self.status_updated.emit(f"Error cargando video: {str(e)}")
+    
+
+
+    def cleanup_video_resources(self):
+        """
+        Limpiar correctamente todos los recursos de video y threads antes de cargar nuevo video
+        """
+        try:
+            # 1. Detener y limpiar video_player existente
+            if hasattr(self, 'video_player') and self.video_player is not None:
+                print("Limpiando video_player anterior...")
+                
+                # Detener el thread
+                self.video_player.stop()
+                
+                # Desconectar señales para evitar callbacks
+                try:
+                    self.video_player.frame_ready.disconnect()
+                    self.video_player.video_loaded.disconnect() 
+                    self.video_player.duration_changed.disconnect()
+                except:
+                    pass  # Ignorar si ya están desconectadas
+                
+                # Esperar a que termine el thread (máximo 3 segundos)
+                if self.video_player.isRunning():
+                    self.video_player.quit()
+                    if not self.video_player.wait(3000):  # 3 segundos timeout
+                        print("Warning: Thread no terminó en tiempo esperado")
+                        # Forzar terminación si es necesario
+                        self.video_player.terminate()
+                        self.video_player.wait(1000)  # Esperar 1 segundo más
+                
+                print("Video_player limpiado correctamente")
+                self.video_player = None
             
+            # 2. Limpiar fast_processor si existe
+            if hasattr(self, 'fast_processor') and self.fast_processor is not None:
+                print("Limpiando fast_processor...")
+                # El fast_processor no es thread, pero limpiar referencias
+                self.fast_processor = None
+            
+            # 3. Limpiar timer de visualización si existe
+            if hasattr(self, 'visualization_timer') and self.visualization_timer is not None:
+                if self.visualization_timer.isActive():
+                    self.visualization_timer.stop()
+                print("Timer de visualización detenido")
+            
+            # 4. Limpiar datos de gráfico para liberar memoria
+            if hasattr(self, 'graph_data_timestamps'):
+                self.graph_data_timestamps.clear()
+            if hasattr(self, 'graph_data_values'):
+                self.graph_data_values.clear()
+            
+            # 5. Limpiar frame actual
+            self.current_raw_frame = None
+            
+            print("Recursos de video limpiados exitosamente")
+            
+        except Exception as e:
+            print(f"Error durante limpieza de recursos: {e}")
+            # Asegurar que las referencias se limpien aunque haya error
+            self.video_player = None
+            self.fast_processor = None
+            self.current_raw_frame = None
+        
+    
     # ========== MÉTODOS DE EVENTOS DE VIDEO ==========
     
     def _on_video_loaded(self, success: bool):
@@ -435,7 +504,7 @@ class SimpleProcessorLogic(QObject):
             
         try:
             # Procesar frame actual con parámetros actualizados
-            _, _, _, vis_frame = self.fast_processor.process_frame(self.current_raw_frame)
+            _, _, _, vis_frame = self.fast_processor.process_frame(self.current_raw_frame, False)
             
             # Emitir frame procesado
             if vis_frame is not None:
@@ -447,6 +516,8 @@ class SimpleProcessorLogic(QObject):
     # ========== MÉTODOS DE GRÁFICO ==========
     
     def add_point_to_graph(self, timestamp: float, value: float):
+        #print(f"🟦 DEBUG: Agregando punto {timestamp:.2f}, {value:.2f}")
+
         """Agregar punto al gráfico actual (solo un punto por timestamp)"""
         if "Simple" in self.current_graph_type:
             # Buscar si ya existe un punto en este timestamp
@@ -480,6 +551,8 @@ class SimpleProcessorLogic(QObject):
                     self.graph_data_values = self.graph_data_values[-500:]
             
             # Emitir datos actualizados
+            #print(f"🟦 DEBUG: Emitiendo {len(self.graph_data_timestamps)} puntos")
+
             self.graph_data_updated.emit(self.graph_data_timestamps, self.graph_data_values)
             if self.torok_region_start <= timestamp <= self.torok_region_end:
                 self.update_torok_data()
