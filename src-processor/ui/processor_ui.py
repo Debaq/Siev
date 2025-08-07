@@ -384,22 +384,52 @@ class SimpleProcessorUI(QMainWindow):
         
         self.graph_layout.addWidget(self.simple_plot)
         
+        # INTERFAZ UNIFICADA: establecer referencias actuales
+        self.current_graph = self.simple_plot
+        self.current_curve = self.simple_curve
+        self.current_time_line = self.simple_time_line
+        
+        print("Gráfico simple configurado")
+        
     def setup_caloric_graph(self):
+        """Configurar gráfico calórico"""
         self.clear_graph_container()
         
+        # Crear gráfico calórico
         self.caloric_graph = CaloricPlotWidget(
             total_duration=60.0,
             parent=self.graph_container
         )
         self.graph_layout.addWidget(self.caloric_graph)
+        
+        # INTERFAZ UNIFICADA: establecer referencias actuales
+        self.current_graph = self.caloric_graph
+        self.current_curve = self.caloric_graph.simple_curve  # Usa el mismo atributo
+        self.current_time_line = self.caloric_graph.simple_time_line  # Usa el mismo atributo
+        
+        print("Gráfico calórico configurado")
     
             
     def clear_graph_container(self):
-        """Limpiar container de gráficos"""
+        """Limpiar container de gráficos - INTERFAZ UNIFICADA"""
+        # Limpiar TODAS las referencias
+        self.current_graph = None
+        self.current_curve = None
+        self.current_time_line = None
+        
+        # Referencias específicas
+        self.simple_curve = None
+        self.simple_time_line = None
+        self.simple_plot = None
+        self.caloric_graph = None
+        
+        # Eliminar widgets del layout
         while self.graph_layout.count():
             child = self.graph_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
+                
+        print("Container de gráficos limpiado")
                 
     # ========== MÉTODOS DE ACTUALIZACIÓN DE UI ==========
     
@@ -467,36 +497,37 @@ class SimpleProcessorUI(QMainWindow):
         self.lbl_current_config.setText(f"Config actual: {current_config}")
     
     def update_time_line_position(self, position: float):
-        """Actualizar posición de línea de tiempo en gráficos"""
-        if hasattr(self, 'simple_time_line') and self.simple_time_line:
-            self.simple_time_line.setPos(position)
-        if hasattr(self, 'caloric_graph') and self.caloric_graph:
+        """Actualizar posición de línea de tiempo - INTERFAZ UNIFICADA"""
+        if hasattr(self, 'current_time_line') and self.current_time_line:
             try:
-                self.caloric_graph.set_pos_time_video(position)
-            except Exception as e:
-                print(f"Error actualizando línea de tiempo en caloric_graph: {e}")
+                self.current_time_line.setPos(position)
+            except RuntimeError as e:
+                print(f"Error actualizando línea de tiempo: {e}")
     
     def adjust_graph_to_duration(self, duration: float):
-        """Ajustar gráfico al tiempo máximo del video"""
+        """Ajustar gráfico al tiempo máximo del video - INTERFAZ UNIFICADA"""
         try:
-            if hasattr(self, 'simple_plot') and self.simple_plot:
-                # Ajustar rango X del gráfico simple
-                self.simple_plot.setXRange(0, duration, padding=0.02)
+            if hasattr(self, 'current_graph') and self.current_graph:
+                # Para gráfico simple
+                if hasattr(self.current_graph, 'setXRange'):
+                    self.current_graph.setXRange(0, duration, padding=0.02)
                 
-            if hasattr(self, 'caloric_graph') and self.caloric_graph:
-                # Ajustar gráfico calórico
-                self.caloric_graph.total_duration = duration
-                self.caloric_graph.rebuild_phases()
-                
+                # Para gráfico calórico (tiene método específico)
+                if hasattr(self.current_graph, 'adjust_to_duration'):
+                    self.current_graph.adjust_to_duration(duration)
+            
             print(f"Gráfico ajustado a duración: {duration:.2f}s")
             
         except Exception as e:
             print(f"Error ajustando gráfico a duración: {e}")
     
     def update_graph_data(self, timestamps: list[float], values: list[float]):
-        """Actualizar datos del gráfico simple"""
-        if hasattr(self, 'simple_curve') and self.simple_curve:
-            self.simple_curve.setData(timestamps, values)
+        """Actualizar datos del gráfico activo - INTERFAZ UNIFICADA"""
+        if hasattr(self, 'current_curve') and self.current_curve:
+            try:
+                self.current_curve.setData(timestamps, values)
+            except RuntimeError as e:
+                print(f"Error actualizando gráfico: {e}")
     
     def add_point_to_caloric_graph(self, timestamp: float, value: float):
         """Agregar punto al gráfico calórico"""

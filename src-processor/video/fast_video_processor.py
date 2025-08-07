@@ -188,7 +188,8 @@ class FastVideoProcessor:
             
             # Mostrar parámetros
             if self.show_parameters:
-                self._draw_parameters_info(vis_frame)
+                pass
+                #self._draw_parameters_info(vis_frame)
             
             return pupil_x, pupil_y, True, vis_frame
             

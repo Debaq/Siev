@@ -42,12 +42,18 @@ class CaloricPlotWidget(QWidget):
         # Crear curva de datos - IGUAL que el simple
         self.data_curve = self.plot_widget.plot([], [], pen='b', name='Ojo Derecho')
         
+        # COMPATIBILIDAD TOTAL: mismos atributos que el simple
+        self.simple_curve = self.data_curve  # Para compatibilidad legacy
+        
         # Crear línea de tiempo - IGUAL que el simple
-        self.time_line = pg.InfiniteLine(
+        self.simple_time_line = pg.InfiniteLine(
             pos=0, angle=90, pen=pg.mkPen(color='r', width=2),
             movable=True, label="Tiempo"
         )
-        self.plot_widget.addItem(self.time_line)
+        self.plot_widget.addItem(self.simple_time_line)
+        
+        # Alias adicional para flexibilidad
+        self.time_line = self.simple_time_line
         
         # Agregar plot al layout
         layout.addWidget(self.plot_widget)

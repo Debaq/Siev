@@ -226,7 +226,7 @@ class SimpleProcessorLogic(QObject):
                     # Agregar punto al gráfico si se detectó pupila
                     if detected:
                         current_time = self.video_player.get_current_time() if self.video_player else 0
-                        self.add_point_to_graph(current_time, pupil_x)
+                        self.add_point_to_graph(current_time, pupil_y)
                         
                 except Exception as e:
                     print(f"Error procesando frame: {e}")
@@ -364,7 +364,7 @@ class SimpleProcessorLogic(QObject):
             try:
                 pupil_x, pupil_y, detected, _ = self.fast_processor.process_frame(self.current_raw_frame)
                 if detected:
-                    self.add_point_to_graph(current_time, pupil_x)
+                    self.add_point_to_graph(current_time, pupil_y)
             except Exception as e:
                 print(f"Error procesando frame para gráfico: {e}")
                 
