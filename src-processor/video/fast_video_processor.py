@@ -109,6 +109,12 @@ class FastVideoProcessor:
         self.show_pupil_point = True
         self.show_parameters = True
         
+        
+        # Cache del último valor válido para parpadeos
+        self.last_valid_pupil_x = 0.0
+        self.last_valid_pupil_y = 0.0
+        self.last_valid_radius = 0.0
+
     def setup_yolo_model(self):
         """Configurar modelo YOLO para detección de ojos"""
         if not YOLO_AVAILABLE:
@@ -123,13 +129,17 @@ class FastVideoProcessor:
                 
             self.model = YOLO(model_path)
             
-            # Optimizaciones para CPU/GPU
-            if not torch.cuda.is_available():
-                torch.set_num_threads(1)
-                torch.set_num_interop_threads(1)
-                print("Usando CPU para YOLO")
-            else:
-                print("Usando GPU para YOLO")
+           # Optimizaciones para CPU/GPU (solo la primera vez)
+            try:
+                if not torch.cuda.is_available():
+                    torch.set_num_threads(1)
+                    torch.set_num_interop_threads(1)
+                    print("Usando CPU para YOLO")
+                else:
+                    print("Usando GPU para YOLO")
+            except RuntimeError as e:
+                # Ya está configurado, ignorar
+                print(f"PyTorch ya configurado previamente: {e}")
                 
             print(f"Modelo YOLO cargado desde: {model_path}")
             
@@ -157,14 +167,19 @@ class FastVideoProcessor:
             
             if not detections:
                 self._draw_no_detection_info(vis_frame, "No se detectaron ojos con YOLO")
-                return 0.0, 0.0, False, vis_frame
+                print('self._draw_no_detection_info(vis_frame, "No se detectaron ojos con YOLO"')
+                print(f"{self.last_valid_pupil_x}, {self.last_valid_pupil_y}, {False}")
+
+                return self.last_valid_pupil_x, self.last_valid_pupil_y, False, vis_frame
                 
             # Buscar ojo derecho (el de la izquierda en la imagen, menor x)
             right_eye_detection = self._find_right_eye(detections, w)
             
             if right_eye_detection is None:
-                self._draw_no_detection_info(vis_frame, "No se identificó ojo derecho")
-                return 0.0, 0.0, False, vis_frame
+                self._draw_no_detection_info(vis_frame, "No se identificó ojo derecho válido")
+                print(f"{self.last_valid_pupil_x}, {self.last_valid_pupil_y}, {False}")
+                
+                return self.last_valid_pupil_x, self.last_valid_pupil_y, False, vis_frame
                 
             # Dibujar detección YOLO
             if self.show_yolo_detection:
@@ -242,15 +257,20 @@ class FastVideoProcessor:
         return self.last_detections
         
     def _find_right_eye(self, detections: List[Dict], frame_width: int) -> Optional[Dict]:
-        """Encontrar ojo derecho de las detecciones (menor x en imagen)"""
-        if not detections:
+        # Solo procesar ojos en la mitad IZQUIERDA de la imagen (ojo derecho del sujeto)
+        frame_center_x = frame_width / 2
+        valid_detections = []
+
+        for det in detections:
+            # Si el centro del ojo está en la mitad izquierda, es válido
+            if det['cx'] < frame_center_x:
+                valid_detections.append(det)
+
+        if not valid_detections:
             return None
-            
-        if len(detections) == 1:
-            return detections[0]
-            
-        # Si hay múltiples detecciones, tomar la de menor x (ojo derecho del sujeto)
-        return min(detections, key=lambda det: det['cx'])
+
+        # Si hay múltiples ojos válidos, tomar el de menor x
+        return min(valid_detections, key=lambda det: det['cx'])
         
     def _process_eye_region_improved(self, frame: np.ndarray, eye_detection: Dict) -> Tuple[float, float, float, List]:
         """

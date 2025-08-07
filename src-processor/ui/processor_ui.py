@@ -5,6 +5,8 @@ Interfaz de usuario para el procesador simple de videos.
 Solo maneja la creación y actualización visual de componentes.
 """
 
+import numpy as np
+
 from PySide6.QtWidgets import (
     QMainWindow, QVBoxLayout, QHBoxLayout, QWidget,
     QPushButton, QLabel, QSlider, QComboBox,
@@ -509,8 +511,8 @@ class SimpleProcessorUI(QMainWindow):
                 # Convertir frame a QImage y mostrar
                 height, width, channel = frame.shape
                 bytes_per_line = 3 * width
-                q_image = QImage(frame.data, width, height, bytes_per_line, QImage.Format_RGB888).rgbSwapped()
-                
+                frame_contiguous = np.ascontiguousarray(frame)
+                q_image = QImage(frame_contiguous.data, width, height, bytes_per_line, QImage.Format_RGB888).rgbSwapped()                
                 # Escalar para mostrar
                 pixmap = QPixmap.fromImage(q_image)
                 scaled_pixmap = pixmap.scaled(
