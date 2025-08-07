@@ -19,6 +19,8 @@ except ImportError as e:
     print(f"Error importing video modules: {e}")
 
 from utils.pupil_filter import PupilSignalFilter
+from utils.pixel_to_degrees_calibrator import PixelToDegreesCalibrator
+
 
 class SimpleProcessorLogic(QObject):
     """
@@ -83,7 +85,8 @@ class SimpleProcessorLogic(QObject):
             window_size=50,           # Ventana más grande = más suavizado
             filter_type="savgol"      # Mantener Savitzky-Golay
             )
-        
+        self.pixel_calibrator = PixelToDegreesCalibrator(calibration_frames=10)
+
         self.last_point = None
         self.last_frame = 0
         self.torok_region_start = 40.0
@@ -184,6 +187,8 @@ class SimpleProcessorLogic(QObject):
 
         # Inicializar procesador rápido
         self.fast_processor = FastVideoProcessor(self.thresholds)
+        if hasattr(self, 'pixel_calibrator'):
+            self.pixel_calibrator.reset_calibration()
         
         try:
             with open(file_path, 'rb') as f:
@@ -202,6 +207,12 @@ class SimpleProcessorLogic(QObject):
             print(f"Error cargando video: {e}")
             self.status_updated.emit(f"Error cargando video: {str(e)}")
     
+    # === AGREGAR MÉTODO PARA OBTENER INFO DE CALIBRACIÓN ===
+    def get_calibration_info(self) -> dict:
+        """Obtener información de calibración actual"""
+        if hasattr(self, 'pixel_calibrator'):
+            return self.pixel_calibrator.get_calibration_info()
+        return {}
 
 
     def cleanup_video_resources(self):
@@ -357,12 +368,19 @@ class SimpleProcessorLogic(QObject):
                         # Si last_point es 0, cualquier valor no cero es un cambio infinito
                         relative_change = float('inf') if pupil_x != 0 else 0
 
-                    # Si el cambio es mayor al 20%, NO pasamos la prueba (ignoramos el punto)
-                    if relative_change <= 0.50:  # Cambio aceptable (≤ 20%)
+                    # Si el cambio es mayor al 50%, NO pasamos la prueba (ignoramos el punto)
+                    if relative_change <= 0.50:  # Cambio aceptable (≤ 50%)
                         current_time = self.video_player.get_current_time() if self.video_player else 0
-                        filtered_pupil_x = self.pupil_filter.process_pupil_x(current_time, pupil_x, detected)
+                        
+                        # === NUEVA LÍNEA: CALIBRAR PIXELES A GRADOS ===
+                        pupil_degrees = self.pixel_calibrator.calibrate_pixel_to_degrees(pupil_x)
+                        
+                        # === MODIFICAR: USAR GRADOS EN LUGAR DE PIXELES ===
+                        filtered_pupil_degrees = self.pupil_filter.process_pupil_x(current_time, pupil_degrees, detected)
+                        
                         if self.last_frame < self.current_frame:
-                            self.add_point_to_graph(current_time, filtered_pupil_x)
+                            # === MODIFICAR: AGREGAR GRADOS AL GRÁFICO ===
+                            self.add_point_to_graph(current_time, filtered_pupil_degrees)
                         self.last_point = pupil_x  # Actualizamos solo si fue aceptado
                         
 
@@ -378,6 +396,14 @@ class SimpleProcessorLogic(QObject):
                     self.frame_ready.emit(frame)
             else:
                 self.frame_ready.emit(frame)
+
+    # === AGREGAR MÉTODO PARA REINICIAR CALIBRACIÓN ===
+    def reset_pixel_calibration(self):
+        """Reiniciar calibración de pixeles (útil para nuevo video)"""
+        if hasattr(self, 'pixel_calibrator'):
+            self.pixel_calibrator.reset_calibration()
+            self.status_updated.emit("Calibración de pixeles reiniciada")
+        
                 
     # ========== MÉTODOS DE SELECCIÓN Y CONFIGURACIÓN ==========
     
