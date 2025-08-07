@@ -258,9 +258,8 @@ class CaloricPlotWidget(QWidget):
             timestamps, velocities = zip(*self.data_buffer)
             self.data_curve.setData(timestamps, velocities)
             
-            print(f"Agregados {len(valid_data)} puntos de datos")
     
-    def clear_data(self):
+    def clearPlots(self):
         """Limpia todos los datos del gráfico."""
         self.data_buffer.clear()
         self.data_curve.setData([], [])
@@ -533,66 +532,3 @@ class CaloricPlotWidget(QWidget):
         self.set_phase_config(self.DEFAULT_PHASE_CONFIG)
         print("Configuración de fases restaurada al default")
 
-
-# Ejemplo de uso y testing
-if __name__ == "__main__":
-    import sys
-    from PySide6.QtWidgets import QApplication
-    
-    app = QApplication(sys.argv)
-    
-    # Configuración personalizada de ejemplo
-    custom_config = {
-        'irrigation': {'start': 0, 'end': 50, 'color': (100, 150, 255, 80), 'label': 'Irrigación Extended'},
-        'torok': {'start': 70, 'end': 100, 'color': (255, 150, 100, 80), 'label': 'Período Torok'},
-        'fixation': {'start': 100, 'end': 120, 'color': (150, 255, 150, 80), 'label': 'Fijación'}
-    }
-    
-    # Crear widget con configuración personalizada
-    widget = CaloricPlotWidget(total_duration=140, phase_config=custom_config)
-    widget.show()
-    
-    # Simular algunos datos de prueba
-    import random
-    timestamps = np.linspace(0, 140, 1000)
-    angular_velocities = [random.uniform(-50, 50) + 20*np.sin(t/10) for t in timestamps]
-    
-    widget.add_data_batch(timestamps.tolist(), angular_velocities)
-    
-    # Ejemplo de modificación de fases en tiempo real
-    def test_phase_modifications():
-        print("\n=== TESTING CONFIGURACIÓN DE FASES ===")
-        
-        # Obtener configuración actual
-        current_config = widget.get_phase_config()
-        print(f"Configuración actual: {list(current_config.keys())}")
-        
-        # Modificar timing de una fase
-        widget.set_phase_timing('irrigation', 0, 45)
-        
-        # Añadir nueva fase
-        widget.add_phase('test_phase', 110, 130, (255, 255, 0, 80), 'Fase Test')
-        
-        # Obtener timing específico
-        torok_timing = widget.get_phase_timing('torok')
-        print(f"Timing Torok: {torok_timing}")
-        
-        # Eliminar fase después de 5 segundos
-        QTimer.singleShot(5000, lambda: widget.remove_phase('test_phase'))
-    
-    # Ejecutar tests después de 2 segundos
-    QTimer.singleShot(2000, test_phase_modifications)
-    
-    # Simular movimiento de línea de video
-    def simulate_video():
-        current = widget.current_video_time + 0.5
-        if current <= 140:
-            widget.set_pos_time_video(current)
-        else:
-            widget.set_pos_time_video(0)
-    
-    timer = QTimer()
-    timer.timeout.connect(simulate_video)
-    timer.start(100)  # Actualizar cada 100ms
-    
-    sys.exit(app.exec())
