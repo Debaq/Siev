@@ -18,6 +18,7 @@ try:
 except ImportError as e:
     print(f"Error importing video modules: {e}")
 
+from utils.pupil_filter import PupilSignalFilter
 
 class SimpleProcessorLogic(QObject):
     """
@@ -75,6 +76,8 @@ class SimpleProcessorLogic(QObject):
         # Frame actual para procesamiento
         self.current_raw_frame = None
         self.current_graph_type = "Espontáneo (Simple)"
+        
+        self.pupil_filter = PupilSignalFilter(window_size=7)
         
     # ========== MÉTODOS DE CARGA DE ARCHIVOS ==========
     
@@ -250,8 +253,9 @@ class SimpleProcessorLogic(QObject):
         if self.fast_processor and self.current_raw_frame is not None:
             try:
                 pupil_x, pupil_y, detected, _ = self.fast_processor.process_frame(self.current_raw_frame)
-                if detected:
-                    self.add_point_to_graph(current_time, pupil_x)
+                filtered_pupil_x = self.pupil_filter.process_pupil_x(current_time, pupil_x, detected)
+                self.add_point_to_graph(current_time, filtered_pupil_x)
+    
             except Exception as e:
                 print(f"Error procesando frame para gráfico: {e}")
                             
@@ -274,10 +278,11 @@ class SimpleProcessorLogic(QObject):
                     self.frame_ready.emit(vis_frame)
                     
                     # Agregar punto al gráfico si se detectó pupila
-                    if detected:
-                        current_time = self.video_player.get_current_time() if self.video_player else 0
-                        self.add_point_to_graph(current_time, pupil_x)
-                        
+                    current_time = self.video_player.get_current_time() if self.video_player else 0
+
+                    filtered_pupil_x = self.pupil_filter.process_pupil_x(current_time, pupil_x, detected)
+                    self.add_point_to_graph(current_time, filtered_pupil_x)
+            
                 except Exception as e:
                     print(f"Error procesando frame: {e}")
                     self.frame_ready.emit(frame)

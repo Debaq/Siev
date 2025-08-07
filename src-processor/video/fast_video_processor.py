@@ -200,6 +200,12 @@ class FastVideoProcessor:
                 pass
                 #self._draw_parameters_info(vis_frame)
             
+            # Actualizar cache solo si se detectó correctamente
+            if pupil_x > 0 and pupil_y > 0:
+                self.last_valid_pupil_x = pupil_x
+                self.last_valid_pupil_y = pupil_y
+                self.last_valid_radius = radius
+    
             return pupil_x, pupil_y, True, vis_frame
             
         except Exception as e:
