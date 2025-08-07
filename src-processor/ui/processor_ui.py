@@ -14,12 +14,8 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QImage
 
 import pyqtgraph as pg
+from utils.graphing.caloric_graph import CaloricPlotWidget 
 
-try:
-    from utils.graphing.caloric_graph import CaloricPlotWidget as CaloricGraph
-except ImportError as e:
-    print(f"Warning: Could not import CaloricGraph: {e}")
-    CaloricGraph = None
 
 from ui.styles.qt6_dark_styles import Qt6DarkStyles
 
@@ -389,24 +385,14 @@ class SimpleProcessorUI(QMainWindow):
         self.graph_layout.addWidget(self.simple_plot)
         
     def setup_caloric_graph(self):
-        """Configurar gráfico tipo calórico"""
         self.clear_graph_container()
         
-        # Usar CaloricGraph existente si está disponible
-        if CaloricGraph:
-            try:
-                self.caloric_graph = CaloricGraph(
-                    total_duration=60.0,  # Se actualizará con duración real
-                    parent=self.graph_container
-                )
-                self.graph_layout.addWidget(self.caloric_graph)
-                return
-            except Exception as e:
-                print(f"Error creando CaloricGraph: {e}")
-        
-        # Fallback a gráfico simple
-        print("CaloricGraph no disponible, usando gráfico simple")
-        self.setup_simple_graph()
+        self.caloric_graph = CaloricPlotWidget(
+            total_duration=60.0,
+            parent=self.graph_container
+        )
+        self.graph_layout.addWidget(self.caloric_graph)
+    
             
     def clear_graph_container(self):
         """Limpiar container de gráficos"""
