@@ -35,7 +35,8 @@ class SimpleProcessorUI(QMainWindow):
     threshold_changed = Signal(str, object)  # param_name, value
     save_config_toggled = Signal(bool)
     graph_type_changed = Signal(str)
-    
+    frame_slider_changed = Signal(int)  # Frame directo en lugar de tiempo
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Simple Video Processor")
@@ -216,23 +217,31 @@ class SimpleProcessorUI(QMainWindow):
         group = QGroupBox("Control de Tiempo")
         layout = QVBoxLayout(group)
         
-        # Slider de tiempo
+        # MODIFICADO: Slider ahora representa frames
         self.time_slider = QSlider(Qt.Horizontal)
         self.time_slider.setMinimum(0)
-        self.time_slider.setMaximum(1000)
+        self.time_slider.setMaximum(100)  # Se actualizará con total de frames
         self.time_slider.setValue(0)
-        self.time_slider.valueChanged.connect(self.time_slider_changed.emit)
+        self.time_slider.setTickPosition(QSlider.TicksBelow)  # Mostrar ticks
+        self.time_slider.setTickInterval(1)  # Un tick por frame
+        self.time_slider.setSingleStep(1)  # Moverse de a 1 frame
+        self.time_slider.setPageStep(10)  # Page up/down mueve 10 frames
+        
+        # IMPORTANTE: Conectar a nueva señal de frames
+        self.time_slider.valueChanged.connect(self.frame_slider_changed.emit)
+        
         layout.addWidget(self.time_slider)
         
         # Layout horizontal para tiempo y switch
         time_info_layout = QHBoxLayout()
         
-        self.time_label = QLabel("Tiempo: 0.00s / 0.00s")
+        # MODIFICADO: Mostrar frame actual además del tiempo
+        self.time_label = QLabel("Frame: 0/0 | Tiempo: 0.00s / 0.00s")
         time_info_layout.addWidget(self.time_label)
         
         time_info_layout.addStretch()
         
-        # Switch para guardar configuración por frame
+        # Switch para guardar configuración por frame (sin cambios)
         time_info_layout.addWidget(QLabel("Guardar Config:"))
         self.switch_save_config = QPushButton("OFF")
         self.switch_save_config.setCheckable(True)
@@ -258,7 +267,67 @@ class SimpleProcessorUI(QMainWindow):
         
         layout.addLayout(time_info_layout)
         
+        # NUEVO: Controles adicionales de navegación por frames
+        nav_layout = QHBoxLayout()
+        
+        self.btn_prev_frame = QPushButton("◀ Frame")
+        self.btn_prev_frame.clicked.connect(self.prev_frame)
+        nav_layout.addWidget(self.btn_prev_frame)
+        
+        self.btn_next_frame = QPushButton("Frame ▶")
+        self.btn_next_frame.clicked.connect(self.next_frame)
+        nav_layout.addWidget(self.btn_next_frame)
+        
+        nav_layout.addStretch()
+        
+        self.btn_prev_10 = QPushButton("◀◀ -10")
+        self.btn_prev_10.clicked.connect(lambda: self.skip_frames(-10))
+        nav_layout.addWidget(self.btn_prev_10)
+        
+        self.btn_next_10 = QPushButton("+10 ▶▶")
+        self.btn_next_10.clicked.connect(lambda: self.skip_frames(10))
+        nav_layout.addWidget(self.btn_next_10)
+        
+        layout.addLayout(nav_layout)
+        
         return group
+    def configure_slider_for_frames(self, total_frames: int):
+        """NUEVO: Configurar slider para trabajar con frames"""
+        self.time_slider.setMaximum(total_frames - 1)
+        self.time_slider.setMinimum(0)
+        self.time_slider.setValue(0)
+        
+        # Para videos largos, ajustar intervalo de ticks
+        if total_frames > 1000:
+            self.time_slider.setTickInterval(30)  # Un tick cada 30 frames (1 seg a 30fps)
+        elif total_frames > 500:
+            self.time_slider.setTickInterval(10)
+        else:
+            self.time_slider.setTickInterval(1)
+    
+    def update_frame_info(self, current_frame: int, total_frames: int, current_time: float, max_time: float):
+        """NUEVO: Actualizar información mostrando frames y tiempo"""
+        frame_text = f"Frame: {current_frame}/{total_frames}"
+        time_text = f"Tiempo: {current_time:.2f}s / {max_time:.2f}s"
+        self.time_label.setText(f"{frame_text} | {time_text}")
+    
+    def prev_frame(self):
+        """NUEVO: Ir al frame anterior"""
+        current = self.time_slider.value()
+        if current > 0:
+            self.time_slider.setValue(current - 1)
+    
+    def next_frame(self):
+        """NUEVO: Ir al siguiente frame"""
+        current = self.time_slider.value()
+        if current < self.time_slider.maximum():
+            self.time_slider.setValue(current + 1)
+    
+    def skip_frames(self, amount: int):
+        """NUEVO: Saltar N frames"""
+        current = self.time_slider.value()
+        new_value = max(0, min(current + amount, self.time_slider.maximum()))
+        self.time_slider.setValue(new_value)
         
     def create_threshold_controls(self) -> QWidget:
         """Crear controles de umbrales"""

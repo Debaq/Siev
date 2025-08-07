@@ -37,7 +37,9 @@ class SimpleProcessorLogic(QObject):
     caloric_point_added = Signal(float, float)  # timestamp, value para gráfico calórico
     time_line_position_updated = Signal(float)  # position para línea de tiempo
     graph_duration_adjusted = Signal(float)  # duration para ajustar gráfico
-    
+    slider_frame_config = Signal(int)  # Emite total de frames para configurar slider
+    frame_info_updated = Signal(int, int)  # Emite (current_frame, total_frames)
+        
     def __init__(self):
         super().__init__()
         
@@ -190,8 +192,17 @@ class SimpleProcessorLogic(QObject):
         if success:
             self.status_updated.emit("Video cargado correctamente")
             
-            # Obtener duración y ajustar gráfico
+            # Obtener información del video
+            total_frames = self.video_player.get_total_frames()
             max_duration = self.video_player.get_duration()
+            
+            # NUEVO: Configurar slider para usar frames directamente
+            self.total_frames = total_frames
+            self.fps = self.video_player.get_fps()
+            
+            # Emitir señal especial para configurar slider con frames
+            self.slider_frame_config.emit(total_frames)  # Nueva señal
+            
             self.graph_duration_adjusted.emit(max_duration)
             
             # Iniciar timer para visualización en tiempo real
@@ -205,6 +216,45 @@ class SimpleProcessorLogic(QObject):
             self.status_updated.emit("Error cargando video")
             self.video_loaded.emit(False, 0.0)
             
+    def set_frame_position(self, frame_number: int):
+        """
+        NUEVO: Establecer posición por número de frame exacto
+        """
+        if not self.video_player:
+            return
+        
+        # Asegurar que el frame está en rango válido
+        frame_number = max(0, min(frame_number, self.total_frames - 1))
+        
+        # Obtener configuración específica para este frame
+        frame_config = self.get_frame_config(frame_number)
+        
+        # Actualizar FastVideoProcessor con configuración específica del frame
+        if self.fast_processor:
+            self.fast_processor.update_thresholds(frame_config)
+        
+        # Buscar frame exacto
+        self.video_player.seek_to_frame(frame_number)
+        
+        # Calcular tiempo para mostrar
+        current_time = frame_number / self.fps if self.fps > 0 else 0
+        max_time = self.video_player.get_duration()
+        
+        # Emitir señales de actualización
+        self.time_info_updated.emit(current_time, max_time)
+        self.time_line_position_updated.emit(current_time)
+        self.frame_info_updated.emit(frame_number, self.total_frames)  # Nueva señal
+        self.update_config_labels()
+        
+        # Procesar frame actual para gráfico
+        if self.fast_processor and self.current_raw_frame is not None:
+            try:
+                pupil_x, pupil_y, detected, _ = self.fast_processor.process_frame(self.current_raw_frame)
+                if detected:
+                    self.add_point_to_graph(current_time, pupil_x)
+            except Exception as e:
+                print(f"Error procesando frame para gráfico: {e}")
+                            
     def _on_duration_changed(self, duration: float):
         """Manejar cambio de duración"""
         self.graph_duration_adjusted.emit(duration)
@@ -332,41 +382,22 @@ class SimpleProcessorLogic(QObject):
     # ========== MÉTODOS DE CONTROL DE TIEMPO ==========
     
     def set_time_position(self, slider_value: int):
-        """Establecer posición de tiempo basada en slider"""
-        if not self.video_player:
-            return
+        """
+        DEPRECATED: Usar set_frame_position en su lugar
+        Este método se mantiene por compatibilidad pero redirige a frames
+        """
+        # Si el slider está configurado para frames (0 a total_frames)
+        if hasattr(self, 'total_frames'):
+            self.set_frame_position(slider_value)
+        else:
+            # Comportamiento antiguo por compatibilidad
+            if not self.video_player:
+                return
             
-        # Convertir valor del slider a tiempo
-        max_time = self.video_player.get_duration()
-        current_time = (slider_value / 1000.0) * max_time
-        current_frame = int(current_time * self.video_player.get_fps()) if self.video_player.get_fps() > 0 else 0
-        
-        # Obtener configuración específica para este frame
-        frame_config = self.get_frame_config(current_frame)
-        
-        # Actualizar FastVideoProcessor con configuración específica del frame
-        if self.fast_processor:
-            self.fast_processor.update_thresholds(frame_config)
-        
-        # Actualizar video player
-        try:
-            self.video_player.seek_to_time(current_time)
-        except Exception as e:
-            print(f"Error en seek_to_time: {e}")
-            
-        # Emitir señales de actualización
-        self.time_info_updated.emit(current_time, max_time)
-        self.time_line_position_updated.emit(current_time)
-        self.update_config_labels()
-        
-        # Procesar frame actual para gráfico si hay detección
-        if self.fast_processor and self.current_raw_frame is not None:
-            try:
-                pupil_x, pupil_y, detected, _ = self.fast_processor.process_frame(self.current_raw_frame)
-                if detected:
-                    self.add_point_to_graph(current_time, pupil_x)
-            except Exception as e:
-                print(f"Error procesando frame para gráfico: {e}")
+            max_time = self.video_player.get_duration()
+            current_time = (slider_value / 1000.0) * max_time
+            current_frame = int(current_time * self.video_player.get_fps())
+            self.set_frame_position(current_frame)
                 
     def update_current_frame_visualization(self):
         """Actualizar visualización del frame actual"""

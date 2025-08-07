@@ -47,6 +47,10 @@ class SimpleProcessorController(QObject):
         self.ui.siev_video_requested.connect(
             lambda: self.logic.load_siev_video(self.ui)
         )
+        self.ui.frame_slider_changed.connect(
+            self.logic.set_frame_position
+        )
+
         
         # Selección de elementos
         self.ui.test_selected.connect(self.logic.set_test_selected)
@@ -87,6 +91,17 @@ class SimpleProcessorController(QObject):
         
         # Umbrales (para actualizar labels en UI)
         self.logic.status_updated.connect(self._on_status_for_thresholds)
+        
+        # NUEVO: Configurar slider cuando se carga video
+        self.logic.slider_frame_config.connect(self.ui.configure_slider_for_frames)
+        self.logic.frame_info_updated.connect(
+            lambda cf, tf: self.ui.update_frame_info(
+                cf, tf, 
+                cf / self.logic.fps if hasattr(self.logic, 'fps') else 0,
+                self.logic.video_player.get_duration() if self.logic.video_player else 0
+            )
+        )
+                
         
     def on_video_loaded(self, success: bool, duration: float):
         """Manejar evento de video cargado"""
