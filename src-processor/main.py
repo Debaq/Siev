@@ -82,7 +82,7 @@ class SimpleProcessorController(QObject):
         self.logic.time_line_position_updated.connect(self.ui.update_time_line_position)
         
         # Configuración
-        self.logic.config_labels_updated.connect(self.ui.update_config_labels)
+        #self.logic.config_labels_updated.connect(self.ui.update_config_labels)
         
         # Gráficos
         self.logic.graph_duration_adjusted.connect(self.ui.adjust_graph_to_duration)

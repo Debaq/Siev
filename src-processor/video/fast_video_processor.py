@@ -148,38 +148,59 @@ class FastVideoProcessor:
             self.model = None
             
     def process_frame(self, frame: np.ndarray) -> Tuple[float, float, bool, np.ndarray]:
+        #print(f"🟦 === INICIO process_frame ===")
+        #print(f"🟦 Línea 1: frame type = {type(frame)}")
+        #print(f"🟦 Línea 2: frame shape = {frame.shape if frame is not None else 'None'}")
+        #print(f"🟦 Línea 3: model = {self.model is not None}")
         """
         Procesar frame y retornar posición de pupila del ojo derecho con visualización
         
         Returns:
             Tuple[x, y, detected, visualization_frame]: Posición x, y, si se detectó y frame con visualización
         """
+        
+        #print(f"🟦 Línea 4: Después del docstring")
+        
         if frame is None or self.model is None:
+            #print("="*50)
+            #print(f"EARLY RETURN DEBUG:")
+            #print(f"frame is None: {frame is None}")
+            #print(f"model is None: {self.model is None}")
+            #print("="*50)
             return 0.0, 0.0, False, frame if frame is not None else np.zeros((480, 640, 3), dtype=np.uint8)
             
+        #print(f"🟦 Línea 5: Pasó el if inicial")
+                    
         try:
+            #print(f"🟦 Línea 6: Entrando al try")
+
             # Hacer copia para visualización
             vis_frame = frame.copy()
+            #print(f"🟦 Línea 7: vis_frame creado")
+
             h, w = frame.shape[:2]
-            
+            #print(f"🟦 Línea 8: Llamando _detect_eyes_yolo")
+
             # Detectar ojos con YOLO (con cache para optimizar)
             detections = self._detect_eyes_yolo(frame)
-            
-            if not detections:
-                self._draw_no_detection_info(vis_frame, "No se detectaron ojos con YOLO")
-                print('self._draw_no_detection_info(vis_frame, "No se detectaron ojos con YOLO"')
-                print(f"{self.last_valid_pupil_x}, {self.last_valid_pupil_y}, {False}")
+            #print(f"🟦 Línea 9: _detect_eyes_yolo retornó: {len(detections) if detections else 0} detections")
 
-                return self.last_valid_pupil_x, self.last_valid_pupil_y, False, vis_frame
+            if not detections:
+                #print(f"🔴 YOLO falló, last_valid_pupil_x = {self.last_valid_pupil_x} (debería ser 41.0)")
+                self._draw_no_detection_info(vis_frame, "No se detectaron ojos con YOLO")
+                return_value = self.last_valid_pupil_x, self.last_valid_pupil_y, False, vis_frame
+                #print(f"🔴 Retornando: {return_value[0]}, {return_value[1]}")
+                return return_value
                 
             # Buscar ojo derecho (el de la izquierda en la imagen, menor x)
             right_eye_detection = self._find_right_eye(detections, w)
             
             if right_eye_detection is None:
+                #print(f"🔴 No right eye, last_valid_pupil_x = {self.last_valid_pupil_x}")
                 self._draw_no_detection_info(vis_frame, "No se identificó ojo derecho válido")
-                print(f"{self.last_valid_pupil_x}, {self.last_valid_pupil_y}, {False}")
-                
-                return self.last_valid_pupil_x, self.last_valid_pupil_y, False, vis_frame
+                return_value = self.last_valid_pupil_x, self.last_valid_pupil_y, False, vis_frame
+                #print(f"🔴 Retornando: {return_value[0]}, {return_value[1]}")
+                return return_value
                 
             # Dibujar detección YOLO
             if self.show_yolo_detection:
@@ -202,16 +223,19 @@ class FastVideoProcessor:
             
             # Actualizar cache solo si se detectó correctamente
             if pupil_x > 0 and pupil_y > 0:
-                self.last_valid_pupil_x = pupil_x
-                self.last_valid_pupil_y = pupil_y
-                self.last_valid_radius = radius
+                #print(f"ACTUALIZANDO last_valid: de {self.last_valid_pupil_x} a {pupil_x}")
+                if pupil_x > 5.0:
+                    old_value = self.last_valid_pupil_x  # Guardar valor anterior
+                    self.last_valid_pupil_x = pupil_x
+                    #print(f"🟢 CONFIRMADO: last_valid_pupil_x cambió de {old_value} a {self.last_valid_pupil_x}")
     
             return pupil_x, pupil_y, True, vis_frame
             
         except Exception as e:
-            print(f"Error procesando frame: {e}")
+            #print(f"🔴 EXCEPCIÓN CAPTURADA: {e}")
+            #print(f"Error procesando frame: {e}")
             self._draw_error_info(vis_frame, str(e))
-            return 0.0, 0.0, False, vis_frame
+            return 0.0, 0.0, False, vis_frame  # ← ¡AQUÍ ESTÁ EL 0.0!
             
     def _detect_eyes_yolo(self, frame: np.ndarray) -> List[Dict]:
         """Detectar ojos usando YOLO con cache para optimización"""

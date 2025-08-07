@@ -180,8 +180,8 @@ class SimpleProcessorUI(QMainWindow):
         controls_layout.addWidget(threshold_group)
         
         # Información de configuraciones por frame
-        config_info_group = self.create_config_info_panel()
-        controls_layout.addWidget(config_info_group)
+        #config_info_group = self.create_config_info_panel()
+        #controls_layout.addWidget(config_info_group)
         
         # Estado
         self.lbl_status = QLabel("Usar menú Archivo → Abrir para cargar video")
@@ -363,7 +363,7 @@ class SimpleProcessorUI(QMainWindow):
         layout.addWidget(self.lbl_erode_right, 1, 2)
         
         # Nose Width
-        layout.addWidget(QLabel("Nose Width:"), 2, 0)
+        #layout.addWidget(QLabel("Nose Width:"), 2, 0)
         slider_nose_width = QSlider(Qt.Horizontal)
         slider_nose_width.setMinimum(10)
         slider_nose_width.setMaximum(50)
@@ -371,12 +371,12 @@ class SimpleProcessorUI(QMainWindow):
         slider_nose_width.valueChanged.connect(
             lambda v: self.threshold_changed.emit('nose_width', v/100.0)
         )
-        layout.addWidget(slider_nose_width, 2, 1)
+        #layout.addWidget(slider_nose_width, 2, 1)
         self.lbl_nose_width = QLabel("0.25")
-        layout.addWidget(self.lbl_nose_width, 2, 2)
+        #layout.addWidget(self.lbl_nose_width, 2, 2)
         
         # Eye Height
-        layout.addWidget(QLabel("Eye Height:"), 3, 0)
+        #layout.addWidget(QLabel("Eye Height:"), 3, 0)
         slider_eye_height = QSlider(Qt.Horizontal)
         slider_eye_height.setMinimum(20)
         slider_eye_height.setMaximum(80)
@@ -384,9 +384,9 @@ class SimpleProcessorUI(QMainWindow):
         slider_eye_height.valueChanged.connect(
             lambda v: self.threshold_changed.emit('eye_height', v/100.0)
         )
-        layout.addWidget(slider_eye_height, 3, 1)
+        #layout.addWidget(slider_eye_height, 3, 1)
         self.lbl_eye_height = QLabel("0.50")
-        layout.addWidget(self.lbl_eye_height, 3, 2)
+        #layout.addWidget(self.lbl_eye_height, 3, 2)
         
         return group
         
@@ -563,7 +563,7 @@ class SimpleProcessorUI(QMainWindow):
     
     def update_config_labels(self, current_frame: int, total_configs: int, current_config: str):
         """Actualizar labels de información de configuración"""
-        self.lbl_current_frame.setText(f"Frame actual: {current_frame}")
+        #self.lbl_current_frame.setText(f"Frame actual: {current_frame}")
         self.lbl_saved_configs.setText(f"Configs guardadas: {total_configs}")
         self.lbl_current_config.setText(f"Config actual: {current_config}")
     

@@ -66,8 +66,8 @@ class SimpleProcessorLogic(QObject):
         self.fast_processor = None
         
         # Timer para visualización en tiempo real
-        self.visualization_timer = QTimer()
-        self.visualization_timer.timeout.connect(self.update_current_frame_visualization)
+        #elf.visualization_timer = QTimer()
+        #self.visualization_timer.timeout.connect(self.update_current_frame_visualization)
         
         # Datos de gráfico (un solo punto por timestamp)
         self.graph_data_timestamps = []
@@ -77,7 +77,12 @@ class SimpleProcessorLogic(QObject):
         self.current_raw_frame = None
         self.current_graph_type = "Espontáneo (Simple)"
         
-        self.pupil_filter = PupilSignalFilter(window_size=7)
+        self.pupil_filter = PupilSignalFilter(
+            window_size=50,           # Ventana más grande = más suavizado
+            filter_type="savgol"      # Mantener Savitzky-Golay
+            )
+        
+        self.last_point = None
         
     # ========== MÉTODOS DE CARGA DE ARCHIVOS ==========
     
@@ -209,7 +214,7 @@ class SimpleProcessorLogic(QObject):
             self.graph_duration_adjusted.emit(max_duration)
             
             # Iniciar timer para visualización en tiempo real
-            self.visualization_timer.start(100)
+            #self.visualization_timer.start(100)
             
             # Buscar frame inicial
             self.video_player.seek_to_frame(0)
@@ -247,17 +252,9 @@ class SimpleProcessorLogic(QObject):
         self.time_info_updated.emit(current_time, max_time)
         self.time_line_position_updated.emit(current_time)
         self.frame_info_updated.emit(frame_number, self.total_frames)  # Nueva señal
-        self.update_config_labels()
+        #self.update_config_labels()
         
-        # Procesar frame actual para gráfico
-        if self.fast_processor and self.current_raw_frame is not None:
-            try:
-                pupil_x, pupil_y, detected, _ = self.fast_processor.process_frame(self.current_raw_frame)
-                filtered_pupil_x = self.pupil_filter.process_pupil_x(current_time, pupil_x, detected)
-                self.add_point_to_graph(current_time, filtered_pupil_x)
-    
-            except Exception as e:
-                print(f"Error procesando frame para gráfico: {e}")
+        
                             
     def _on_duration_changed(self, duration: float):
         """Manejar cambio de duración"""
@@ -273,16 +270,30 @@ class SimpleProcessorLogic(QObject):
             if self.fast_processor:
                 try:
                     pupil_x, pupil_y, detected, vis_frame = self.fast_processor.process_frame(frame)
-                    
                     # Emitir frame procesado para mostrar
                     self.frame_ready.emit(vis_frame)
-                    
-                    # Agregar punto al gráfico si se detectó pupila
-                    current_time = self.video_player.get_current_time() if self.video_player else 0
+                    if self.last_point is None:
+                    # Primer valor siempre aceptado (o con validación mínima)
+                        self.last_point = pupil_x
+                        
+                    if self.last_point != 0:  # Evitar división por cero
+                        relative_change = abs((pupil_x - self.last_point) / self.last_point)
+                    else:
+                        # Si last_point es 0, cualquier valor no cero es un cambio infinito
+                        relative_change = float('inf') if pupil_x != 0 else 0
 
-                    filtered_pupil_x = self.pupil_filter.process_pupil_x(current_time, pupil_x, detected)
-                    self.add_point_to_graph(current_time, filtered_pupil_x)
-            
+                    # Si el cambio es mayor al 20%, NO pasamos la prueba (ignoramos el punto)
+                    if relative_change <= 0.50:  # Cambio aceptable (≤ 20%)
+                        current_time = self.video_player.get_current_time() if self.video_player else 0
+                        filtered_pupil_x = self.pupil_filter.process_pupil_x(current_time, pupil_x, detected)
+                        self.add_point_to_graph(current_time, filtered_pupil_x)
+                        self.last_point = pupil_x  # Actualizamos solo si fue aceptado
+                    else:
+                        # Opcional: emitir advertencia o usar último valor válido
+                        pass
+                        #print(f"Cambio excesivo en pupil_x: {self.last_point} -> {pupil_x} (>{20}%) - ignorado")
+                        # No actualizamos last_point, y no agregamos el punto
+                
                 except Exception as e:
                     print(f"Error procesando frame: {e}")
                     self.frame_ready.emit(frame)
@@ -327,6 +338,9 @@ class SimpleProcessorLogic(QObject):
         if self.fast_processor:
             self.fast_processor.thresholds[param] = value
         
+        # ✅ ACTUALIZAR VISUALIZACIÓN SOLO CUANDO CAMBIAS THRESHOLD
+        self.update_current_frame_visualization()  # Una sola vez, no cada 100ms
+        
         # Si está en modo guardar, guardar configuración automáticamente
         if self.save_config_mode and param in ['threshold_right', 'erode_right']:
             self.save_current_frame_config()
@@ -353,7 +367,7 @@ class SimpleProcessorLogic(QObject):
         self.saved_frame_configs[current_frame] = config
         
         print(f"Configuración guardada para frame {current_frame}: {config}")
-        self.update_config_labels()
+        #self.update_config_labels()
         
     def get_frame_config(self, frame_number: int) -> Dict:
         """Obtener configuración para un frame específico"""
