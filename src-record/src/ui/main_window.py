@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                               QMessageBox, QSizePolicy)
 from PySide6.QtCore import Qt, QTimer, Signal, QSize
 from PySide6.QtGui import QFont, QImage, QPixmap
-
+import cv2
 # Importar módulos del proyecto
 from hardware.camera_thread import CameraThread
 from hardware.serial_handler import SerialHandler
@@ -18,6 +18,8 @@ from utils.validators import validate_all_fields
 from ui.styles import (get_dark_theme, get_group_style, get_input_style, 
                       get_combo_style, get_button_style, get_status_style, 
                       get_camera_label_style)
+import signal
+import sys
 
 class PatientRecordSystem(QMainWindow):
     def __init__(self):
@@ -346,7 +348,7 @@ class PatientRecordSystem(QMainWindow):
             
     def fixed_on(self):
         """Activa LED"""
-        success = self.serial_handler.send_data("LED_ON")
+        success = self.serial_handler.send_data("L_12_ON")
         
         if success or not self.serial_handler.is_connected():
             self.fixed_state = True
@@ -359,7 +361,7 @@ class PatientRecordSystem(QMainWindow):
         
     def fixed_off(self):
         """Desactiva LED"""
-        success = self.serial_handler.send_data("LED_OFF")
+        success = self.serial_handler.send_data("L_12_OFF")
         
         if success or not self.serial_handler.is_connected():
             self.fixed_state = False
@@ -443,22 +445,42 @@ class PatientRecordSystem(QMainWindow):
             event.accept()
             
     def cleanup_and_exit(self):
-        """Limpia recursos y cierra"""
+        """Limpia recursos de forma más robusta"""
+        print("Iniciando limpieza de recursos...")
+        
         try:
-            # Detener cámara
-            if hasattr(self, 'camera_thread'):
+            # Detener cámara PRIMERO
+            if hasattr(self, 'camera_thread') and self.camera_thread:
+                print("Deteniendo thread de cámara...")
                 self.camera_thread.stop_camera()
+                
+                # Esperar a que termine completamente
+                if self.camera_thread.isRunning():
+                    if not self.camera_thread.wait(5000):  # 5 segundos
+                        print("Forzando terminación de cámara...")
+                        self.camera_thread.terminate()
+                        self.camera_thread.wait(2000)
             
             # Desconectar serial
-            if hasattr(self, 'serial_handler'):
+            if hasattr(self, 'serial_handler') and self.serial_handler:
+                print("Desconectando serial...")
                 self.serial_handler.disconnect()
             
             # Cerrar base de datos
-            if hasattr(self, 'db_manager'):
+            if hasattr(self, 'db_manager') and self.db_manager:
+                print("Cerrando base de datos...")
                 self.db_manager.close()
-                
+            
+            # Liberar recursos OpenCV globalmente
+            cv2.destroyAllWindows()
+            
+            print("Limpieza completada exitosamente")
+            
         except Exception as e:
             print(f"Error durante la limpieza: {e}")
+
+
+            
 
 # Función de compatibilidad para el main.py original
 def run_app():

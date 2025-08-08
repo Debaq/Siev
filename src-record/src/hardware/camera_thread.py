@@ -15,16 +15,40 @@ class CameraThread(QThread):
         self.camera_index = 2
         
     def get_available_cameras(self):
-        """Detecta cámaras disponibles"""
+        """Detecta cámaras disponibles de forma más robusta"""
         available_cameras = []
-        for i in range(2):  # Buscar hasta 5 cámaras
-            cap = cv2.VideoCapture(i)
-            if cap.isOpened():
-                ret, _ = cap.read()
-                if ret:
-                    available_cameras.append(i)
-                cap.release()
+        
+        # Probar índices comunes
+        for i in range(10):  # Aumentar rango
+            try:
+                if i > 0:
+                    cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
+                    if cap.isOpened():
+                        ret, frame = cap.read()
+                        if ret and frame is not None:
+                            available_cameras.append(i)
+                            print(f"Cámara funcional encontrada en índice {i}")
+                    cap.release()
+            except Exception as e:
+                print(f"Error probando cámara {i}: {e}")
+                continue
+        
+        # Si no encuentra nada con V4L2, probar con CAP_ANY
+        if not available_cameras:
+            for i in range(5):
+                try:
+                    if i > 0:
+                        cap = cv2.VideoCapture(i)
+                        if cap.isOpened():
+                            ret, frame = cap.read()
+                            if ret and frame is not None:
+                                available_cameras.append(i)
+                        cap.release()
+                except:
+                    continue
+        
         return available_cameras
+
         
     def start_camera(self, camera_index=2):
         """Inicia la cámara"""
@@ -38,8 +62,14 @@ class CameraThread(QThread):
             # Configurar resolución
             self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
             self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-            self.camera.set(cv2.CAP_PROP_FPS, 30)
-            
+            self.camera.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
+            #self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.cap_width)
+            #self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cap_height)
+            self.camera.set(cv2.CAP_PROP_FPS, 120)
+            self.camera.set(cv2.CAP_PROP_AUTOFOCUS, 0)
+            self.camera.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3)
+            self.camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                
             self.running = True
             if not self.isRunning():
                 self.start()
@@ -66,15 +96,34 @@ class CameraThread(QThread):
         return success
         
     def stop_camera(self):
-        """Detiene la cámara"""
+        """Detiene la cámara de forma más robusta"""
+        print("Deteniendo cámara...")
         self.running = False
+        
         if self.recording:
             self.stop_recording()
+        
+        # Liberar cámara de forma más agresiva
         if self.camera:
-            self.camera.release()
+            try:
+                self.camera.release()
+                print("Cámara liberada")
+            except Exception as e:
+                print(f"Error liberando cámara: {e}")
+            finally:
+                self.camera = None
+        
+        # Asegurar que el thread termine
         if self.isRunning():
             self.quit()
-            self.wait()
+            if not self.wait(3000):  # Esperar 3 segundos
+                print("Forzando terminación del thread...")
+                self.terminate()
+                self.wait(1000)
+        
+        # Forzar liberación de recursos OpenCV
+        cv2.destroyAllWindows()
+        print("Cleanup completado")
         
     def start_recording(self, filename):
         """Inicia la grabación de video"""

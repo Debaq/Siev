@@ -15,7 +15,7 @@ class SerialHandler:
             for port in ports:
                 try:
                     # Intentar conectar a cada puerto
-                    self.serial_connection = serial.Serial(port.device, 9600, timeout=1)
+                    self.serial_connection = serial.Serial(port.device, 115200, timeout=1)
                     time.sleep(2)  # Esperar conexión
                     print(f"Conectado a {port.device}")
                     return True
