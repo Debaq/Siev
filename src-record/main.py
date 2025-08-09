@@ -1,40 +1,35 @@
+"""Aplicación principal del sistema de registro."""
+
 import sys
-import os
+from pathlib import Path
 
-# Obtener el directorio actual del script
-current_dir = os.path.dirname(os.path.abspath(__file__))
-src_dir = os.path.join(current_dir, 'src')
 
-# Agregar src al path de Python
-if src_dir not in sys.path:
-    sys.path.insert(0, src_dir)
+def main() -> int:
+    """Inicializa la aplicación de registro."""
 
-# Ahora importar
-try:
-    from ui.main_window import PatientRecordSystem
-    from PySide6.QtWidgets import QApplication
-    
-    def main():
-        app = QApplication(sys.argv)
-        app.setApplicationName("Sistema de Registro con Cámara")
-        
-        window = PatientRecordSystem()
-        window.show()
-        
-        sys.exit(app.exec())
+    current_dir = Path(__file__).resolve().parent
+    src_dir = current_dir / "src"
 
-    if __name__ == "__main__":
-        main()
-        
-except ImportError as e:
-    print(f"Error de importación: {e}")
-    print(f"Directorio actual: {current_dir}")
-    print(f"Directorio src: {src_dir}")
-    print(f"¿Existe src?: {os.path.exists(src_dir)}")
-    
-    if os.path.exists(src_dir):
-        print("Contenido de src:")
-        for item in os.listdir(src_dir):
-            print(f"  - {item}")
-    
-    sys.exit(1)
+    if str(src_dir) not in sys.path:
+        sys.path.insert(0, str(src_dir))
+
+    try:
+        from PySide6.QtWidgets import QApplication
+        from ui.main_window import PatientRecordSystem
+    except ImportError as exc:  # pragma: no cover - ruta sin dependencia
+        print(f"No se pudo iniciar la aplicación: {exc}")
+        print("Asegúrate de tener instaladas las dependencias necesarias (p. ej. PySide6).")
+        return 1
+
+    app = QApplication(sys.argv)
+    app.setApplicationName("Sistema de Registro con Cámara")
+
+    window = PatientRecordSystem()
+    window.show()
+
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
