@@ -3,23 +3,19 @@ import os
 import time
 from datetime import datetime
 
-from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, 
-                              QHBoxLayout, QGridLayout, QLabel, QLineEdit, 
-                              QComboBox, QPushButton, QFrame, QGroupBox,
-                              QMessageBox, QSizePolicy)
-from PySide6.QtCore import Qt, QTimer, Signal, QSize
-from PySide6.QtGui import QFont, QImage, QPixmap
-import cv2
-# Importar módulos del proyecto
-from hardware.camera_thread import CameraThread
+from PySide6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
+                              QHBoxLayout, QGridLayout, QLabel, QLineEdit,
+                              QComboBox, QPushButton, QGroupBox,
+                              QMessageBox)
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont
+from controllers.camera_controller import CameraController
 from hardware.serial_handler import SerialHandler
 from database.database import DatabaseManager
 from utils.validators import validate_all_fields
-from ui.styles import (get_dark_theme, get_group_style, get_input_style, 
-                      get_combo_style, get_button_style, get_status_style, 
+from ui.styles import (get_dark_theme, get_group_style, get_input_style,
+                      get_combo_style, get_button_style, get_status_style,
                       get_camera_label_style)
-import signal
-import sys
 
 class PatientRecordSystem(QMainWindow):
     def __init__(self):
@@ -47,7 +43,7 @@ class PatientRecordSystem(QMainWindow):
         
         # Iniciar cámara por defecto
         if self.available_cameras:
-            self.camera_thread.start_camera(self.available_cameras[0])
+            self.camera_controller.start_camera(self.available_cameras[0])
         
     def init_components(self):
         """Inicializa todos los componentes del sistema"""
@@ -63,9 +59,9 @@ class PatientRecordSystem(QMainWindow):
             sys.exit(1)
         
         # Configurar cámara
-        self.camera_thread = CameraThread()
-        self.camera_thread.frameReady.connect(self.update_camera_feed)
-        self.available_cameras = self.camera_thread.get_available_cameras()
+        self.camera_controller = CameraController()
+        self.camera_controller.frame_ready.connect(self._handle_frame)
+        self.available_cameras = self.camera_controller.get_available_cameras()
         
         if not self.available_cameras:
             QMessageBox.warning(self, "Sin Cámaras", 
@@ -272,7 +268,7 @@ class PatientRecordSystem(QMainWindow):
         """Cambia la cámara activa"""
         if index >= 0 and index < len(self.available_cameras):
             camera_index = self.available_cameras[index]
-            success = self.camera_thread.change_camera(camera_index)
+            success = self.camera_controller.change_camera(camera_index)
             if success:
                 self.status_label.setText(f"📷 Cámara cambiada a: {camera_index}")
             else:
@@ -282,14 +278,10 @@ class PatientRecordSystem(QMainWindow):
     def apply_dark_theme(self):
         """Aplica tema oscuro"""
         self.setStyleSheet(get_dark_theme())
-        
-    def update_camera_feed(self, qt_image):
-        """Actualiza el feed de la cámara"""
-        pixmap = QPixmap.fromImage(qt_image)
-        scaled_pixmap = pixmap.scaled(self.camera_label.size(), 
-                                    Qt.AspectRatioMode.KeepAspectRatio, 
-                                    Qt.TransformationMode.SmoothTransformation)
-        self.camera_label.setPixmap(scaled_pixmap)
+
+    def _handle_frame(self, pixmap):
+        """Recibe imágenes del controlador y las muestra."""
+        self.camera_label.setPixmap(pixmap)
         
     def toggle_recording(self):
         """Alterna grabación"""
@@ -309,7 +301,7 @@ class PatientRecordSystem(QMainWindow):
         filename = f"{patient_name}_{timestamp}.mp4"
         self.current_video_path = os.path.join(self.videos_folder, filename)
         
-        success = self.camera_thread.start_recording(self.current_video_path)
+        success = self.camera_controller.start_recording(self.current_video_path)
         if not success:
             QMessageBox.warning(self, "Error", "No se pudo iniciar la grabación")
             return
@@ -326,7 +318,7 @@ class PatientRecordSystem(QMainWindow):
         
     def stop_recording(self):
         """Detiene grabación"""
-        self.camera_thread.stop_recording()
+        self.camera_controller.stop_recording()
         self.recording = False
         self.timer.stop()
         
@@ -450,16 +442,16 @@ class PatientRecordSystem(QMainWindow):
         
         try:
             # Detener cámara PRIMERO
-            if hasattr(self, 'camera_thread') and self.camera_thread:
+            if hasattr(self, 'camera_controller') and self.camera_controller:
                 print("Deteniendo thread de cámara...")
-                self.camera_thread.stop_camera()
-                
+                self.camera_controller.stop_camera()
+
                 # Esperar a que termine completamente
-                if self.camera_thread.isRunning():
-                    if not self.camera_thread.wait(5000):  # 5 segundos
+                if self.camera_controller.isRunning():
+                    if not self.camera_controller.wait(5000):  # 5 segundos
                         print("Forzando terminación de cámara...")
-                        self.camera_thread.terminate()
-                        self.camera_thread.wait(2000)
+                        self.camera_controller.terminate()
+                        self.camera_controller.wait(2000)
             
             # Desconectar serial
             if hasattr(self, 'serial_handler') and self.serial_handler:
@@ -470,9 +462,6 @@ class PatientRecordSystem(QMainWindow):
             if hasattr(self, 'db_manager') and self.db_manager:
                 print("Cerrando base de datos...")
                 self.db_manager.close()
-            
-            # Liberar recursos OpenCV globalmente
-            cv2.destroyAllWindows()
             
             print("Limpieza completada exitosamente")
             
@@ -493,5 +482,6 @@ def run_app():
     
     window = PatientRecordSystem()
     window.show()
-    
+
     sys.exit(app.exec())
+
