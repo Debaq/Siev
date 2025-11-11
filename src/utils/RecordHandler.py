@@ -30,8 +30,8 @@ class RecordingController:
         
         # === CONTROL DE ENVÍO A GRÁFICOS (OPTIMIZADO) ===
         self.send_to_graph = False
-        #self.graph_update_interval = 50  # Enviar a gráfico cada 50ms (20 FPS)
-        self.graph_update_interval = 200  # FAST
+        # OPTIMIZACIÓN: 33ms = 30 FPS para envío fluido a gráficos
+        self.graph_update_interval = 33  # 30 FPS (antes 200ms = 5 FPS)
         self.last_graph_update = 0
         self.graph_data_buffer = []  # Buffer temporal para envío a gráficos
         
@@ -68,13 +68,14 @@ class RecordingController:
         self.eye_processor = EyeDataProcessor()
         
         # Configuración optimizada para performance
-        self.eye_processor.set_filter_strength(0.4)      # Menos filtrado = más rápido
-        self.eye_processor.set_interpolation_steps(2)    # Menos interpolación = más rápido
+        self.eye_processor.set_filter_strength(0.5)      # Balance entre calidad y velocidad
+        self.eye_processor.set_interpolation_steps(0)    # OPTIMIZACIÓN: Sin interpolación (datos reales)
         self.eye_processor.set_history_size(3)           # Buffer más pequeño = más rápido
-        
+
         # Mantener procesamiento de calidad pero más eficiente
         self.eye_processor.set_smoothing_enabled(True)
-        self.eye_processor.set_interpolation_enabled(True)
+        # OPTIMIZACIÓN: Desactivar interpolación artificial para nistagmos
+        self.eye_processor.set_interpolation_enabled(False)  # Solo datos reales
         
         # Configurar Kalman con parámetros más conservadores
         self.eye_processor.set_kalman_enabled(True)

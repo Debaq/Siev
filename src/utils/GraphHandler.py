@@ -119,11 +119,13 @@ class TriplePlotWidget(QWidget):
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.process_data_queue)
         self.update_timer.start(update_interval)
-        
+
         # Timer para actualización de visualización
+        # OPTIMIZACIÓN: 33ms = 30 FPS en lugar de 500ms (2 FPS)
+        # Esto elimina los saltos visuales en el gráfico
         self.display_timer = QTimer()
         self.display_timer.timeout.connect(self.update_display)
-        self.display_timer.start(500)  # ~30 FPS para la visualización
+        self.display_timer.start(33)  # 30 FPS para visualización fluida
     
     def set_recording_state(self, is_recording):
         """

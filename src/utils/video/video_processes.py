@@ -22,9 +22,11 @@ class VideoProcesses:
         
         # Variables compartidas
         self.running = Value(ctypes.c_bool, True)
-        self.frame_queue = mp.Queue(maxsize=2)
-        self.detection_queue = mp.Queue(maxsize=2)
-        self.result_queue = mp.Queue(maxsize=2)
+        # OPTIMIZACIÓN: Colas más grandes para evitar pérdida de frames
+        # 30 frames = 0.5 segundos a 60 FPS
+        self.frame_queue = mp.Queue(maxsize=30)
+        self.detection_queue = mp.Queue(maxsize=30)
+        self.result_queue = mp.Queue(maxsize=30)
         
         # Configuración de cámara compartida
         self.nose_width = Value(ctypes.c_float, 0.25)
@@ -603,7 +605,8 @@ class VideoProcesses:
 
     def start(self):
         """Inicia todos los procesos"""
-        self.ui_queue = mp.Queue(maxsize=2)
+        # OPTIMIZACIÓN: Cola UI más grande para no perder frames procesados
+        self.ui_queue = mp.Queue(maxsize=30)
         
         self.capture_process = mp.Process(target=self.capture_worker)
         self.detection_process = mp.Process(target=self.detection_worker)

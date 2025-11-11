@@ -11,7 +11,7 @@ class DetectorNistagmo:
     marcar sus fases rápidas (sacadas) y lentas (VCL), y calcular sus parámetros.
     """
     
-    def __init__(self, 
+    def __init__(self,
                  frecuencia_muestreo: float = 100.0,
                  umbral_sacada: float = 25.0,
                  duracion_minima_vcl: float = 0.1,
@@ -19,7 +19,7 @@ class DetectorNistagmo:
                  frecuencia_filtro_pa: float = 0.5):
         """
         Inicializa el detector de nistagmos con los parámetros de configuración.
-        
+
         Args:
             frecuencia_muestreo: Frecuencia de muestreo de los datos en Hz
             umbral_sacada: Umbral de velocidad para detectar sacadas en °/s
@@ -32,13 +32,18 @@ class DetectorNistagmo:
         self.duracion_minima_vcl = duracion_minima_vcl
         self.freq_pb = frecuencia_filtro_pb
         self.freq_pa = frecuencia_filtro_pa
-        
+
         # Para almacenar resultados
         self.datos_raw = None
         self.datos_filtrados = None
         self.velocidad = None
         self.indices_sacadas = []
         self.segmentos_vcl = []
+
+        # Variables para procesamiento incremental (OPTIMIZACIÓN)
+        self.ventana_analisis = int(self.fs * 2)  # Analizar últimos 2 segundos
+        self.ultima_posicion_procesada = 0
+        self.buffer_overlap = int(self.fs * 0.5)  # 0.5s de overlap para continuidad
         
     def procesar_datos(self, datos: Union[List[float], np.ndarray]) -> Dict:
         """
@@ -78,22 +83,77 @@ class DetectorNistagmo:
     
     def añadir_datos(self, nuevos_datos: Union[List[float], np.ndarray]) -> Dict:
         """
-        Añade nuevos datos a los existentes y realiza el procesamiento.
-        Útil para procesamiento en tiempo real.
-        
+        Añade nuevos datos y realiza procesamiento INCREMENTAL optimizado.
+        Solo procesa la ventana de datos recientes, no todo el historial.
+
         Args:
             nuevos_datos: Nuevos datos de posición ocular a añadir
-            
+
         Returns:
             Diccionario con los resultados actualizados
         """
+        nuevos_datos_array = np.array(nuevos_datos)
+
         if self.datos_raw is None:
-            self.datos_raw = np.array(nuevos_datos)
+            # Primera vez: procesar todo
+            self.datos_raw = nuevos_datos_array
+            return self.procesar_datos(self.datos_raw)
+
+        # Añadir nuevos datos al historial
+        self.datos_raw = np.concatenate([self.datos_raw, nuevos_datos_array])
+
+        # OPTIMIZACIÓN: Solo procesar ventana reciente con overlap
+        total_puntos = len(self.datos_raw)
+
+        if total_puntos > self.ventana_analisis:
+            # Procesar solo últimos N puntos con overlap
+            inicio = max(0, total_puntos - self.ventana_analisis - self.buffer_overlap)
+            ventana_datos = self.datos_raw[inicio:]
+
+            # Procesar ventana
+            datos_filtrados_ventana = self._filtrar_datos(ventana_datos)
+            velocidad_ventana = self._calcular_velocidad(datos_filtrados_ventana)
+
+            # Actualizar solo la parte nueva
+            if self.datos_filtrados is None:
+                self.datos_filtrados = datos_filtrados_ventana
+                self.velocidad = velocidad_ventana
+            else:
+                # Reemplazar la parte actualizada
+                self.datos_filtrados = np.concatenate([
+                    self.datos_filtrados[:inicio],
+                    datos_filtrados_ventana
+                ])
+                self.velocidad = np.concatenate([
+                    self.velocidad[:inicio],
+                    velocidad_ventana
+                ])
+
+            # Detectar sacadas solo en ventana reciente
+            indices_sacadas_ventana = self._detectar_sacadas(velocidad_ventana)
+            # Ajustar índices al array completo
+            self.indices_sacadas = [idx + inicio for idx in indices_sacadas_ventana]
+
         else:
-            self.datos_raw = np.concatenate([self.datos_raw, nuevos_datos])
-        
-        # Reprocesar con todos los datos
-        return self.procesar_datos(self.datos_raw)
+            # Dataset pequeño: procesar todo (primera fase)
+            self.datos_filtrados = self._filtrar_datos(self.datos_raw)
+            self.velocidad = self._calcular_velocidad(self.datos_filtrados)
+            self.indices_sacadas = self._detectar_sacadas(self.velocidad)
+
+        # Identificar VCL (solo en ventana reciente)
+        self.segmentos_vcl = self._identificar_vcl()
+
+        # Recopilar resultados
+        resultados = {
+            'indices_sacadas': self.indices_sacadas,
+            'segmentos_vcl': self.segmentos_vcl,
+            'total_nistagmos': len(self.segmentos_vcl),
+            'vcl_promedio': np.mean([seg['velocidad'] for seg in self.segmentos_vcl]) if self.segmentos_vcl else 0,
+            'velocidad_filtrada': self.velocidad,
+            'datos_filtrados': self.datos_filtrados
+        }
+
+        return resultados
     
     def obtener_marcas_nistagmos(self) -> List[int]:
         """
@@ -212,20 +272,78 @@ class DetectorNistagmo:
         return velocidad_suavizada
     
     def _detectar_sacadas(self, velocidad: np.ndarray) -> List[int]:
-        """Detecta las sacadas basándose en el umbral de velocidad."""
-        # Encontrar puntos donde la velocidad supera el umbral (en cualquier dirección)
+        """
+        Detecta las sacadas con algoritmo mejorado.
+        Busca cambios rápidos de velocidad característicos de nistagmos.
+        """
+        if len(velocidad) < 10:
+            return []
+
         indices_picos = []
-        
+
+        # Calcular aceleración (segunda derivada) para mejor detección
+        aceleracion = np.diff(velocidad)
+
+        # Distancia mínima entre sacadas (100ms)
+        min_distance = int(0.1 * self.fs)
+
+        # MÉTODO 1: Detección por umbral de velocidad (método original mejorado)
         # Velocidades positivas (sacadas a la derecha/arriba)
-        picos_pos, _ = signal.find_peaks(velocidad, height=self.umbral_sacada, distance=int(0.1*self.fs))
-        
+        picos_pos, props_pos = signal.find_peaks(
+            velocidad,
+            height=self.umbral_sacada,
+            distance=min_distance,
+            prominence=self.umbral_sacada * 0.3  # Prominencia mínima
+        )
+
         # Velocidades negativas (sacadas a la izquierda/abajo)
-        picos_neg, _ = signal.find_peaks(-velocidad, height=self.umbral_sacada, distance=int(0.1*self.fs))
-        
-        # Combinar y ordenar por tiempo
-        indices_picos = np.sort(np.concatenate([picos_pos, picos_neg]))
-        
-        return indices_picos.tolist()
+        picos_neg, props_neg = signal.find_peaks(
+            -velocidad,
+            height=self.umbral_sacada,
+            distance=min_distance,
+            prominence=self.umbral_sacada * 0.3
+        )
+
+        # MÉTODO 2: Detección por cambios abruptos en aceleración
+        # Buscar transiciones rápidas (características de sacadas)
+        umbral_aceleracion = self.umbral_sacada * 2
+        cambios_bruscos = []
+
+        for i in range(1, len(aceleracion) - 1):
+            # Detectar cambio abrupto en aceleración
+            if abs(aceleracion[i]) > umbral_aceleracion:
+                # Verificar que sea un pico aislado
+                if i > min_distance and (len(cambios_bruscos) == 0 or i - cambios_bruscos[-1] > min_distance):
+                    cambios_bruscos.append(i)
+
+        # Combinar ambos métodos
+        todos_indices = np.concatenate([picos_pos, picos_neg, cambios_bruscos])
+
+        if len(todos_indices) == 0:
+            return []
+
+        # Eliminar duplicados cercanos (mantener solo el más prominente)
+        indices_unicos = []
+        todos_indices_sorted = np.sort(todos_indices)
+
+        i = 0
+        while i < len(todos_indices_sorted):
+            idx_actual = todos_indices_sorted[i]
+
+            # Buscar todos los índices cercanos (dentro de min_distance)
+            grupo = [idx_actual]
+            j = i + 1
+            while j < len(todos_indices_sorted) and todos_indices_sorted[j] - idx_actual < min_distance:
+                grupo.append(todos_indices_sorted[j])
+                j += 1
+
+            # Seleccionar el índice con mayor velocidad absoluta
+            idx_max = max(grupo, key=lambda idx: abs(velocidad[int(idx)]) if int(idx) < len(velocidad) else 0)
+            indices_unicos.append(int(idx_max))
+
+            i = j
+
+        return indices_unicos
     
     def _identificar_vcl(self) -> List[Dict]:
         """Identifica las fases lentas entre sacadas consecutivas."""
