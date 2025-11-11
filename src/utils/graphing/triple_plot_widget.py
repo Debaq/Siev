@@ -71,6 +71,7 @@ class ConfigurablePlotWidget(QWidget):
         self.is_recording = False
         self.auto_scroll = True
         self._updating_range = False
+        self.show_blink_regions = True  # Controlar visualización de áreas de parpadeo
         
         # Crear gráficos y elementos visuales según configuración
         self.plots = []
@@ -328,6 +329,18 @@ class ConfigurablePlotWidget(QWidget):
     def _update_blink_regions(self, visible_data: Dict):
         """Actualiza las regiones de parpadeo de manera eficiente."""
         try:
+            # CONTROL: No dibujar áreas de parpadeo si está desactivado
+            if not self.show_blink_regions:
+                # Limpiar regiones existentes si las hay
+                for plot_idx, plot in enumerate(self.plots):
+                    for region in self.blink_regions[plot_idx]:
+                        try:
+                            plot.removeItem(region)
+                        except:
+                            pass
+                    self.blink_regions[plot_idx].clear()
+                return
+
             # Obtener regiones de parpadeo
             left_regions, right_regions = self.display_buffer.get_blink_regions()
             
@@ -421,9 +434,11 @@ class ConfigurablePlotWidget(QWidget):
     def clear_data(self):
         """Limpia todos los datos del buffer de visualización."""
         print("Limpiando datos del gráfico configurable...")
-        
+
         self.display_buffer.clear()
         self.auto_scroll = True
+        # REACTIVAR visualización de áreas de parpadeo para nuevas grabaciones
+        self.show_blink_regions = True
         
         # Limpiar curvas
         for curve in self.curves:

@@ -463,8 +463,9 @@ class MainWindow(QMainWindow):
             self.plot_widget.clearPlots()
 
             # DESACTIVAR visualización de áreas de parpadeo durante reproducción
-            if hasattr(self.plot_widget, 'blink_detection_enabled'):
-                self.plot_widget.blink_detection_enabled = False
+            if hasattr(self.plot_widget, 'show_blink_regions'):
+                self.plot_widget.show_blink_regions = False
+                print("✓ Áreas de parpadeo desactivadas para reproducción")
 
             # Extraer datos CSV del archivo .siev
             csv_data = self.siev_manager.extract_test_csv_data(
