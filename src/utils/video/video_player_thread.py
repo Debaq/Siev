@@ -50,7 +50,104 @@ class VideoPlayerThread(QThread):
         self.pupil_analyzer = None
         self.auto_crop_enabled = True  # Activado por defecto
         self.crop_area = None  # (x, y, width, height)
+
+        # === TRANSFORMACIÓN DE COORDENADAS ===
+        # Para convertir coordenadas del CSV (resolución original) a video con padding
+        self.padding_info = None
         
+    def detect_video_padding(self):
+        """
+        Detecta automáticamente el padding negro del video.
+        Esto permite transformar coordenadas del CSV correctamente.
+        """
+        try:
+            if not self.cap:
+                return
+
+            # Leer primer frame
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ret, frame = self.cap.read()
+
+            if not ret or frame is None:
+                print("No se pudo leer frame para detectar padding")
+                return
+
+            height, width = frame.shape[:2]
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+            # Detectar bordes negros (padding)
+            # Threshold bajo para detectar negro (0-10)
+            _, binary = cv2.threshold(gray, 10, 255, cv2.THRESH_BINARY)
+
+            # Encontrar filas y columnas NO negras
+            rows_with_content = np.where(binary.any(axis=1))[0]
+            cols_with_content = np.where(binary.any(axis=0))[0]
+
+            if len(rows_with_content) > 0 and len(cols_with_content) > 0:
+                # Calcular padding
+                pad_top = rows_with_content[0]
+                pad_bottom = height - rows_with_content[-1] - 1
+                pad_left = cols_with_content[0]
+                pad_right = width - cols_with_content[-1] - 1
+
+                # Calcular dimensiones originales
+                original_height = height - pad_top - pad_bottom
+                original_width = width - pad_left - pad_right
+
+                self.padding_info = {
+                    'original_width': original_width,
+                    'original_height': original_height,
+                    'pad_left': pad_left,
+                    'pad_top': pad_top,
+                    'pad_right': pad_right,
+                    'pad_bottom': pad_bottom,
+                    'video_width': width,
+                    'video_height': height
+                }
+
+                print(f"✓ Padding detectado:")
+                print(f"  - Video: {width}x{height}")
+                print(f"  - Original: {original_width}x{original_height}")
+                print(f"  - Padding: left={pad_left}, top={pad_top}, right={pad_right}, bottom={pad_bottom}")
+            else:
+                print("No se detectó padding en el video")
+                # Sin padding
+                self.padding_info = {
+                    'original_width': width,
+                    'original_height': height,
+                    'pad_left': 0,
+                    'pad_top': 0,
+                    'pad_right': 0,
+                    'pad_bottom': 0,
+                    'video_width': width,
+                    'video_height': height
+                }
+
+        except Exception as e:
+            print(f"Error detectando padding: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def transform_coordinates_from_original(self, x, y):
+        """
+        Transforma coordenadas del CSV (resolución original) a coordenadas del video con padding.
+
+        Args:
+            x, y: Coordenadas en la resolución original de la cámara
+
+        Returns:
+            x_transformed, y_transformed: Coordenadas en el video con padding
+        """
+        if not self.padding_info:
+            return x, y
+
+        # Las coordenadas del CSV están en la resolución original
+        # El video tiene padding, así que las coordenadas se desplazan
+        x_transformed = x + self.padding_info['pad_left']
+        y_transformed = y + self.padding_info['pad_top']
+
+        return int(x_transformed), int(y_transformed)
+
     def load_video_from_data(self):
         """Cargar video desde datos binarios"""
         try:
@@ -76,6 +173,9 @@ class VideoPlayerThread(QThread):
             
             print(f"Video cargado: {self.total_frames} frames, {self.fps} FPS, {self.duration:.2f}s")
             
+            # Detectar padding del video (bordes negros)
+            self.detect_video_padding()
+
             # Inicializar auto-crop ANTES de procesar primer frame
             if self.auto_crop_enabled:
                 self.initialize_auto_crop()
@@ -308,18 +408,27 @@ class VideoPlayerThread(QThread):
             return [None, None]
     
     def _draw_pupil_detection(self, frame, pupil_positions):
-        """Dibujar detección de pupila en el frame"""
+        """
+        Dibujar detección de pupila en el frame.
+        IMPORTANTE: Las coordenadas deben estar YA transformadas al espacio del video.
+        """
         for i, pos in enumerate(pupil_positions):
             if pos:
                 x, y = int(pos[0]), int(-pos[1])  # Y negativo de vuelta a positivo
-                
+
+                # APLICAR TRANSFORMACIÓN DE COORDENADAS si tenemos padding_info
+                # Esto convierte coordenadas de resolución original → video con padding
+                if self.padding_info:
+                    x, y = self.transform_coordinates_from_original(x, -y)  # -y para volver a coords normales
+                    y = -y  # Volver a negativo para el abs()
+
                 # Color según ojo
                 color = (0, 255, 0) if i == 0 else (255, 0, 0)  # Verde=derecho, Rojo=izquierdo
-                
+
                 # Dibujar círculo y cruz
-                cv2.circle(frame, (x, y), 5, color, 2)
-                cv2.line(frame, (x-10, y), (x+10, y), color, 1)
-                cv2.line(frame, (x, y-10), (x, y+10), color, 1)
+                cv2.circle(frame, (x, abs(y)), 5, color, 2)
+                cv2.line(frame, (x-10, abs(y)), (x+10, abs(y)), color, 1)
+                cv2.line(frame, (x, abs(y)-10), (x, abs(y)+10), color, 1)
     
     def update_analysis_config(self, config):
         """Actualizar configuración de análisis"""

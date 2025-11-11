@@ -215,20 +215,33 @@ class VideoRecorder:
                 print(f"Error eliminando temporal: {e}")
     
     def _add_padding(self, frame):
-        """Agregar padding negro para ajustar frame a 640x480 sin deformar - TU FUNCIÓN ORIGINAL"""
+        """
+        Agregar padding negro para ajustar frame a 640x480 sin deformar.
+        Retorna el frame con padding Y los valores de padding aplicados.
+        """
         current_height, current_width = frame.shape[:2]
         target_width, target_height = 640, 480
-        
+
         # Calcular padding necesario
         pad_width = target_width - current_width
         pad_height = target_height - current_height
-        
+
         # Centrar la imagen
         pad_left = pad_width // 2
         pad_right = pad_width - pad_left
         pad_top = pad_height // 2
         pad_bottom = pad_height - pad_top
-        
+
+        # Guardar información de padding para transformación de coordenadas
+        self.padding_info = {
+            'original_width': current_width,
+            'original_height': current_height,
+            'pad_left': pad_left,
+            'pad_top': pad_top,
+            'pad_right': pad_right,
+            'pad_bottom': pad_bottom
+        }
+
         # Aplicar padding negro
         padded_frame = cv2.copyMakeBorder(
             frame,
@@ -236,7 +249,7 @@ class VideoRecorder:
             cv2.BORDER_CONSTANT,
             value=[0, 0, 0]  # Negro
         )
-        
+
         return padded_frame
     
     def _recording_worker(self):
