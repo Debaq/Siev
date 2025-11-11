@@ -71,7 +71,7 @@ class ConfigurablePlotWidget(QWidget):
         self.is_recording = False
         self.auto_scroll = True
         self._updating_range = False
-        self.show_blink_regions = True  # Controlar visualización de áreas de parpadeo
+        self.show_blink_regions = False  # PERMANENTEMENTE DESACTIVADO - Usuario no quiere ver áreas de parpadeo
         
         # Crear gráficos y elementos visuales según configuración
         self.plots = []
@@ -437,8 +437,7 @@ class ConfigurablePlotWidget(QWidget):
 
         self.display_buffer.clear()
         self.auto_scroll = True
-        # REACTIVAR visualización de áreas de parpadeo para nuevas grabaciones
-        self.show_blink_regions = True
+        # NO reactivar áreas de parpadeo - Usuario las quiere PERMANENTEMENTE desactivadas
         
         # Limpiar curvas
         for curve in self.curves:
