@@ -450,37 +450,39 @@ class TriplePlotWidget(QWidget):
                             if i < len(self.curves):
                                 self.curves[i].setData(x_array[indices], y_array[indices])
                 
-            # Optimizar regiones de parpadeo para mostrar solo las visibles
-            visible_left_blinks, visible_right_blinks = self.optimize_blink_regions()
-                
+            # DESACTIVADO: Visualización de regiones de parpadeo (áreas rojas/naranjas)
+            # El usuario prefiere no ver estas áreas coloreadas
+            # visible_left_blinks, visible_right_blinks = self.optimize_blink_regions()
+
             # Limpiar regiones de parpadeo anteriores
             for plot_idx, plot in enumerate(self.plots):
                 # Eliminar todas las regiones de parpadeo existentes
                 for region in self.blink_regions[plot_idx]:
                     plot.removeItem(region)
                 self.blink_regions[plot_idx] = []
-                
-                # Añadir regiones de parpadeo visibles para ojo izquierdo
-                for start, end in visible_left_blinks:
-                    if end > start:  # Asegurarse de que la región es válida
-                        region = pg.LinearRegionItem(
-                            values=[start, end],
-                            brush=pg.mkBrush(255, 0, 0, 50),  # Rojo semi-transparente
-                            movable=False
-                        )
-                        plot.addItem(region)
-                        self.blink_regions[plot_idx].append(region)
-                
-                # Añadir regiones de parpadeo visibles para ojo derecho
-                for start, end in visible_right_blinks:
-                    if end > start:  # Asegurarse de que la región es válida
-                        region = pg.LinearRegionItem(
-                            values=[start, end],
-                            brush=pg.mkBrush(255, 165, 0, 50),  # Naranja semi-transparente
-                            movable=False
-                        )
-                        plot.addItem(region)
-                        self.blink_regions[plot_idx].append(region)
+
+                # DESACTIVADO: No dibujar áreas de parpadeo
+                # # Añadir regiones de parpadeo visibles para ojo izquierdo
+                # for start, end in visible_left_blinks:
+                #     if end > start:
+                #         region = pg.LinearRegionItem(
+                #             values=[start, end],
+                #             brush=pg.mkBrush(255, 0, 0, 50),  # Rojo semi-transparente
+                #             movable=False
+                #         )
+                #         plot.addItem(region)
+                #         self.blink_regions[plot_idx].append(region)
+
+                # # Añadir regiones de parpadeo visibles para ojo derecho
+                # for start, end in visible_right_blinks:
+                #     if end > start:
+                #         region = pg.LinearRegionItem(
+                #             values=[start, end],
+                #             brush=pg.mkBrush(255, 165, 0, 50),  # Naranja semi-transparente
+                #             movable=False
+                #         )
+                #         plot.addItem(region)
+                #         self.blink_regions[plot_idx].append(region)
                         
             # Gestionar el desplazamiento automático
             if len(self.x_data) > 0 and self.auto_scroll:
@@ -505,28 +507,29 @@ class TriplePlotWidget(QWidget):
                     
                 # Limpiar flag después de la actualización
                 self._updating_range = False
-                
-            # Marcar parpadeos en curso (aún no finalizados)
-            current_time = self.x_data[-1] if self.x_data else 0
-            if self.left_blinking and self.blink_start_time["left"] is not None:
-                for plot_idx, plot in enumerate(self.plots):
-                    region = pg.LinearRegionItem(
-                        values=[self.blink_start_time["left"], current_time],
-                        brush=pg.mkBrush(255, 0, 0, 50),  # Rojo semi-transparente
-                        movable=False
-                    )
-                    plot.addItem(region)
-                    self.blink_regions[plot_idx].append(region)
-                    
-            if self.right_blinking and self.blink_start_time["right"] is not None:
-                for plot_idx, plot in enumerate(self.plots):
-                    region = pg.LinearRegionItem(
-                        values=[self.blink_start_time["right"], current_time],
-                        brush=pg.mkBrush(255, 165, 0, 50),  # Naranja semi-transparente
-                        movable=False
-                    )
-                    plot.addItem(region)
-                    self.blink_regions[plot_idx].append(region)
+
+            # DESACTIVADO: Marcado visual de parpadeos en curso
+            # El usuario prefiere no ver las áreas coloreadas de parpadeos
+            # current_time = self.x_data[-1] if self.x_data else 0
+            # if self.left_blinking and self.blink_start_time["left"] is not None:
+            #     for plot_idx, plot in enumerate(self.plots):
+            #         region = pg.LinearRegionItem(
+            #             values=[self.blink_start_time["left"], current_time],
+            #             brush=pg.mkBrush(255, 0, 0, 50),  # Rojo semi-transparente
+            #             movable=False
+            #         )
+            #         plot.addItem(region)
+            #         self.blink_regions[plot_idx].append(region)
+
+            # if self.right_blinking and self.blink_start_time["right"] is not None:
+            #     for plot_idx, plot in enumerate(self.plots):
+            #         region = pg.LinearRegionItem(
+            #             values=[self.blink_start_time["right"], current_time],
+            #             brush=pg.mkBrush(255, 165, 0, 50),  # Naranja semi-transparente
+            #             movable=False
+            #         )
+            #         plot.addItem(region)
+            #         self.blink_regions[plot_idx].append(region)
                 
         except Exception as e:
             print(f"Error al actualizar gráficos: {e}")
