@@ -1,4 +1,4 @@
-# SIEV - Sistema de Inspección y Evaluación Visual
+# SIEV - Sistema Integrado de Evaluación Vestibular
 
 <div align="center">
 
