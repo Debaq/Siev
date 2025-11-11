@@ -30,7 +30,8 @@ class RecordingController:
         
         # === CONTROL DE ENVÍO A GRÁFICOS (OPTIMIZADO) ===
         self.send_to_graph = False
-        self.graph_update_interval = 50  # Enviar a gráfico cada 50ms (20 FPS)
+        #self.graph_update_interval = 50  # Enviar a gráfico cada 50ms (20 FPS)
+        self.graph_update_interval = 200  # FAST
         self.last_graph_update = 0
         self.graph_data_buffer = []  # Buffer temporal para envío a gráficos
         
@@ -41,7 +42,7 @@ class RecordingController:
         # Timer principal para tiempo de grabación
         self.recording_timer = QTimer()
         self.recording_timer.timeout.connect(self.update_recording_time)
-        self.recording_timer.start(100)  # Actualizar cada 100ms
+        self.recording_timer.start(500)  # Actualizar cada 100ms
         
         # Timer optimizado para envío a gráficos (menos frecuente)
         self.graph_timer = QTimer()
@@ -345,13 +346,16 @@ class RecordingController:
         
         if buffer_info['utilization_percent'] > 80:
             # Sistema sobrecargado, reducir frecuencia
-            self.graph_update_interval = 100  # 10 FPS
+            self.graph_update_interval = 500  # 10 FPS
             self.graph_timer.setInterval(self.graph_update_interval)
             print("Performance: Reduciendo frecuencia de gráficos a 10 FPS")
             
         elif buffer_info['utilization_percent'] < 30:
             # Sistema con recursos, aumentar frecuencia
-            self.graph_update_interval = 33   # 30 FPS
+            #self.graph_update_interval = 33   # 30 FPS
+            #self.graph_update_interval = 500   # 30 FPS
+            self.plot_widget.set_update_fps(2)  # En vez de 30 FPS
+
             self.graph_timer.setInterval(self.graph_update_interval)
             print("Performance: Aumentando frecuencia de gráficos a 30 FPS")
     
