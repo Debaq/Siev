@@ -321,16 +321,21 @@ class VideoPlayerThread(QThread):
             
             # Análisis de pupila básico
             pupil_positions = [None, None]
-            
+
             if self.pupil_analyzer:
                 # Usar analizador avanzado si está disponible
                 pupil_positions = self.pupil_analyzer.analyze_frame(gray, self.analysis_config)
             else:
                 # Análisis básico de fallback
                 pupil_positions = self._basic_pupil_analysis(gray)
-            
-            # Dibujar resultados en el frame
-            self._draw_pupil_detection(display_frame, pupil_positions)
+
+            # DESACTIVADO: No dibujar marcas del análisis en vivo durante reproducción
+            # Las marcas correctas deberían venir de los datos del CSV, no del análisis en tiempo real
+            # Las marcas del análisis en vivo aparecen en posiciones incorrectas porque:
+            # 1. El video grabado tiene crop + padding aplicado
+            # 2. Las coordenadas del CSV están en resolución original sin crop
+            # 3. La transformación de coordenadas requiere conocer los parámetros de crop
+            # self._draw_pupil_detection(display_frame, pupil_positions)
             
             # Convertir a RGB para Qt
             display_frame_rgb = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)

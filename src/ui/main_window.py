@@ -461,10 +461,14 @@ class MainWindow(QMainWindow):
             
             # Limpiar gráfico primero
             self.plot_widget.clearPlots()
-            
+
+            # DESACTIVAR visualización de áreas de parpadeo durante reproducción
+            if hasattr(self.plot_widget, 'blink_detection_enabled'):
+                self.plot_widget.blink_detection_enabled = False
+
             # Extraer datos CSV del archivo .siev
             csv_data = self.siev_manager.extract_test_csv_data(
-                self.current_user_siev, 
+                self.current_user_siev,
                 test_id
             )
             
@@ -656,36 +660,72 @@ class MainWindow(QMainWindow):
             self.ui.btn_start.setText("Detener")
             self.ui.btn_start.setStyleSheet("""
                 QPushButton {
-                    background-color: #f44336; 
-                    color: white; 
+                    background-color: #f44336;
+                    color: white;
                     font-weight: bold;
-                    font-size: 14px; 
-                    padding: 10px; 
-                    border: none; 
+                    font-size: 14px;
+                    padding: 10px;
+                    border: none;
                     border-radius: 5px;
                 }
                 QPushButton:hover { background-color: #da190b; }
             """)
+            # BLOQUEAR SLIDERS DURANTE GRABACIÓN
+            self._lock_crop_sliders()
         else:
             self.ui.btn_start.setText("Iniciar")
             self.ui.btn_start.setStyleSheet("""
                 QPushButton {
-                    background-color: #4CAF50; 
-                    color: white; 
+                    background-color: #4CAF50;
+                    color: white;
                     font-weight: bold;
-                    font-size: 14px; 
-                    padding: 10px; 
-                    border: none; 
+                    font-size: 14px;
+                    padding: 10px;
+                    border: none;
                     border-radius: 5px;
                 }
                 QPushButton:hover { background-color: #45a049; }
             """)
+            # DESBLOQUEAR SLIDERS CUANDO NO ESTÁ GRABANDO
+            self._unlock_crop_sliders()
         self.ui.btn_start.setEnabled(True)
 
     def _set_unknown_state(self):
         """Estado: Prueba con estado desconocido"""
         self.ui.btn_start.setText("Iniciar")
         self.ui.btn_start.setEnabled(False)
+
+    def _lock_crop_sliders(self):
+        """Bloquear sliders de crop durante grabación para mantener dimensiones consistentes"""
+        try:
+            # Bloquear sliders que modifican las dimensiones del video
+            if hasattr(self.ui, 'slider_nose_width'):
+                self.ui.slider_nose_width.setEnabled(False)
+            if hasattr(self.ui, 'slider_vertical_cut_up'):
+                self.ui.slider_vertical_cut_up.setEnabled(False)
+            if hasattr(self.ui, 'slider_vertical_cut_down'):
+                self.ui.slider_vertical_cut_down.setEnabled(False)
+            if hasattr(self.ui, 'slider_height'):
+                self.ui.slider_height.setEnabled(False)
+            print("✓ Sliders de crop bloqueados durante grabación")
+        except Exception as e:
+            print(f"Error bloqueando sliders: {e}")
+
+    def _unlock_crop_sliders(self):
+        """Desbloquear sliders de crop después de grabación"""
+        try:
+            # Desbloquear sliders
+            if hasattr(self.ui, 'slider_nose_width'):
+                self.ui.slider_nose_width.setEnabled(True)
+            if hasattr(self.ui, 'slider_vertical_cut_up'):
+                self.ui.slider_vertical_cut_up.setEnabled(True)
+            if hasattr(self.ui, 'slider_vertical_cut_down'):
+                self.ui.slider_vertical_cut_down.setEnabled(True)
+            if hasattr(self.ui, 'slider_height'):
+                self.ui.slider_height.setEnabled(True)
+            print("✓ Sliders de crop desbloqueados")
+        except Exception as e:
+            print(f"Error desbloqueando sliders: {e}")
 
 
     # ========================================
