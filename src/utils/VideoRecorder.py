@@ -36,34 +36,48 @@ class VideoRecorder:
         self.recording_start_time = None
         self.recording_end_time = None
         
-    def start_recording(self, test_id: str):
-        """Iniciar grabación simple - TU LÓGICA ORIGINAL"""
+    def start_recording(self, test_id: str, start_timestamp: float = None):
+        """
+        Iniciar grabación con timestamp sincronizado
+
+        Args:
+            test_id: ID de la prueba
+            start_timestamp: Timestamp de referencia para sincronización (opcional)
+                           Si se proporciona, se usa en lugar de time.time()
+        """
         if self.is_recording:
             print("Ya hay una grabación en curso")
             return False
-            
+
         try:
             # Crear nombres de archivo
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             self.current_filename = f"video_{timestamp}.avi"
-            
+
             # Crear archivo temporal primero
             temp_fd, self.temp_filename = tempfile.mkstemp(suffix='.avi', prefix='video_temp_')
             os.close(temp_fd)
-            
+
             # VideoWriter a archivo temporal - USANDO TU RESOLUCIÓN FIJA
             self.video_writer = cv2.VideoWriter(self.temp_filename, self.fourcc, self.fps, (640, 480))
-            
+
             if not self.video_writer.isOpened():
                 print("Error: No se pudo crear VideoWriter")
                 return False
-            
+
             # Configurar estado
             self.current_test_id = test_id
             self.is_recording = True
             self.frames_written = 0
             self.stop_thread = False
-            self.recording_start_time = time.time()
+
+            # SINCRONIZACIÓN: Usar timestamp externo si se proporciona
+            if start_timestamp is not None:
+                self.recording_start_time = start_timestamp
+                print(f"VideoRecorder sincronizado con timestamp externo: {start_timestamp}")
+            else:
+                self.recording_start_time = time.time()
+                print("VideoRecorder usando timestamp propio")
             
             # Iniciar hilo de escritura
             self.recording_thread = threading.Thread(target=self._recording_worker, daemon=True)

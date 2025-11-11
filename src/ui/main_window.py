@@ -1723,7 +1723,8 @@ class MainWindow(QMainWindow):
             if current_test_data:
                 protocol = current_test_data['test_data'].get('tipo', 'desconocido')
                 test_id = self.protocol_manager.get_current_test_id()
-                self.video_recorder.start_recording(test_id)
+                # SINCRONIZACIÓN: Pasar timestamp de referencia para alinear video con gráficos
+                self.video_recorder.start_recording(test_id, start_timestamp=self.recording_start_time)
         
         # Actualizar UI usando el nuevo sistema
         self.update_test_ui_state()
