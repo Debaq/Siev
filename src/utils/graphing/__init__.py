@@ -1,4 +1,4 @@
-from .triple_plot_widget import TriplePlotWidget
-from .base_plot import BasePlotFactory
+from .data_processor import OptimizedDataProcessor
+from .blink_detector import OptimizedBlinkDetector
 
-__all__ = ['TriplePlotWidget', 'BasePlotFactory']
+__all__ = ['OptimizedDataProcessor', 'OptimizedBlinkDetector']

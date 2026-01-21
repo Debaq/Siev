@@ -8,6 +8,9 @@ import time
 import ctypes
 from utils.path_utils import get_model_file_path
 from utils.video.simulated_box import SimulatedBox
+from utils.video.pupil_detectors import (
+    create_pupil_detector, DetectorConfig, PupilResult
+)
 
 
 class VideoProcesses:
@@ -44,8 +47,29 @@ class VideoProcesses:
         self.color_changed = Value(ctypes.c_bool, False)  
         
         # Variables para toggle YOLO/ROI fija
-        self.use_yolo = Value(ctypes.c_bool, True)  
-        self.fixed_roi_updated = Value(ctypes.c_bool, False)  
+        self.use_yolo = Value(ctypes.c_bool, True)
+        self.fixed_roi_updated = Value(ctypes.c_bool, False)
+
+        # Configuración del detector de pupila
+        # Modos: 0=legacy, 1=fast, 2=hybrid
+        self.pupil_mode = Value(ctypes.c_int, 2)  # Default: hybrid
+
+        # Parámetros Fast detector
+        self.search_window_multiplier = Value(ctypes.c_float, 3.0)
+        self.dark_threshold_percent = Value(ctypes.c_int, 20)
+        self.starburst_rays = Value(ctypes.c_int, 16)
+        self.starburst_min_gradient = Value(ctypes.c_int, 30)
+        self.fallback_threshold = Value(ctypes.c_int, 5)
+
+        # Parámetros Legacy detector - Toggles de etapas
+        self.legacy_blur_enabled = Value(ctypes.c_bool, True)
+        self.legacy_blur_kernel = Value(ctypes.c_int, 5)
+        self.legacy_clahe_enabled = Value(ctypes.c_bool, True)
+        self.legacy_clahe_clip_limit = Value(ctypes.c_float, 2.0)
+        self.legacy_clahe_grid_size = Value(ctypes.c_int, 8)
+        self.legacy_morph_enabled = Value(ctypes.c_bool, True)
+        self.legacy_morph_close_iterations = Value(ctypes.c_int, 1)
+        self.legacy_morph_dilate_iterations = Value(ctypes.c_int, 1)  
     
         # [x1, y1, x2, y2] para ojo derecho e izquierdo
         roi_right_default = [0, int(cap_height * 0.1), int(cap_width * 0.4), int(cap_height * 0.5)]
@@ -82,25 +106,45 @@ class VideoProcesses:
         # Resto de configuraciones
         return cap
     
+    def _try_open_camera(self, max_attempts=5, delay=0.5):
+        """Intenta abrir la cámara con reintentos.
+
+        Returns:
+            tuple: (cap, success) donde cap es el objeto VideoCapture y success es bool
+        """
+        for attempt in range(max_attempts):
+            if not self.running.value:
+                return None, False
+
+            print(f"Configurando cámara {self.camera_id} a {self.cap_width}x{self.cap_height}@{self.cap_fps}")
+            cap = self.setup_camera()
+
+            if cap.isOpened():
+                # Verificar que podemos leer un frame
+                ret, _ = cap.read()
+                if ret:
+                    return cap, True
+                cap.release()
+            else:
+                cap.release()
+
+            if attempt < max_attempts - 1:
+                time.sleep(delay)
+
+        return None, False
+
     def capture_worker(self):
         """Proceso dedicado exclusivamente a capturar frames"""
         print("Iniciando proceso de captura")
-        cap_try = 0
-        
-        # Intentar abrir la cámara con un número limitado de intentos
-        while cap_try < 5 and not self.cap_error.value:
-            cap = self.setup_camera()
-            if cap.isOpened():
-                break
-            cap.release()
-            cap_try += 1
-            time.sleep(0.5)
-        
-        if not cap.isOpened():
+
+        # Intentar abrir la cámara
+        cap, success = self._try_open_camera(max_attempts=5, delay=0.5)
+
+        if not success:
             print("Error: No se pudo abrir la cámara después de 5 intentos")
             self.cap_error.value = True
             return
-        
+
         # Obtener primer frame para calcular dimensiones
         ret, init_frame = cap.read()
         if not ret:
@@ -108,7 +152,7 @@ class VideoProcesses:
             self.cap_error.value = True
             cap.release()
             return
-            
+
         h, w = init_frame.shape[:2]
         frame_info = {
             'height': h,
@@ -117,14 +161,16 @@ class VideoProcesses:
             'roi_height': int(h * 0.4),
             'new_height': int(h - (h*0.4))
         }
-        
+
         # Enviar info del frame al proceso de detección
         self.detection_queue.put(frame_info)
-        
+
         last_time = time.time()
         fps_values = []
         fps_avg = 0
-        
+        consecutive_failures = 0
+        max_consecutive_failures = 30  # ~0.5 segundos a 60fps antes de intentar reconectar
+
         try:
             # Bucle principal de captura optimizado para rendimiento
             while self.running.value:
@@ -132,11 +178,34 @@ class VideoProcesses:
                     cap.set(cv2.CAP_PROP_BRIGHTNESS, self.brightness.value)
                     cap.set(cv2.CAP_PROP_CONTRAST, self.contrast.value)
                     self.color_changed.value = False
-                
+
                 ret, frame = cap.read()
                 if not ret:
-                    # Solo una verificación simple sin esperas adicionales
+                    consecutive_failures += 1
+
+                    if consecutive_failures >= max_consecutive_failures:
+                        print(f"Cámara {self.camera_id} perdida. Intentando reconectar...")
+                        cap.release()
+                        time.sleep(1.0)  # Esperar antes de reconectar
+
+                        # Intentar reconectar
+                        cap, success = self._try_open_camera(max_attempts=10, delay=1.0)
+
+                        if not success:
+                            print("Error: No se pudo reconectar la cámara")
+                            self.cap_error.value = True
+                            return
+
+                        print(f"Cámara {self.camera_id} reconectada exitosamente")
+                        consecutive_failures = 0
+                        # Aplicar configuración de brillo/contraste
+                        cap.set(cv2.CAP_PROP_BRIGHTNESS, self.brightness.value)
+                        cap.set(cv2.CAP_PROP_CONTRAST, self.contrast.value)
+
                     continue
+
+                # Reset contador de fallos al leer exitosamente
+                consecutive_failures = 0
                 
                 # Calcular FPS - código optimizado sin verificaciones adicionales
                 current_time = time.time()
@@ -348,11 +417,27 @@ class VideoProcesses:
         """Proceso para procesar resultados y detectar pupilas"""
         print("Iniciando proceso de procesamiento")
 
+        # Crear detectores para cada ojo
+        mode_map = {0: "legacy", 1: "fast", 2: "hybrid"}
+        current_mode_value = self.pupil_mode.value
+        current_mode = mode_map.get(current_mode_value, "hybrid")
+        detector_right = create_pupil_detector(current_mode)
+        detector_left = create_pupil_detector(current_mode)
+        print(f"Detectores de pupila inicializados en modo: {current_mode}")
+
         while self.running.value:
             if self.result_queue.empty():
                 time.sleep(0.001)
                 continue
-            
+
+            # Verificar si el modo cambió
+            if self.pupil_mode.value != current_mode_value:
+                current_mode_value = self.pupil_mode.value
+                current_mode = mode_map.get(current_mode_value, "hybrid")
+                detector_right = create_pupil_detector(current_mode)
+                detector_left = create_pupil_detector(current_mode)
+                print(f"Detectores de pupila cambiados a modo: {current_mode}")
+
             data = self.result_queue.get()
             final_frame = data['frame']
             gray = data['gray']
@@ -397,42 +482,100 @@ class VideoProcesses:
             
             # Lista para guardar posiciones de pupilas
             pupil_positions = [None, None]
-            
+
+            # Crear configuración para los detectores
+            detector_config = DetectorConfig(
+                # Fast detector params
+                search_window_multiplier=self.search_window_multiplier.value,
+                dark_threshold_percent=self.dark_threshold_percent.value,
+                starburst_rays=self.starburst_rays.value,
+                starburst_min_gradient=self.starburst_min_gradient.value,
+                fallback_threshold=self.fallback_threshold.value,
+                # Legacy detector params
+                legacy_blur_enabled=self.legacy_blur_enabled.value,
+                legacy_blur_kernel=self.legacy_blur_kernel.value,
+                legacy_clahe_enabled=self.legacy_clahe_enabled.value,
+                legacy_clahe_clip_limit=self.legacy_clahe_clip_limit.value,
+                legacy_clahe_grid_size=self.legacy_clahe_grid_size.value,
+                legacy_morph_enabled=self.legacy_morph_enabled.value,
+                legacy_morph_close_iterations=self.legacy_morph_close_iterations.value,
+                legacy_morph_dilate_iterations=self.legacy_morph_dilate_iterations.value
+            )
+
             # Procesar cada región
             for data in eye_regions:
-                result = self.process_eye_region(data)
-                if result:
-                    cx, cy, radius, ex, ey, ew, eh, mask = result
+                eye_gray, ex, ey, ew, eh, is_right_eye = data
 
-                    if self.slider_th_pressed.value:
-                        cv2.rectangle(final_frame, (ex, ey), (ex+ew, ey+eh), (0, 255, 0), 1)
-                        roi = final_frame[ey:ey+eh, ex:ex+ew]
-                        cv2.addWeighted(roi, 1, mask, 1, 0, roi) # addWeighted(image, alpha, mask, beta, gamma)
-                    if not self.use_yolo.value:
-                        cv2.rectangle(final_frame, (ex, ey), (ex+ew, ey+eh), (0, 255, 0), 1)
-                    # Dibujar círculo de la pupila
-                    #color = (0, 255, 0)
-                    if data[5]:  # is_right_eye
+                # Configurar threshold y erode por ojo
+                detector_config.threshold_value = self.threslhold[0] if is_right_eye else self.threslhold[1]
+                detector_config.erode_value = self.erode[0] if is_right_eye else self.erode[1]
+
+                # Seleccionar detector según ojo
+                detector = detector_right if is_right_eye else detector_left
+
+                # Detectar pupila
+                result = detector.detect(eye_gray, detector_config)
+
+                if result:
+                    cx, cy, radius = result.center_x, result.center_y, result.radius
+                    mask = result.mask
+
+                    # Determinar color por ojo
+                    if is_right_eye:
                         color = (0, 0, 255)  # Rojo para ojo derecho (BGR)
+                        label = "OD"
                     else:
                         color = (255, 191, 0)  # Azul claro para ojo izquierdo (BGR)
-                                            
+                        label = "OI"
+
+                    # Siempre mostrar rectángulo ROI
+                    cv2.rectangle(final_frame, (ex, ey), (ex+ew, ey+eh), color, 1)
+
+                    # Etiqueta del ojo
+                    cv2.putText(final_frame, label, (ex + 2, ey + 12),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+
+                    # Modo debug: mostrar máscara de umbralización
+                    if self.slider_th_pressed.value:
+                        roi = final_frame[ey:ey+eh, ex:ex+ew]
+                        # Superponer máscara con transparencia
+                        if mask is not None:
+                            cv2.addWeighted(roi, 0.7, mask, 0.3, 0, roi)
+
+                        # Mostrar valor de threshold y modo
+                        th_val = self.threslhold[0] if is_right_eye else self.threslhold[1]
+                        er_val = self.erode[0] if is_right_eye else self.erode[1]
+                        mode_label = ["L", "F", "H"][self.pupil_mode.value]
+                        th_text = f"TH:{th_val} ER:{er_val} M:{mode_label}"
+                        cv2.putText(final_frame, th_text, (ex + 2, ey + eh - 5),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 255, 255), 1, cv2.LINE_AA)
+
+                    # Dibujar círculo de la pupila
                     cv2.circle(final_frame[ey:ey+eh, ex:ex+ew], (cx, cy), radius, color, 1)
-                    
+
                     # Calcular coordenadas absolutas
                     abs_x = ex + cx
                     abs_y = ey + cy
-                    
-                    # Dibujar cruces
+
+                    # Dibujar cruces en centro de pupila
                     longitud_cruz = 5
                     cv2.line(final_frame, (abs_x - longitud_cruz, abs_y), (abs_x + longitud_cruz, abs_y), color, 1)
                     cv2.line(final_frame, (abs_x, abs_y - longitud_cruz), (abs_x, abs_y + longitud_cruz), color, 1)
+
                     # Guardar posición
-                    abs_y = abs_y * -1
-                    if data[5]:  # is_right_eye
-                        pupil_positions[0] = [abs_x, abs_y]
+                    abs_y_neg = abs_y * -1
+                    if is_right_eye:
+                        pupil_positions[0] = [abs_x, abs_y_neg]
                     else:
-                        pupil_positions[1] = [abs_x, abs_y]
+                        pupil_positions[1] = [abs_x, abs_y_neg]
+
+            # Dibujar indicador de modo debug
+            if self.slider_th_pressed.value:
+                cv2.putText(final_frame, "DEBUG MODE", (10, 20),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
+                # Línea central para visualizar separación de ojos
+                center_x = w // 2
+                cv2.line(final_frame, (center_x, 0), (center_x, h), (0, 255, 255), 1)
             
             # Convertir y agregar texto FPS
             final_frame = cv2.cvtColor(final_frame, cv2.COLOR_BGR2RGB)
@@ -591,15 +734,82 @@ class VideoProcesses:
     def start(self):
         """Inicia todos los procesos"""
         self.ui_queue = mp.Queue(maxsize=2)
-        
+
         self.capture_process = mp.Process(target=self.capture_worker)
         self.detection_process = mp.Process(target=self.detection_worker)
         self.processing_process = mp.Process(target=self.processing_worker)
-        
+
         self.capture_process.start()
         self.detection_process.start()
         self.processing_process.start()
-    
+
+    def set_pupil_mode(self, mode: str):
+        """
+        Cambia el modo de detección de pupila.
+
+        Args:
+            mode: "legacy", "fast", o "hybrid"
+        """
+        mode_map = {"legacy": 0, "fast": 1, "hybrid": 2}
+        if mode in mode_map:
+            self.pupil_mode.value = mode_map[mode]
+            print(f"Modo de detección de pupila cambiado a: {mode}")
+        else:
+            print(f"Modo desconocido: {mode}. Usando 'hybrid' por defecto.")
+            self.pupil_mode.value = 2
+
+    def set_pupil_config(self, **kwargs):
+        """
+        Configura los parámetros del detector de pupila.
+
+        Args:
+            # Fast detector
+            search_window_multiplier: Multiplicador de ventana de búsqueda (default 3.0)
+            dark_threshold_percent: Porcentaje sobre punto más oscuro (default 20)
+            starburst_rays: Número de rayos del starburst (default 16)
+            starburst_min_gradient: Gradiente mínimo para detectar borde (default 30)
+            fallback_threshold: Frames sin detección para activar fallback (default 5)
+
+            # Legacy detector
+            legacy_blur_enabled: Activar GaussianBlur (default True)
+            legacy_blur_kernel: Tamaño del kernel de blur (default 5)
+            legacy_clahe_enabled: Activar CLAHE (default True)
+            legacy_clahe_clip_limit: Límite de clip de CLAHE (default 2.0)
+            legacy_clahe_grid_size: Tamaño de grid de CLAHE (default 8)
+            legacy_morph_enabled: Activar operaciones morfológicas (default True)
+            legacy_morph_close_iterations: Iteraciones de cierre (default 1)
+            legacy_morph_dilate_iterations: Iteraciones de dilatación (default 1)
+        """
+        # Fast detector params
+        if 'search_window_multiplier' in kwargs:
+            self.search_window_multiplier.value = float(kwargs['search_window_multiplier'])
+        if 'dark_threshold_percent' in kwargs:
+            self.dark_threshold_percent.value = int(kwargs['dark_threshold_percent'])
+        if 'starburst_rays' in kwargs:
+            self.starburst_rays.value = int(kwargs['starburst_rays'])
+        if 'starburst_min_gradient' in kwargs:
+            self.starburst_min_gradient.value = int(kwargs['starburst_min_gradient'])
+        if 'fallback_threshold' in kwargs:
+            self.fallback_threshold.value = int(kwargs['fallback_threshold'])
+
+        # Legacy detector params
+        if 'legacy_blur_enabled' in kwargs:
+            self.legacy_blur_enabled.value = bool(kwargs['legacy_blur_enabled'])
+        if 'legacy_blur_kernel' in kwargs:
+            self.legacy_blur_kernel.value = int(kwargs['legacy_blur_kernel'])
+        if 'legacy_clahe_enabled' in kwargs:
+            self.legacy_clahe_enabled.value = bool(kwargs['legacy_clahe_enabled'])
+        if 'legacy_clahe_clip_limit' in kwargs:
+            self.legacy_clahe_clip_limit.value = float(kwargs['legacy_clahe_clip_limit'])
+        if 'legacy_clahe_grid_size' in kwargs:
+            self.legacy_clahe_grid_size.value = int(kwargs['legacy_clahe_grid_size'])
+        if 'legacy_morph_enabled' in kwargs:
+            self.legacy_morph_enabled.value = bool(kwargs['legacy_morph_enabled'])
+        if 'legacy_morph_close_iterations' in kwargs:
+            self.legacy_morph_close_iterations.value = int(kwargs['legacy_morph_close_iterations'])
+        if 'legacy_morph_dilate_iterations' in kwargs:
+            self.legacy_morph_dilate_iterations.value = int(kwargs['legacy_morph_dilate_iterations'])
+
     def stop(self):
         """Detiene todos los procesos de forma segura"""
         print("Iniciando detención de procesos...")

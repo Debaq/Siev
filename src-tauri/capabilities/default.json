@@ -1,0 +1,20 @@
+{
+  "$schema": "../gen/schemas/capabilities.json",
+  "identifier": "default",
+  "description": "Default permissions for the SIEV application",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "siev-backend",
+          "cmd": "binaries/siev-backend",
+          "args": true
+        }
+      ]
+    }
+  ]
+}

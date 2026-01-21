@@ -1,9 +1,7 @@
-
 # src/managers/__init__.py
 
-from .video_manager import VideoManager
-from .hardware_manager import HardwareManager
-from .data_manager import DataManager
-from .test_manager import TestManager
+# API managers (FastAPI - no PyQt dependencies)
+from .video_manager_api import VideoManagerAPI
+from .hardware_manager_api import HardwareManagerAPI
 
-__all__ = ['VideoManager', 'HardwareManager', 'DataManager', 'TestManager']
+__all__ = ['VideoManagerAPI', 'HardwareManagerAPI']
