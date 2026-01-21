@@ -1,0 +1,175 @@
+{
+
+  "app": {
+
+    "title": "SIEV - Sistema de Videonistagmografía",
+
+    "version": "Versión"
+
+  },
+
+  "menu": {
+
+    "archivo": "Archivo",
+
+    "nuevo_usuario": "Nuevo Usuario...",
+
+    "abrir": "Abrir...",
+
+    "salir": "Salir",
+
+    "vng": "VNG",
+
+    "pruebas_caloricas": "Pruebas Calóricas",
+
+    "calorica": "Calorica",
+
+    "oculomotoras": "Oculomotoras",
+
+    "espontaneo": "Espontáneo",
+
+    "seguimiento_lento": "Seguimiento Lento",
+
+    "optoquinetico": "Optocinético",
+
+    "sacadas": "Sacadas",
+
+    "posicionales": "Posicionales",
+
+    "posicional": "Posicional",
+
+    "configuracion": "Configuración",
+
+    "preferencias": "Preferencias",
+
+    "cambiar_evaluador": "Cambiar evaluador",
+
+    "calibrar": "Calibrar",
+
+    "herramientas": "Herramientas",
+
+    "test_sin_guardar": "Test de Seguimiento sin guardar",
+
+    "calculadora_hipo": "Calculadora hipo/dp",
+
+    "informe": "Informe"
+
+  },
+
+  "tests": {
+
+    "od_44": "OD 44",
+
+    "oi_44": "OI 44",
+
+    "od_30": "OD 30",
+
+    "oi_30": "OI 30",
+
+    "pruebas": "Pruebas"
+
+  },
+
+  "controls": {
+
+    "fullscreen": "Pantalla Completa",
+
+    "buscar_vng": "Buscar VNG",
+
+    "iniciar": "Iniciar",
+
+    "detener": "Detener",
+
+    "calibrando": "Calibrando...",
+
+    "fijar": "Fijar",
+
+    "pausar": "Pausar",
+
+    "reanudar": "Reanudar",
+
+    "guardar": "Guardar",
+
+    "cancelar": "Cancelar"
+
+  },
+
+  "parameters": {
+
+    "amplitud": "Amplitud",
+
+    "ritmo": "Ritmo",
+
+    "frecuencia": "Frecuencia",
+
+    "vcl": "VCL",
+
+    "ofi": "OFI",
+
+    "direccion": "Dirección",
+
+    "vertigo": "Vértigo",
+
+    "nauseas": "Náuseas",
+
+    "vomito": "Vómito"
+
+  },
+
+  "camera": {
+
+    "ajustes": "Ajustes de Cámara",
+
+    "ancho_nariz": "Ancho de Nariz",
+
+    "altura_ojo": "Altura de Ojo",
+
+    "corte_vertical": "Corte Vertical",
+
+    "brillo": "Brillo",
+
+    "contraste": "Contraste",
+
+    "saturacion": "Saturación",
+
+    "exposicion": "Exposición"
+
+  },
+
+  "messages": {
+
+    "grabacion_iniciada": "Grabación iniciada",
+
+    "grabacion_detenida": "Grabación detenida",
+
+    "calibracion_completa": "Calibración completada",
+
+    "error": "Error",
+
+    "exito": "Éxito",
+
+    "advertencia": "Advertencia",
+
+    "confirmacion": "Confirmación",
+
+    "guardar_cambios": "¿Guardar cambios?",
+
+    "datos_no_guardados": "Hay datos sin guardar. ¿Desea guardarlos antes de continuar?",
+
+    "seleccionar_usuario": "Por favor, seleccione un usuario primero",
+
+    "camara_no_detectada": "No se detectó ninguna cámara VNG"
+
+  },
+
+  "time": {
+
+    "segundos": "segundos",
+
+    "minutos": "minutos",
+
+    "calibrando": "Calibrando: {time}s"
+
+  }
+
+}

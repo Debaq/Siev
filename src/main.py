@@ -2,11 +2,15 @@ import sys
 import os
 import subprocess
 from pathlib import Path
-from PySide6.QtWidgets import (QApplication, QVBoxLayout, QHBoxLayout, 
+from PySide6.QtWidgets import (QApplication, QVBoxLayout, QHBoxLayout,
                             QLabel, QProgressBar, QPushButton, QDialog)
 from PySide6.QtCore import QThread, Signal, QTimer, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtCore import QTranslator, QLocale
+
+# Sistema de internacionalización y estilos
+from utils.i18n import get_translation_manager
+from utils.style_manager import get_style_manager
 
 
 class GitUpdateWorker(QThread):
@@ -396,27 +400,32 @@ class UpdateChecker(QThread):
 def check_for_updates_and_run():
     """Función principal que verifica actualizaciones y ejecuta la aplicación"""
     app = QApplication(sys.argv)
-    
-    # Configurar traductor
-    translator = QTranslator()
+
+    # ===== INICIALIZAR SISTEMA DE TRADUCCIÓN =====
     locale = QLocale.system().name().split("_")[0]
-    
+    print(f"Sistema detectado en idioma: {locale}")
+
+    # Inicializar gestor de traducciones con el idioma del sistema
+    translation_manager = get_translation_manager()
+    if locale in translation_manager.get_available_languages():
+        translation_manager.switch_language(locale)
+        print(f"Traducciones cargadas: {locale}")
+    else:
+        print(f"Idioma {locale} no disponible, usando español por defecto")
+
+    # ===== INICIALIZAR SISTEMA DE ESTILOS =====
+    style_manager = get_style_manager()
+    if style_manager.apply_style(app, 'professional'):
+        print("Estilo profesional aplicado correctamente")
+    else:
+        print("No se pudo aplicar el estilo, usando estilo por defecto de Qt")
+
     # Obtener rutas
     if getattr(sys, "frozen", False):
         base_path = os.path.dirname(sys.executable)
     else:
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
-    # Cargar traducción
-    translations_path = os.path.join(base_path, "resources", "translations")
-    translation_file = os.path.join(translations_path, f"{locale}.qm")
-    
-    if translator.load(translation_file):
-        print(f"Loaded translations for {locale}")
-        app.installTranslator(translator)
-    else:
-        print(f"Using default language (en)")
-    
+
     # Verificar actualizaciones
     print("Verificando actualizaciones...")
     

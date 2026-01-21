@@ -23,11 +23,11 @@ class CaloricPlotWidget(QWidget):
     time_position_changed = Signal(float)  # Cuando se mueve la línea manualmente
     phase_config_changed = Signal(dict)    # Cuando cambia la configuración de fases
     
-    # Configuración DEFAULT de fases calóricas (en segundos)
+    # Configuración DEFAULT de fases calóricas con colores profesionales
     DEFAULT_PHASE_CONFIG = {
-        'irrigation': {'start': 0, 'end': 40, 'color': (100, 150, 255, 80), 'label': 'Irrigación'},
-        'torok': {'start': 60, 'end': 90, 'color': (255, 150, 100, 80), 'label': 'Período Torok'},
-        'fixation': {'start': 90, 'end': 100, 'color': (150, 255, 150, 80), 'label': 'Fijación'}
+        'irrigation': {'start': 0, 'end': 40, 'color': (33, 150, 243, 60), 'label': 'Irrigación'},        # Azul
+        'torok': {'start': 60, 'end': 90, 'color': (255, 152, 0, 60), 'label': 'Período Torok'},         # Naranja
+        'fixation': {'start': 90, 'end': 100, 'color': (76, 175, 80, 60), 'label': 'Fijación'}           # Verde
     }
     
     def __init__(self, parent=None, total_duration=120, phase_config=None):
@@ -60,32 +60,57 @@ class CaloricPlotWidget(QWidget):
         self.setLayout(self.layout)
     
     def setup_plot(self):
-        """Configura el gráfico principal."""
+        """Configura el gráfico principal con estilo profesional."""
         # Crear gráfico con configuración optimizada
-        self.plot_widget = pg.PlotWidget(
-            title="Nistagmo Calórico - Velocidad Angular",
-            labels={'left': 'Velocidad (°/s)', 'bottom': 'Tiempo (s)'}
+        self.plot_widget = pg.PlotWidget()
+
+        # Fondo gris muy claro para mejor contraste
+        self.plot_widget.setBackground('#FAFAFA')
+
+        # Título del gráfico con estilo profesional
+        self.plot_widget.setTitle(
+            "Nistagmo Calórico - Velocidad Angular",
+            color='#212121',
+            size='13pt',
+            bold=True
         )
-        
-        # Configuración visual
-        self.plot_widget.setBackground('white')
+
+        # Ejes con estilo profesional
+        axis_pen = pg.mkPen(color='#424242', width=1.5)
+        self.plot_widget.getAxis('bottom').setPen(axis_pen)
+        self.plot_widget.getAxis('left').setPen(axis_pen)
+        self.plot_widget.getAxis('bottom').setTextPen(pg.mkPen(color='#212121'))
+        self.plot_widget.getAxis('left').setTextPen(pg.mkPen(color='#212121'))
+
+        # Etiquetas
+        labelStyle = {'color': '#212121', 'font-size': '11pt', 'font-weight': 'bold'}
+        self.plot_widget.setLabel('left', 'Velocidad', units='°/s', **labelStyle)
+        self.plot_widget.setLabel('bottom', 'Tiempo', units='s', **labelStyle)
+
+        # Grilla sutil y profesional
         self.plot_widget.showGrid(x=True, y=True, alpha=0.3)
+        self.plot_widget.getPlotItem().getAxis('bottom').setGrid(150)
+        self.plot_widget.getPlotItem().getAxis('left').setGrid(150)
+
         self.plot_widget.setMouseEnabled(x=True, y=True)
-        
+
         # RESTRICCIÓN CRÍTICA: No permitir X negativos
         self.plot_widget.setXRange(0, self.total_duration, padding=0)
         self.plot_widget.setLimits(xMin=0, xMax=None)  # No X negativos
-        
+
         # Configurar autoscale controlado
         view_box = self.plot_widget.getViewBox()
         view_box.sigRangeChanged.connect(self._on_range_changed)
-        
-        # Curva principal de datos
+
+        # Curva principal de datos con color profesional
         self.data_curve = self.plot_widget.plot(
-            pen=pg.mkPen(color=(200, 50, 50), width=2),
+            pen=pg.mkPen(color='#F44336', width=2.5),  # Rojo Material Design
             name="Velocidad Angular"
         )
-        
+
+        # Márgenes para mejor visualización
+        self.plot_widget.getPlotItem().setContentsMargins(10, 10, 10, 10)
+
         self.layout.addWidget(self.plot_widget)
     
     def setup_phases(self):

@@ -31,15 +31,24 @@ from ui.dialogs.calculadora_hipo_dp_dialog import CalculadoraHipoDpDialog
 from ui.dialogs.report_wizard import open_report_wizard
 from utils.graphing.caloric_graph import CaloricPlotWidget
 
+# Sistema de internacionalización y estilos
+from utils.i18n import get_translation_manager
+from utils.style_manager import get_style_manager
+
 
 class MainWindow(QMainWindow):
     """Ventana principal del sistema VNG - Versión limpia y funcional"""
-    
+
     def __init__(self):
         super().__init__()
-        
+
         # === CONFIGURACIÓN BÁSICA ===
         self.config_manager = ConfigManager()
+
+        # === SISTEMA DE TRADUCCIÓN Y ESTILOS ===
+        self.translation_manager = get_translation_manager()
+        self.style_manager = get_style_manager()
+        self.t = self.translation_manager.t  # Atajo para traducciones
         
         
         self.setupUi() #==> crea a self.ui
@@ -80,6 +89,7 @@ class MainWindow(QMainWindow):
 
 
         # === CONFIGURAR UI ===
+        self.setup_main_menu()  # Agregar menú principal
         self.setup_menu_and_controls()
         self.connect_events()
         self.load_slider_configuration()
@@ -606,9 +616,9 @@ class MainWindow(QMainWindow):
 
     def _set_no_selection_state(self):
         """Estado: Sin prueba seleccionada"""
-        self.ui.lbl_test.setText("Selecciona una prueba")
+        self.ui.lbl_test.setText(self.t('tests.pruebas'))
         self.ui.lbl_test.setStyleSheet("")
-        self.ui.btn_start.setText("Iniciar")
+        self.ui.btn_start.setText(self.t('controls.iniciar'))
         self.ui.btn_start.setEnabled(False)
 
     def _set_test_name_display(self, test_name):
@@ -626,29 +636,29 @@ class MainWindow(QMainWindow):
     def _set_reproduction_button_state(self):
         """Estado: Prueba completada - botón de reproducción"""
         if self.is_reproducing:
-            self.ui.btn_start.setText("Pausar")
+            self.ui.btn_start.setText(self.t('controls.pausar'))
             self.ui.btn_start.setStyleSheet("""
                 QPushButton {
-                    background-color: #FF9800; 
-                    color: white; 
+                    background-color: #FF9800;
+                    color: white;
                     font-weight: bold;
-                    font-size: 14px; 
-                    padding: 10px; 
-                    border: none; 
+                    font-size: 14px;
+                    padding: 10px;
+                    border: none;
                     border-radius: 5px;
                 }
                 QPushButton:hover { background-color: #F57C00; }
             """)
         else:
-            self.ui.btn_start.setText("Reproducir")
+            self.ui.btn_start.setText(self.t('controls.reanudar'))
             self.ui.btn_start.setStyleSheet("""
                 QPushButton {
-                    background-color: #9C27B0; 
-                    color: white; 
+                    background-color: #9C27B0;
+                    color: white;
                     font-weight: bold;
-                    font-size: 14px; 
-                    padding: 10px; 
-                    border: none; 
+                    font-size: 14px;
+                    padding: 10px;
+                    border: none;
                     border-radius: 5px;
                 }
                 QPushButton:hover { background-color: #7B1FA2; }
@@ -658,7 +668,7 @@ class MainWindow(QMainWindow):
     def _set_recording_button_state(self):
         """Estado: Prueba nueva/en ejecución - botón de grabación"""
         if self.is_recording or self.is_calibrating:
-            self.ui.btn_start.setText("Detener")
+            self.ui.btn_start.setText(self.t('controls.detener'))
             self.ui.btn_start.setStyleSheet("""
                 QPushButton {
                     background-color: #f44336;
@@ -674,7 +684,7 @@ class MainWindow(QMainWindow):
             # BLOQUEAR SLIDERS DURANTE GRABACIÓN
             self._lock_crop_sliders()
         else:
-            self.ui.btn_start.setText("Iniciar")
+            self.ui.btn_start.setText(self.t('controls.iniciar'))
             self.ui.btn_start.setStyleSheet("""
                 QPushButton {
                     background-color: #4CAF50;
@@ -693,7 +703,7 @@ class MainWindow(QMainWindow):
 
     def _set_unknown_state(self):
         """Estado: Prueba con estado desconocido"""
-        self.ui.btn_start.setText("Iniciar")
+        self.ui.btn_start.setText(self.t('controls.iniciar'))
         self.ui.btn_start.setEnabled(False)
 
     def _lock_crop_sliders(self):
@@ -860,7 +870,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             print(f"Error cargando configuración: {e}")
             # Valores por defecto
-            self.setWindowTitle("SIEV")
+            self.setWindowTitle(self.t('app.title'))
             self.resize(800, 600)
             self.data_path = os.path.expanduser("~/siev")
 
@@ -885,6 +895,76 @@ class MainWindow(QMainWindow):
                 return True
         return super().eventFilter(obj, event)
 
+    def setup_main_menu(self):
+        """Configurar barra de menú principal"""
+        try:
+            menubar = self.menuBar()
+
+            # === MENÚ CONFIGURACIÓN ===
+            menu_config = menubar.addMenu(f"⚙️ {self.t('menu.configuracion')}")
+
+            # Acción: Preferencias
+            action_settings = menu_config.addAction(f"{self.t('menu.preferencias')}...")
+            action_settings.setShortcut("Ctrl+,")
+            action_settings.triggered.connect(self.open_settings_dialog)
+
+            menu_config.addSeparator()
+
+            # Acción: Cambiar Evaluador (si ya existe en otro lugar)
+            if hasattr(self, 'protocol_manager'):
+                action_evaluator = menu_config.addAction(self.t('menu.cambiar_evaluador'))
+                action_evaluator.triggered.connect(self.protocol_manager.change_evaluator)
+
+            print("Menú de configuración creado exitosamente")
+
+        except Exception as e:
+            print(f"Error creando menú principal: {e}")
+
+    def open_settings_dialog(self):
+        """Abrir diálogo de configuración"""
+        try:
+            from ui.dialogs.settings_dialog import SettingsDialog
+
+            dialog = SettingsDialog(self)
+
+            def on_settings_changed(changes):
+                """Procesar cambios de configuración"""
+                if 'language' in changes:
+                    print(f"Idioma cambiado a: {changes['language']}")
+                    # Actualizar textos visibles inmediatamente
+                    self.update_ui_texts()
+
+                if 'theme' in changes:
+                    print(f"Tema cambiado a: {changes['theme']}")
+
+            dialog.settings_changed.connect(on_settings_changed)
+            dialog.exec()
+
+        except Exception as e:
+            print(f"Error abriendo diálogo de configuración: {e}")
+            QMessageBox.critical(self, "Error", f"No se pudo abrir la configuración: {e}")
+
+    def update_ui_texts(self):
+        """Actualizar todos los textos de la UI con las traducciones actuales"""
+        try:
+            # Actualizar título de ventana
+            if self.current_user_data:
+                user_name = self.current_user_data.get('nombre', 'Usuario')
+                self.setWindowTitle(f"{self.t('app.title')} - {user_name}")
+            else:
+                self.setWindowTitle(self.t('app.title'))
+
+            # Actualizar botones principales
+            self.update_button_states()
+
+            # Actualizar botón de pantalla completa
+            if hasattr(self.ui, 'btn_FullScreen'):
+                self.ui.btn_FullScreen.setText(self.t('controls.fullscreen'))
+
+            print("Textos de UI actualizados")
+
+        except Exception as e:
+            print(f"Error actualizando textos de UI: {e}")
 
     def setupUi(self):
         """Configurar la interfaz de usuario"""
@@ -1094,7 +1174,7 @@ class MainWindow(QMainWindow):
             print(f"Error configurando menú: {e}")
     
     def fixed_on(self):
-        self.ui.btn_fixed.setText("Encendido")
+        self.ui.btn_fixed.setText(self.t('controls.fijar'))
         if self.serial_handler:
             self.serial_handler.send_data("L_12_ON")
 
@@ -1105,7 +1185,7 @@ class MainWindow(QMainWindow):
                 pass
 
     def fixed_off(self):
-        self.ui.btn_fixed.setText("Apagado")
+        self.ui.btn_fixed.setText(self.t('controls.fijar'))
         if self.serial_handler:
             self.serial_handler.send_data("L_12_OFF")
             self.video_widget.video_thread.vp.fixed_on_flag.value = False
@@ -1878,7 +1958,7 @@ class MainWindow(QMainWindow):
     def start_calibration(self):
         """Iniciar calibración del sistema"""
         if not self.calibration_manager:
-            QMessageBox.warning(self, "Error", "Sistema de calibración no disponible")
+            QMessageBox.warning(self, self.t('messages.error'), "Sistema de calibración no disponible")
             return
             
         try:
@@ -1910,7 +1990,7 @@ class MainWindow(QMainWindow):
             # Mensaje de éxito
             QMessageBox.information(
                 self,
-                "Calibración Exitosa",
+                self.t('messages.calibracion_completa'),
                 f"El sistema ha sido calibrado correctamente.\n\n"
                 f"Ángulo medido: {summary['theoretical_angle']:.1f}°\n"
                 f"Los gráficos ahora mostrarán datos en grados."
@@ -1919,7 +1999,7 @@ class MainWindow(QMainWindow):
             print("Calibración cancelada o falló")
             QMessageBox.information(
                 self,
-                "Calibración Cancelada", 
+                self.t('messages.advertencia'),
                 "La calibración no se completó."
             )
 
@@ -2059,36 +2139,36 @@ class MainWindow(QMainWindow):
                 self.load_user_from_file(file_path)
                 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error abriendo archivo de usuario: {e}")
+            QMessageBox.critical(self, self.t('messages.error'), f"Error abriendo archivo de usuario: {e}")
 
     def load_user_from_file(self, file_path):
         """Cargar usuario desde archivo .siev"""
         try:
             if not self.siev_manager:
-                QMessageBox.critical(self, "Error", "Sistema de usuarios no inicializado")
+                QMessageBox.critical(self, self.t('messages.error'), "Sistema de usuarios no inicializado")
                 return
-            
+
             # Validar archivo .siev
             validation = self.siev_manager.validate_siev(file_path)
-            
+
             if not validation["valid"]:
                 error_msg = "Archivo .siev inválido:\n\n" + "\n".join(validation["errors"])
                 if validation["warnings"]:
                     error_msg += "\n\nAdvertencias:\n" + "\n".join(validation["warnings"])
-                
-                QMessageBox.warning(self, "Archivo Inválido", error_msg)
+
+                QMessageBox.warning(self, self.t('messages.error'), error_msg)
                 return
-            
+
             # Mostrar advertencias si las hay
             if validation["warnings"]:
                 warning_msg = "El archivo se puede abrir pero tiene advertencias:\n\n" + "\n".join(validation["warnings"])
-                QMessageBox.warning(self, "Advertencias", warning_msg)
-            
+                QMessageBox.warning(self, self.t('messages.advertencia'), warning_msg)
+
             # Cargar datos del usuario
             user_data = self.siev_manager.get_user_info(file_path)
-            
+
             if not user_data:
-                QMessageBox.warning(self, "Error", "No se pudieron cargar los datos del usuario")
+                QMessageBox.warning(self, self.t('messages.error'), "No se pudieron cargar los datos del usuario")
                 return
             
             # Cerrar usuario anterior si existe
@@ -2107,19 +2187,19 @@ class MainWindow(QMainWindow):
             # Mensaje de confirmación
             user_name = user_data.get('nombre', 'Usuario')
             file_name = os.path.basename(file_path)
-            
+
             QMessageBox.information(
-                self, 
-                "Usuario Cargado", 
+                self,
+                self.t('messages.exito'),
                 f"Usuario '{user_name}' cargado exitosamente.\n\n"
                 f"Archivo: {file_name}\n"
                 f"Total de pruebas: {len(self.siev_manager.get_user_tests(file_path))}"
             )
-            
+
             print(f"Usuario cargado: {user_name} desde {file_path}")
-            
+
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error cargando usuario: {e}")
+            QMessageBox.critical(self, self.t('messages.error'), f"Error cargando usuario: {e}")
             print(f"Error detallado cargando usuario: {e}")
 
     def close_current_user(self):
@@ -2135,7 +2215,7 @@ class MainWindow(QMainWindow):
             # Limpiar interfaz
             self.ui.listTestWidget.clear()
             self.ui.listTestWidget.setHeaderLabel("Sin usuario seleccionado")
-            self.setWindowTitle("Sistema VNG")
+            self.setWindowTitle(self.t('app.title'))
             
             # Limpiar datos de sesión del protocolo
             if hasattr(self, 'protocol_manager'):
@@ -2176,14 +2256,14 @@ class MainWindow(QMainWindow):
                 if user_data:
                     self.create_new_user(user_data)
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error abriendo diálogo de usuario: {e}")
+            QMessageBox.critical(self, self.t('messages.error'), f"Error abriendo diálogo de usuario: {e}")
 
 
     def create_new_user(self, user_data):
         """Crear nuevo usuario y archivo .siev"""
         try:
             if not self.siev_manager:
-                QMessageBox.critical(self, "Error", "Sistema de usuarios no inicializado")
+                QMessageBox.critical(self, self.t('messages.error'), "Sistema de usuarios no inicializado")
                 return
             
             # Crear archivo .siev para el usuario
@@ -2203,25 +2283,25 @@ class MainWindow(QMainWindow):
             if hasattr(self, 'plot_widget') and self.plot_widget:
                 print("Nuevo usuario - limpiando gráfico")
                 self.plot_widget.clearPlots()
-            
+
             QMessageBox.information(
-                self, 
-                "Usuario Creado", 
+                self,
+                self.t('messages.exito'),
                 f"Usuario '{user_data['nombre']}' creado exitosamente.\n\n"
                 f"Archivo: {os.path.basename(siev_path)}"
             )
-            
+
             print(f"Nuevo usuario creado: {user_data['nombre']}")
-            
+
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Error creando usuario: {e}")
+            QMessageBox.critical(self, self.t('messages.error'), f"Error creando usuario: {e}")
 
     def update_ui_for_user(self, user_data):
         """Actualizar interfaz con información del usuario actual"""
         try:
             # Actualizar título de ventana
             user_name = user_data.get('nombre', 'Usuario')
-            self.setWindowTitle(f"Sistema VNG - {user_name}")
+            self.setWindowTitle(f"{self.t('app.title')} - {user_name}")
             
             # Actualizar header del tree widget
             self.update_tree_header(user_data)
@@ -2389,10 +2469,10 @@ class MainWindow(QMainWindow):
             self.fullscreen_widget.update_time_display(current_time)
             
             # Cambiar texto del botón
-            self.ui.btn_FullScreen.setText("Cerrar FullScreen")
-            
+            self.ui.btn_FullScreen.setText(self.t('controls.fullscreen'))
+
             print("Ventana fullscreen abierta")
-            
+
         except Exception as e:
             print(f"Error abriendo fullscreen: {e}")
 
@@ -2406,13 +2486,13 @@ class MainWindow(QMainWindow):
                         self.video_widget.sig_frame.disconnect(self.fullscreen_widget.update_video_frame)
                     except:
                         pass
-                
+
                 # Cerrar ventana
                 self.fullscreen_widget.close()
                 self.fullscreen_widget = None
-                
+
                 # Restaurar texto del botón
-                self.ui.btn_FullScreen.setText("FullScreen")
+                self.ui.btn_FullScreen.setText(self.t('controls.fullscreen'))
                 
                 print("Ventana fullscreen cerrada")
                 

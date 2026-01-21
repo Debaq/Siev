@@ -1,0 +1,175 @@
+{
+
+  "app": {
+
+    "title": "SIEV - Videonystagmography System",
+
+    "version": "Version"
+
+  },
+
+  "menu": {
+
+    "archivo": "File",
+
+    "nuevo_usuario": "New User...",
+
+    "abrir": "Open...",
+
+    "salir": "Exit",
+
+    "vng": "VNG",
+
+    "pruebas_caloricas": "Caloric Tests",
+
+    "calorica": "Caloric",
+
+    "oculomotoras": "Oculomotor",
+
+    "espontaneo": "Spontaneous",
+
+    "seguimiento_lento": "Smooth Pursuit",
+
+    "optoquinetico": "Optokinetic",
+
+    "sacadas": "Saccades",
+
+    "posicionales": "Positional",
+
+    "posicional": "Positional",
+
+    "configuracion": "Settings",
+
+    "preferencias": "Preferences",
+
+    "cambiar_evaluador": "Change evaluator",
+
+    "calibrar": "Calibrate",
+
+    "herramientas": "Tools",
+
+    "test_sin_guardar": "Tracking Test without saving",
+
+    "calculadora_hipo": "Hypo/DP Calculator",
+
+    "informe": "Report"
+
+  },
+
+  "tests": {
+
+    "od_44": "RE 44",
+
+    "oi_44": "LE 44",
+
+    "od_30": "RE 30",
+
+    "oi_30": "LE 30",
+
+    "pruebas": "Tests"
+
+  },
+
+  "controls": {
+
+    "fullscreen": "Full Screen",
+
+    "buscar_vng": "Search VNG",
+
+    "iniciar": "Start",
+
+    "detener": "Stop",
+
+    "calibrando": "Calibrating...",
+
+    "fijar": "Fix",
+
+    "pausar": "Pause",
+
+    "reanudar": "Resume",
+
+    "guardar": "Save",
+
+    "cancelar": "Cancel"
+
+  },
+
+  "parameters": {
+
+    "amplitud": "Amplitude",
+
+    "ritmo": "Rhythm",
+
+    "frecuencia": "Frequency",
+
+    "vcl": "SPV",
+
+    "ofi": "OFI",
+
+    "direccion": "Direction",
+
+    "vertigo": "Vertigo",
+
+    "nauseas": "Nausea",
+
+    "vomito": "Vomiting"
+
+  },
+
+  "camera": {
+
+    "ajustes": "Camera Settings",
+
+    "ancho_nariz": "Nose Width",
+
+    "altura_ojo": "Eye Height",
+
+    "corte_vertical": "Vertical Cut",
+
+    "brillo": "Brightness",
+
+    "contraste": "Contrast",
+
+    "saturacion": "Saturation",
+
+    "exposicion": "Exposure"
+
+  },
+
+  "messages": {
+
+    "grabacion_iniciada": "Recording started",
+
+    "grabacion_detenida": "Recording stopped",
+
+    "calibracion_completa": "Calibration completed",
+
+    "error": "Error",
+
+    "exito": "Success",
+
+    "advertencia": "Warning",
+
+    "confirmacion": "Confirmation",
+
+    "guardar_cambios": "Save changes?",
+
+    "datos_no_guardados": "There is unsaved data. Do you want to save it before continuing?",
+
+    "seleccionar_usuario": "Please select a user first",
+
+    "camara_no_detectada": "No VNG camera detected"
+
+  },
+
+  "time": {
+
+    "segundos": "seconds",
+
+    "minutos": "minutes",
+
+    "calibrando": "Calibrating: {time}s"
+
+  }
+
+}

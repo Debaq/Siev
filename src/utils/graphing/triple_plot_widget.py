@@ -14,6 +14,16 @@ except ImportError:
     except ImportError:
         from optimized_buffer import OptimizedBuffer
 
+# Importar estilos de gráficos
+try:
+    from .graph_styles import get_style, get_available_style_names
+except ImportError:
+    # Fallback si no se encuentra el módulo
+    def get_style(name=None):
+        return {}
+    def get_available_style_names():
+        return []
+
 
 class ConfigurablePlotWidget(QWidget):
     """
@@ -27,17 +37,17 @@ class ConfigurablePlotWidget(QWidget):
     def __init__(self, parent=None, visible_window=60.0, update_fps=10, plot_config=None):
         super().__init__(parent)
         
-        # Configuración por defecto
+        # Configuración por defecto - MEJORADA PARA ASPECTO PROFESIONAL
         self.default_config = {
             'show_position_x': True,
-            'show_position_y': True, 
+            'show_position_y': True,
             'show_imu': True,
             'show_left_eye': True,
             'show_right_eye': True,
-            'line_width': 1,
+            'line_width': 2,  # Líneas más visibles
             'colors': {
-                'left_eye': (0, 0, 200),    # Azul
-                'right_eye': (200, 0, 0)    # Rojo
+                'left_eye': (33, 150, 243),   # Azul Material Design #2196F3
+                'right_eye': (244, 67, 54)    # Rojo Material Design #F44336
             }
         }
         
@@ -122,27 +132,39 @@ class ConfigurablePlotWidget(QWidget):
         print(f"Configurando {len(plots_to_create)} gráficos...")
         
         for i, (label, unit) in enumerate(plots_to_create):
-            # Crear gráfico optimizado
+            # Crear gráfico optimizado con estilo profesional
             plot = pg.PlotWidget()
-            plot.setBackground('w')
-            plot.getAxis('bottom').setPen(pg.mkPen(color='black', width=1))
-            plot.getAxis('left').setPen(pg.mkPen(color='black', width=1))
-            plot.getAxis('bottom').setTextPen(pg.mkPen(color='black'))
-            plot.getAxis('left').setTextPen(pg.mkPen(color='black'))
-            
-            # Configurar etiquetas
-            labelStyle = {'color': '#000', 'font-size': '10pt'}
+
+            # Fondo gris muy claro para mejor contraste
+            plot.setBackground('#FAFAFA')
+
+            # Ejes con estilo mejorado
+            axis_pen = pg.mkPen(color='#424242', width=1.5)
+            plot.getAxis('bottom').setPen(axis_pen)
+            plot.getAxis('left').setPen(axis_pen)
+            plot.getAxis('bottom').setTextPen(pg.mkPen(color='#212121'))
+            plot.getAxis('left').setTextPen(pg.mkPen(color='#212121'))
+
+            # Configurar etiquetas con estilo profesional
+            labelStyle = {'color': '#212121', 'font-size': '11pt', 'font-weight': 'bold'}
             plot.setLabel('left', label, units=unit, **labelStyle)
-            
+
             # Solo el último gráfico tiene etiqueta de tiempo
             if i == len(plots_to_create) - 1:
                 plot.setLabel('bottom', 'Tiempo', units='s', **labelStyle)
-            
+
             # Optimizaciones de rendimiento
-            plot.showGrid(x=True, y=True)
+            # Grilla con estilo sutil y profesional
+            plot.showGrid(x=True, y=True, alpha=0.3)
+            plot.getPlotItem().getAxis('bottom').setGrid(150)  # Grilla más sutil
+            plot.getPlotItem().getAxis('left').setGrid(150)
+
             plot.setDownsampling(auto=True, mode='peak')
             plot.setClipToView(True)
             plot.setMouseEnabled(x=True, y=False)
+
+            # Añadir margen para mejor visualización
+            plot.getPlotItem().setContentsMargins(10, 10, 10, 10)
             
             # Crear curvas según configuración
             curves_created = 0
@@ -179,12 +201,13 @@ class ConfigurablePlotWidget(QWidget):
                 self.curve_mapping[len(self.curves) - 1] = data_type
                 curves_created += 1
             
-            # Solo crear línea vertical si hay curvas
+            # Línea vertical con estilo profesional mejorado
             vLine = pg.InfiniteLine(
-                angle=90, 
+                angle=90,
                 movable=True,
-                pen=pg.mkPen(color=(255, 0, 0), width=2)  # Línea roja visible
+                pen=pg.mkPen(color='#F44336', width=2.5, style=pg.QtCore.Qt.DashLine)  # Roja punteada
             )
+            vLine.setZValue(10)  # Asegurar que esté al frente
             plot.addItem(vLine)
             vLine.sigPositionChanged.connect(self.line_moved_event)
             self.vLines.append(vLine)
