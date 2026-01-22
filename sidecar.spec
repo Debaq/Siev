@@ -9,7 +9,7 @@ from pathlib import Path
 
 # Project paths
 project_root = Path(SPECPATH)
-src_path = project_root / 'src'
+src_path = project_root / 'backend'
 
 # Collect data files
 datas = [

@@ -1,0 +1,16 @@
+Archivos movidos a legacy el 21 de enero de 2026.
+Estos archivos formaban parte de la arquitectura original (basada en PyQt) o eran utilidades que no tienen uso detectado en la versión actual basada en FastAPI.
+
+Archivos de src/utils/:
+- config_manager.py (Reemplazado por config_store.py)
+- data_storage.py (Reemplazado por database/service.py)
+- SievManager.py (Lógica migrada a managers/ y server.py)
+- DetectorNistagmo.py (Sin uso detectado)
+- optimized_buffer.py (Sin uso detectado)
+- utils.py (Sin uso detectado)
+- VideoRecorder.py (Sin uso detectado)
+- vng_pdf_generator.py (Sin uso detectado)
+- WindowsCamera.py (Específico para Windows, no usado en la versión Linux actual)
+
+Directorios de src/utils/:
+- graphing/ (Módulo completo sin referencias activas)
