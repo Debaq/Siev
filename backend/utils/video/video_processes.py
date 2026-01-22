@@ -34,7 +34,7 @@ class VideoProcesses:
         
         # Configuración de cámara compartida
         self.nose_width = Value(ctypes.c_float, 0.25)
-        self.eye_heigh = Value(ctypes.c_float, 0.25)
+        self.eye_height = Value(ctypes.c_float, 0.25)
 
         self.changed_nose = Value(ctypes.c_bool, False)
         self.changed_eye_height = Value(ctypes.c_bool, False)
@@ -95,22 +95,37 @@ class VideoProcesses:
     
     def setup_camera(self):
         """Configura la cámara con los parámetros actuales"""
-        logger.info(f"Configuring camera {self.camera_id} to {self.cap_width}x{self.cap_height}@{self.cap_fps}")
+        logger.info(f"Opening camera {self.camera_id}...")
         
         cap = cv2.VideoCapture(self.camera_id)
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
+        
+        # EL ORDEN IMPORTA: Primero el codec, luego dimensiones y FPS
+        logger.info(f"Requesting MJPG format for camera {self.camera_id}")
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        
+        logger.info(f"Setting resolution to {self.cap_width}x{self.cap_height} @ {self.cap_fps} FPS")
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cap_width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cap_height)
         cap.set(cv2.CAP_PROP_FPS, self.cap_fps)
+        
+        # Otras configuraciones
         cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
         cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 3)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        
+        # Verificar qué se configuró realmente
+        actual_w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+        actual_h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        actual_fps = cap.get(cv2.CAP_PROP_FPS)
+        fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+        fourcc_str = "".join([chr((fourcc >> 8 * i) & 0xFF) for i in range(4)])
+        
+        logger.info(f"Camera {self.camera_id} actually opened at: {actual_w}x{actual_h} @ {actual_fps} FPS, Format: {fourcc_str}")
         
         # Aplicar configuraciones de color actuales
         cap.set(cv2.CAP_PROP_BRIGHTNESS, self.brightness.value)
         cap.set(cv2.CAP_PROP_CONTRAST, self.contrast.value)
         
-        # Resto de configuraciones
         return cap
     
     def _try_open_camera(self, max_attempts=5, delay=0.5):
@@ -284,9 +299,9 @@ class VideoProcesses:
 
             if self.changed_eye_height.value:
                 self.changed_eye_height.value = False
-                roi_nose_height = int(h * self.eye_heigh.value)
+                roi_nose_height = int(h * self.eye_height.value)
             else:
-                roi_nose_height = int(h * self.eye_heigh.value)
+                roi_nose_height = int(h * self.eye_height.value)
 
 
             

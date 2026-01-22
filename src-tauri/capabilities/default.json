@@ -21,8 +21,9 @@
       "identifier": "shell:allow-execute",
       "allow": [
         {
-          "name": "siev-backend",
-          "cmd": "binaries/siev-backend",
+          "name": "python-worker",
+          "cmd": "python-worker",
+          "sidecar": true,
           "args": true
         }
       ]

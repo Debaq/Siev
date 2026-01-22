@@ -151,7 +151,7 @@ class VideoManagerAPI:
             self.video_processes.erode[0] = erode[0]
             self.video_processes.erode[1] = erode[1]
             self.video_processes.nose_width.value = nose_width
-            self.video_processes.eye_heigh.value = eye_height
+            self.video_processes.eye_height.value = eye_height
             self.video_processes.use_yolo.value = use_yolo
 
             self.is_initialized = True
@@ -166,7 +166,7 @@ class VideoManagerAPI:
     def start_capture(self) -> bool:
         """Start video capture"""
         if not self.is_initialized:
-            logger.error("Error: Video manager not initialized")
+            logger.error("Error: Video manager not initialized before start_capture")
             return False
 
         if self.is_capturing:
@@ -174,20 +174,22 @@ class VideoManagerAPI:
             return True
 
         try:
+            logger.info("Starting video processes...")
             # Start video processing
             self.video_processes.start()
 
+            logger.info("Starting frame reader thread...")
             # Start frame reader thread
             self.reader_running = True
             self.reader_thread = threading.Thread(target=self._frame_reader_loop, daemon=True)
             self.reader_thread.start()
 
             self.is_capturing = True
-            logger.info("Video capture started")
+            logger.info("Video capture started successfully")
             return True
 
         except Exception as e:
-            logger.error(f"Error starting capture: {e}")
+            logger.error(f"Error starting capture: {e}", exc_info=True)
             return False
 
     def stop_capture(self):
@@ -442,7 +444,7 @@ class VideoManagerAPI:
                 self.video_processes.changed_nose.value = True
 
             if eye_height is not None:
-                self.video_processes.eye_heigh.value = eye_height
+                self.video_processes.eye_height.value = eye_height
                 self.eye_height = eye_height
                 self.video_processes.changed_eye_height.value = True
 

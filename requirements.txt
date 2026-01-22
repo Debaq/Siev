@@ -1,9 +1,3 @@
-# API Backend (FastAPI)
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-python-multipart>=0.0.6
-sse-starlette>=1.6.0
-
 # Procesamiento de video e imágenes
 opencv-python==4.11.0.86
 ultralytics==8.3.161

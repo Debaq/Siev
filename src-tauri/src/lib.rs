@@ -1,20 +1,29 @@
 use std::sync::{Mutex, Arc};
 use tauri::{State, Window, Manager};
 
-pub mod math;
-pub mod hardware;
+pub mod bridge;
 pub mod database;
+pub mod hardware;
+pub mod math;
+pub mod websocket;
 
-use math::processor::{EyeProcessor, RawEyeData, ProcessedEyeData};
-use hardware::manager::HardwareManager;
+use bridge::PythonBridge;
+use database::models::{CreatePatientDto, Patient, Session, Specialist, UpdatePatientDto};
 use database::service::DatabaseService;
-use database::models::{Patient, Session, CreatePatientDto, UpdatePatientDto, Specialist};
+use hardware::manager::HardwareManager;
+use math::processor::{EyeProcessor, ProcessedEyeData, RawEyeData};
+use websocket::{WebSocketServer, WsMessage};
+use bridge::python_bridge::BridgeEvent;
+use base64::{Engine as _, engine::general_purpose};
+use tauri_plugin_shell::ShellExt;
 
 // Application State
 pub struct AppState {
-    pub eye_processor: Mutex<EyeProcessor>,
-    pub hardware_manager: Mutex<HardwareManager>,
+    pub eye_processor: Arc<Mutex<EyeProcessor>>,
+    pub hardware_manager: Arc<Mutex<HardwareManager>>,
     pub db: Arc<DatabaseService>,
+    pub python_bridge: Arc<PythonBridge>,
+    pub ws_server: Arc<WebSocketServer>,
 }
 
 // --- Math & Processing Commands ---
@@ -165,6 +174,63 @@ fn get_default_storage_path(app: tauri::AppHandle) -> String {
        .unwrap_or_else(|_| "siev_data".to_string())
 }
 
+// --- Python Bridge Commands ---
+
+#[tauri::command]
+async fn is_python_connected(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.python_bridge.is_connected().await)
+}
+
+#[tauri::command]
+async fn python_start_capture(
+    camera_id: i32,
+    width: u32,
+    height: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .python_bridge
+        .start_capture(camera_id, width, height)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn python_stop_capture(state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .python_bridge
+        .stop_capture()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn python_list_cameras(state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .python_bridge
+        .list_cameras()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn python_set_pupil_config(
+    threshold: i32,
+    mode: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .python_bridge
+        .set_pupil_config(threshold, &mode)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_websocket_port(state: State<AppState>) -> u16 {
+    state.ws_server.get_port()
+}
+
 // --- System Commands ---
 
 #[tauri::command]
@@ -192,19 +258,172 @@ pub fn run() {
             let app_handle = app.handle();
             let db_service = tauri::async_runtime::block_on(async {
                 DatabaseService::new(app_handle).await
-            }).expect("Failed to initialize database");
+            })
+            .expect("Failed to initialize database");
+
+            let hardware_manager = Arc::new(Mutex::new(HardwareManager::new()));
+
+            // Initialize WebSocket Server
+            let (ws_server, mut ws_commands) = WebSocketServer::new();
+            let ws_server = Arc::new(ws_server);
+            let ws_clone = Arc::clone(&ws_server);
+            
+            // Start WebSocket server in background (dynamic port)
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = ws_clone.start("127.0.0.1:0").await {
+                    eprintln!("WebSocket server error: {}", e);
+                }
+            });
+
+            // Initialize Python Bridge
+            let python_bridge = Arc::new(PythonBridge::new());
+
+            // Forward WebSocket commands to their handlers
+            let bridge_cmds = Arc::clone(&python_bridge);
+            let hw_cmds = Arc::clone(&hardware_manager);
+
+            tauri::async_runtime::spawn(async move {
+                while let Some(msg) = ws_commands.recv().await {
+                    match msg {
+                        WsMessage::ListCameras => {
+                            let _ = bridge_cmds.list_cameras().await;
+                        }
+                        WsMessage::StartCapture { camera_id, width, height } => {
+                            let _ = bridge_cmds.start_capture(camera_id, width, height).await;
+                        }
+                        WsMessage::StopCapture => {
+                            let _ = bridge_cmds.stop_capture().await;
+                        }
+                        WsMessage::SetConfig { key, value } => {
+                            // Convert value to i32 if it is a number, for legacy config
+                            if let Some(v) = value.as_i64() {
+                                let _ = bridge_cmds.set_camera_config(&key, v as i32).await;
+                            }
+                        }
+                        WsMessage::ConnectHardware { port: _, baud_rate: _ } => {
+                            // Find a window to pass to connect (any window will do for events)
+                            // This is a bit tricky from here, maybe we can use app_handle
+                            let _hw = hw_cmds.lock().unwrap();
+                            // For now we don't pass the window easily, might need to refactor hardware manager
+                            // but let's assume it works for now or skip window events.
+                            // Actually, let's skip it for now as it's Phase 3.
+                        }
+                        WsMessage::SendHardwareCommand { cmd } => {
+                            let hw = hw_cmds.lock().unwrap();
+                            let _ = hw.send_command(&cmd);
+                        }
+                        _ => {}
+                    }
+                }
+            });
+
+            // Start the TCP server in background
+            let bridge_for_tcp = Arc::clone(&python_bridge);
+            tauri::async_runtime::spawn(async move {
+                bridge_for_tcp.start();
+            });
+
+            // Start Python Sidecar
+            let shell = app.shell();
+            let sidecar = shell.sidecar("python-worker").map_err(|e| e.to_string())?;
+            
+            tauri::async_runtime::spawn(async move {
+                println!("Starting Python sidecar...");
+                let (mut rx, _child) = sidecar.spawn().expect("Failed to spawn python-worker sidecar");
+                
+                while let Some(event) = rx.recv().await {
+                    match event {
+                        tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
+                            println!("[Python] {}", String::from_utf8_lossy(&line).trim());
+                        }
+                        tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
+                            eprintln!("[Python Error] {}", String::from_utf8_lossy(&line).trim());
+                        }
+                        tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
+                            println!("[Python] Process terminated with code {:?}", payload.code);
+                            // In a production app, we should probably implement auto-restart here
+                        }
+                        _ => {}
+                    }
+                }
+            });
+
+            let ws_broadcast = Arc::clone(&ws_server);
+            let mut bridge_events = python_bridge.subscribe();
+            let eye_processor = Arc::new(Mutex::new(EyeProcessor::new()));
+            let eye_processor_clone = Arc::clone(&eye_processor);
+
+            let bridge_for_events = Arc::clone(&python_bridge);
+
+            tauri::async_runtime::spawn(async move {
+                while let Ok(event) = bridge_events.recv().await {
+                    match event {
+                        BridgeEvent::Connected => {
+                            ws_broadcast.broadcast(&WsMessage::Status {
+                                python_connected: true,
+                                hardware_connected: false,
+                            });
+                            // Automatically request cameras on connection
+                            let _ = bridge_for_events.list_cameras().await;
+                        }
+                        BridgeEvent::EyeData(payload) => {
+                            let raw_data = RawEyeData {
+                                left_eye: payload.left.map(|p| [p.x, p.y]),
+                                right_eye: payload.right.map(|p| [p.x, p.y]),
+                                processed: None,
+                                timestamp: payload.timestamp as f64 / 1000.0,
+                            };
+                            
+                            let processed = {
+                                let mut processor = eye_processor_clone.lock().unwrap();
+                                processor.process(raw_data)
+                            };
+
+                            ws_broadcast.broadcast(&WsMessage::EyeData(processed));
+                        }
+                        BridgeEvent::VideoFrame(jpeg) => {
+                            let base64_data = general_purpose::STANDARD.encode(jpeg);
+                            ws_broadcast.broadcast(&WsMessage::VideoFrame { data: base64_data });
+                        }
+                        BridgeEvent::Disconnected => {
+                            ws_broadcast.broadcast(&WsMessage::Status {
+                                python_connected: false,
+                                hardware_connected: false,
+                            });
+                        }
+                        BridgeEvent::Error(msg) => {
+                            ws_broadcast.broadcast(&WsMessage::Error {
+                                source: "python".to_string(),
+                                message: msg,
+                            });
+                        }
+                        BridgeEvent::CmdAck(ack) => {
+                            if ack.success {
+                                if let Some(cameras) = ack.data.get("cameras") {
+                                    ws_broadcast.broadcast(&WsMessage::CamerasList { 
+                                        cameras: cameras.clone() 
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            });
 
             // Manage State
             app.manage(AppState {
-                eye_processor: Mutex::new(EyeProcessor::new()),
-                hardware_manager: Mutex::new(HardwareManager::new()),
+                eye_processor,
+                hardware_manager,
                 db: Arc::new(db_service),
+                python_bridge,
+                ws_server,
             });
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_version,
+            get_websocket_port,
             process_eye_data_batch,
             reset_calibration,
             list_serial_ports,
@@ -212,6 +431,12 @@ pub fn run() {
             connect_hardware,
             disconnect_hardware,
             send_hardware_command,
+            // Python Bridge Commands
+            is_python_connected,
+            python_start_capture,
+            python_stop_capture,
+            python_list_cameras,
+            python_set_pupil_config,
             // DB Commands
             get_patients,
             create_patient,

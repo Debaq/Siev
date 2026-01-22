@@ -26,6 +26,10 @@ nalgebra = "0.33"
 serialport = "4.6"
 # Async & Utilities
 tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.26"
+futures-util = "0.3"
+bytes = "1"
+base64 = "0.21"
 thiserror = "2"
 ts-rs = "10.0" # Optional: for generating TypeScript types from Rust structs if needed later
 # Database

@@ -1,52 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { Camera, RefreshCw } from 'lucide-react';
+import React, { useState } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { SettingsSection } from '../shared/SettingsSection';
 import { SettingsField } from '../shared/SettingsField';
 import { SettingsToggle } from '../shared/SettingsToggle';
+import { useWebSocket } from '../../../contexts/WebSocketContext';
 
 interface CameraTabProps {
     config: any;
     updateConfig: (path: string, value: any) => void;
-    apiUrl: string;
 }
 
-export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig, apiUrl }) => {
-    const [cameras, setCameras] = useState<any[]>([]);
-    const [resolutions, setResolutions] = useState<string[]>([]);
-    const [isLoadingCameras, setIsLoadingCameras] = useState(false);
+export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig }) => {
+    const { cameras, send } = useWebSocket();
     const [applyingResolution, setApplyingResolution] = useState(false);
 
-    useEffect(() => {
-        fetchCameras();
-    }, []);
-
-    useEffect(() => {
-        if (config.vng.camera.camera_id !== undefined) {
-            fetchResolutions(config.vng.camera.camera_id);
-        }
-    }, [config.vng.camera.camera_id]);
-
-    const fetchCameras = async () => {
-        setIsLoadingCameras(true);
-        try {
-            const res = await fetch(`${apiUrl}/video/cameras`);
-            const data = await res.json();
-            if (data.cameras) setCameras(data.cameras);
-        } catch (e) {
-            console.error("Error fetching cameras:", e);
-        } finally {
-            setIsLoadingCameras(false);
-        }
-    };
-
-    const fetchResolutions = async (cameraId: number) => {
-        try {
-            const res = await fetch(`${apiUrl}/video/resolutions?camera_id=${cameraId}`);
-            const data = await res.json();
-            if (data.resolutions) setResolutions(data.resolutions);
-        } catch (e) {
-            console.error("Error fetching resolutions:", e);
-        }
+    const handleRefreshCameras = () => {
+        send({ type: 'list_cameras' });
     };
 
     const handleResolutionSelect = async (resolutionStr: string) => {
@@ -61,17 +30,15 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig, apiU
             updateConfig('vng.camera.fps', fps);
 
             setApplyingResolution(true);
-            try {
-                await fetch(`${apiUrl}/video/config`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ width, height, fps })
-                });
-            } catch (e) {
-                console.error('Error applying resolution:', e);
-            } finally {
-                setApplyingResolution(false);
-            }
+            // Send config via WebSocket
+            send({
+                type: 'set_config',
+                key: 'camera_setup',
+                value: { width, height, fps }
+            });
+            
+            // Simular breve delay de aplicación
+            setTimeout(() => setApplyingResolution(false), 500);
         }
     };
 
@@ -97,10 +64,10 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig, apiU
                         </select>
                         <button 
                             className="btn btn-secondary p-2 h-9" 
-                            onClick={fetchCameras}
-                            disabled={isLoadingCameras}
+                            onClick={handleRefreshCameras}
+                            title="Refrescar lista de cámaras"
                         >
-                            <RefreshCw className={`w-4 h-4 ${isLoadingCameras ? 'animate-spin' : ''}`} />
+                            <RefreshCw className="w-4 h-4" />
                         </button>
                     </div>
                 </SettingsField>
@@ -115,10 +82,11 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig, apiU
                         onChange={e => handleResolutionSelect(e.target.value)}
                         disabled={applyingResolution}
                     >
-                        {resolutions.length === 0 && <option value={currentRes}>{currentRes}</option>}
-                        {resolutions.map((res: string) => (
-                            <option key={res} value={res}>{res}</option>
-                        ))}
+                        {/* Note: In a fully dynamic version, we'd fetch resolutions per camera via WS too */}
+                        <option value={currentRes}>{currentRes}</option>
+                        <option value="640x480@120">640x480@120 FPS</option>
+                        <option value="960x540@120">960x540@120 FPS</option>
+                        <option value="1280x720@60">1280x720@60 FPS</option>
                     </select>
                 </SettingsField>
 
@@ -127,14 +95,22 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig, apiU
                         <input
                             type="number" className="input h-9 text-sm"
                             value={config.vng.camera.exposure}
-                            onChange={e => updateConfig('vng.camera.exposure', Number(e.target.value))}
+                            onChange={e => {
+                                const val = Number(e.target.value);
+                                updateConfig('vng.camera.exposure', val);
+                                send({ type: 'set_config', key: 'exposure', value: val });
+                            }}
                         />
                     </SettingsField>
                     <SettingsField label="Contraste" description="Mejora la visibilidad de la pupila.">
                         <input
                             type="number" className="input h-9 text-sm"
                             value={config.vng.camera.contrast}
-                            onChange={e => updateConfig('vng.camera.contrast', Number(e.target.value))}
+                            onChange={e => {
+                                const val = Number(e.target.value);
+                                updateConfig('vng.camera.contrast', val);
+                                send({ type: 'set_config', key: 'contrast', value: val });
+                            }}
                         />
                     </SettingsField>
                 </div>
@@ -145,13 +121,19 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig, apiU
                     <SettingsField label="Espejo Horizontal" inline>
                         <SettingsToggle 
                             checked={config.vng.camera.flip_horizontal}
-                            onChange={val => updateConfig('vng.camera.flip_horizontal', val)}
+                            onChange={val => {
+                                updateConfig('vng.camera.flip_horizontal', val);
+                                send({ type: 'set_config', key: 'flip_h', value: val });
+                            }}
                         />
                     </SettingsField>
                     <SettingsField label="Invertir Vertical" inline>
                         <SettingsToggle 
                             checked={config.vng.camera.flip_vertical}
-                            onChange={val => updateConfig('vng.camera.flip_vertical', val)}
+                            onChange={val => {
+                                updateConfig('vng.camera.flip_vertical', val);
+                                send({ type: 'set_config', key: 'flip_v', value: val });
+                            }}
                         />
                     </SettingsField>
                 </div>

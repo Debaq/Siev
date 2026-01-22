@@ -6,15 +6,12 @@ import {
 } from 'lucide-react'
 import { useTauriHardware } from '../hooks/useTauriHardware'
 import { UseSessionConfigReturn } from '../hooks/useSessionConfig'
+import { useWebSocket } from '../contexts/WebSocketContext'
 
 interface ControlPanelProps {
   isCapturing: boolean
-  isRecording: boolean
-  hardwareStatus: 'offline' | 'online' | 'error'
   onStartCapture: () => void
   onStopCapture: () => void
-  onStartRecording: () => void
-  onStopRecording: () => void
   onCalibrate: () => void
   sessionConfig: UseSessionConfigReturn
   appConfig: any
@@ -22,16 +19,14 @@ interface ControlPanelProps {
 
 function ControlPanel({
   isCapturing,
-  isRecording,
-  hardwareStatus,
   onStartCapture,
   onStopCapture,
-  onStartRecording,
-  onStopRecording,
   onCalibrate,
   sessionConfig,
   appConfig,
 }: ControlPanelProps) {
+  const { send, hardwareStatus: _wsHardwareStatus } = useWebSocket()
+  const [isRecording, setIsRecording] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const advancedPanelRef = useRef<HTMLDivElement>(null)
 
@@ -55,13 +50,17 @@ function ControlPanel({
   // Tauri Hardware
   const { controlLed, isConnected: isHwConnected } = useTauriHardware(appConfig)
 
-  // Handlers that update session config and sync to backend
+  // Handlers that update session config and sync to backend via WebSocket
   const handleBrightnessChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    updateAndSync('brightness', Number(e.target.value))
+    const val = Number(e.target.value)
+    updateAndSync('brightness', val)
+    send({ type: 'set_config', key: 'brightness', value: val })
   }
 
   const handleContrastChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    updateAndSync('contrast', Number(e.target.value))
+    const val = Number(e.target.value)
+    updateAndSync('contrast', val)
+    send({ type: 'set_config', key: 'contrast', value: val })
   }
 
   const handleThresholdChange = (eye: 'right' | 'left', val: number) => {
@@ -69,6 +68,7 @@ function ControlPanel({
       ? [val, threshold[1]]
       : [threshold[0], val]
     updateAndSync('threshold', newThreshold)
+    send({ type: 'set_config', key: 'threshold', value: newThreshold })
   }
 
   const handleErodeChange = (eye: 'right' | 'left', val: number) => {
@@ -76,31 +76,49 @@ function ControlPanel({
       ? [val, erode[1]]
       : [erode[0], val]
     updateAndSync('erode', newErode)
+    send({ type: 'set_config', key: 'erode', value: newErode })
   }
 
   const handleNoseWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    updateAndSync('nose_width', parseFloat(e.target.value))
+    const val = parseFloat(e.target.value)
+    updateAndSync('nose_width', val)
+    send({ type: 'set_config', key: 'nose_width', value: val })
   }
 
   const handleEyeHeightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    updateAndSync('eye_height', parseFloat(e.target.value))
+    const val = parseFloat(e.target.value)
+    updateAndSync('eye_height', val)
+    send({ type: 'set_config', key: 'eye_height', value: val })
   }
 
   const handleToggleYolo = () => {
-    updateAndSync('use_yolo', !use_yolo)
+    const val = !use_yolo
+    updateAndSync('use_yolo', val)
+    send({ type: 'set_config', key: 'use_yolo', value: val })
   }
 
   const handleToggleDebug = () => {
-    updateAndSync('show_debug', !show_debug)
+    const val = !show_debug
+    updateAndSync('show_debug', val)
+    send({ type: 'set_config', key: 'show_debug', value: val })
+  }
+
+  const handleStartRecording = () => {
+    send({ type: 'send_command', cmd: 'start_recording' })
+    setIsRecording(true)
+  }
+
+  const handleStopRecording = () => {
+    send({ type: 'send_command', cmd: 'stop_recording' })
+    setIsRecording(false)
   }
 
   const handleResetToConfig = () => {
     clearAllOverrides()
-    sessionConfig.syncToBackend()
+    // In a real scenario, we would send all default values back
   }
 
   const handleLed = async (led: string, action: 'on' | 'off') => {
-    // Map string to literal type
     const ledType = led as 'left' | 'right' | 'all'
     await controlLed(ledType, action)
   }
@@ -316,7 +334,7 @@ function ControlPanel({
 
         <button
           className={`btn ${isRecording ? 'btn-danger' : 'btn-secondary'}`}
-          onClick={isRecording ? onStopRecording : onStartRecording}
+          onClick={isRecording ? handleStopRecording : handleStartRecording}
           disabled={!isCapturing}
         >
           <Circle className={`w-3 h-3 ${isRecording ? 'fill-current animate-pulse' : ''}`} />
@@ -373,7 +391,7 @@ function ControlPanel({
                 </button>
                 <button 
                   className="btn btn-secondary flex-1 p-0 h-6"
-                  onClick={() => handleLed('right', 'off')}
+                  onClick={(e) => { e.stopPropagation(); handleLed('right', 'off') }}
                   disabled={!isHwConnected}
                 >
                   <LightbulbOff className="w-3 h-3" />

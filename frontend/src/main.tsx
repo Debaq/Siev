@@ -1,13 +1,13 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
-import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
+import { WebSocketProvider } from './contexts/WebSocketContext'
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
+ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <ErrorBoundary>
+    <WebSocketProvider>
       <App />
-    </ErrorBoundary>
+    </WebSocketProvider>
   </React.StrictMode>,
 )

@@ -34,8 +34,8 @@
     "security": {
       "csp": {
         "default-src": "'self' 'unsafe-inline' data: blob:",
-        "img-src": "'self' data: blob: http://localhost:8000",
-        "connect-src": "'self' http://localhost:8000 ws://localhost:8000"
+        "img-src": "'self' data: blob: http://localhost:* ws://localhost:*",
+        "connect-src": "'self' http://localhost:* ws://localhost:* ws://127.0.0.1:*"
       }
     }
   },
@@ -49,7 +49,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [],
+    "externalBin": [
+      "python-worker"
+    ],
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",

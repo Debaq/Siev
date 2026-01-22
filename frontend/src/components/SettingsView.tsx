@@ -1,13 +1,10 @@
 import React, { useState } from 'react';
-import { Settings, Save, RotateCcw, FileText, Activity, Monitor, LayoutGrid, Info } from 'lucide-react';
+import { Settings, Save, RotateCcw, FileText, Activity, Monitor, LayoutGrid } from 'lucide-react';
 import { useSettingsConfig } from '../hooks/useSettingsConfig';
 import { ModuleSelector, ModuleDefinition } from './settings/ModuleSelector';
 import { GeneralSettings } from './settings/general';
 import { VNGSettings } from './settings/vng';
-
-interface SettingsViewProps {
-    apiUrl: string;
-}
+import { useWebSocket } from '../contexts/WebSocketContext';
 
 const MODULE_LIST: ModuleDefinition[] = [
     { 
@@ -66,7 +63,8 @@ const MODULE_LIST: ModuleDefinition[] = [
     },
 ];
 
-const SettingsView: React.FC<SettingsViewProps> = ({ apiUrl }) => {
+const SettingsView: React.FC = () => {
+    const { send } = useWebSocket();
     const { 
         config, 
         isLoading, 
@@ -75,7 +73,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ apiUrl }) => {
         updateConfig, 
         saveConfig, 
         resetConfig 
-    } = useSettingsConfig(apiUrl);
+    } = useSettingsConfig(send);
 
     const [activeModuleId, setActiveModuleId] = useState('general');
 
@@ -111,8 +109,16 @@ const SettingsView: React.FC<SettingsViewProps> = ({ apiUrl }) => {
                             </div>
                         ) : isDirty ? (
                             <div className="flex items-center gap-2 text-xs text-yellow-500 bg-yellow-500/10 px-3 py-1.5 rounded-full border border-yellow-500/20">
-                                <RotateCcw className="w-3 h-3 animate-spin-slow" />
+                                <button onClick={() => resetConfig()} className="hover:text-white transition-colors">
+                                    <RotateCcw className="w-3 h-3 animate-spin-slow" />
+                                </button>
                                 <span className="font-medium">Cambios pendientes...</span>
+                                <button 
+                                    onClick={() => saveConfig()}
+                                    className="ml-2 bg-siev-600 hover:bg-siev-500 text-white px-2 py-0.5 rounded text-[10px] transition-colors"
+                                >
+                                    Guardar Ahora
+                                </button>
                             </div>
                         ) : (
                             <div className="flex items-center gap-2 text-xs text-dark-500 bg-dark-800/50 px-3 py-1.5 rounded-full border border-dark-700">
@@ -138,7 +144,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ apiUrl }) => {
                         <GeneralSettings config={config} updateConfig={updateConfig} />
                     )}
                     {activeModuleId === 'vng' && (
-                        <VNGSettings config={config} updateConfig={updateConfig} apiUrl={apiUrl} />
+                        <VNGSettings config={config} updateConfig={updateConfig} />
                     )}
                     {activeModuleId === 'stimulus_screen' && (
                         <div className="flex-1 flex flex-col items-center justify-center text-center p-20 bg-dark-900/50 rounded-2xl border border-dark-800 border-dashed">

@@ -9,7 +9,6 @@ import { CalibrationTab } from './CalibrationTab';
 interface VNGSettingsProps {
     config: any;
     updateConfig: (path: string, value: any) => void;
-    apiUrl: string;
 }
 
 const VNG_TABS: TabDefinition[] = [
@@ -20,7 +19,7 @@ const VNG_TABS: TabDefinition[] = [
     { id: 'report', label: 'Informe', icon: FileText },
 ];
 
-export const VNGSettings: React.FC<VNGSettingsProps> = ({ config, updateConfig, apiUrl }) => {
+export const VNGSettings: React.FC<VNGSettingsProps> = ({ config, updateConfig }) => {
     const [activeTab, setActiveTab] = useState('camera');
 
     return (
@@ -33,10 +32,10 @@ export const VNGSettings: React.FC<VNGSettingsProps> = ({ config, updateConfig, 
             
             <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
                 {activeTab === 'camera' && (
-                    <CameraTab config={config} updateConfig={updateConfig} apiUrl={apiUrl} />
+                    <CameraTab config={config} updateConfig={updateConfig} />
                 )}
                 {activeTab === 'algorithm' && (
-                    <AlgorithmTab config={config} updateConfig={updateConfig} apiUrl={apiUrl} />
+                    <AlgorithmTab config={config} updateConfig={updateConfig} />
                 )}
                 {activeTab === 'hardware' && (
                     <HardwareTab config={config} updateConfig={updateConfig} />

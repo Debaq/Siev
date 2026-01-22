@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Video, Settings, GripHorizontal, User, X } from 'lucide-react'
+import { Video, Settings, GripHorizontal, User } from 'lucide-react'
 import VideoFeed from './components/VideoFeed'
 import ControlPanel from './components/ControlPanel'
 import StatusBar from './components/StatusBar'
@@ -12,24 +12,18 @@ import UserSelectionScreen from './components/UserSelectionScreen'
 import SplashScreen from './components/SplashScreen'
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
-import { useBackend } from './hooks/useBackend'
-import { useTauriDb, Specialist } from './hooks/useTauriDb'
-import { useTauriHardware } from './hooks/useTauriHardware'
-import { syncWithBackend, DEFAULT_APP_CONFIG, deepMerge, useSettingsConfig } from './hooks/useSettingsConfig'
+import { useTauriDb, Specialist, Patient } from './hooks/useTauriDb'
+import { useSettingsConfig } from './hooks/useSettingsConfig'
 import { useSessionConfig } from './hooks/useSessionConfig'
-
-const API_URL = 'http://localhost:8000'
-
-// ... (existing interfaces)
+import { useWebSocket } from './contexts/WebSocketContext'
 
 function App() {
-  const { health, isConnected: isBackendConnected, checkHealth } = useBackend(API_URL)
+  const { connected: isWsConnected, pythonStatus, hardwareStatus, cameras: wsCameras, send } = useWebSocket()
   const { getSetting, getSpecialists, createSession } = useTauriDb()
-  const { config: appConfig } = useSettingsConfig(API_URL)
-  const sessionConfig = useSessionConfig(API_URL)
   
-  // Tauri Hardware Integration
-  const { isConnected: isHwConnected } = useTauriHardware(appConfig)
+  // Initialize hooks with WebSocket send capability
+  const { config: appConfig } = useSettingsConfig(send)
+  const sessionConfig = useSessionConfig(send)
   
   // UX State
   const [showSplash, setShowSplash] = useState(true)
@@ -43,20 +37,7 @@ function App() {
   const [isInitialized, setIsInitialized] = useState(false)
 
   // App State
-  const [systemStatus, setSystemStatus] = useState<SystemStatus>({
-    video: 'offline', hardware: 'offline', recording: false, fps: 0,
-  })
-
-  // Sync Hardware Status
-  useEffect(() => {
-    setSystemStatus(prev => {
-      const newStatus = isHwConnected ? 'online' : 'offline'
-      if (prev.hardware === newStatus) return prev
-      return { ...prev, hardware: newStatus }
-    })
-  }, [isHwConnected])
   const [isCapturing, setIsCapturing] = useState(false)
-  const [cameras, setCameras] = useState<Camera[]>([])
   const [selectedCamera, setSelectedCamera] = useState<number>(2)
   const [dataPanelHeight, setDataPanelHeight] = useState(240)
   const [isResizing, setIsResizing] = useState(false)
@@ -83,42 +64,19 @@ function App() {
     checkInit()
   }, [])
 
-  // Initialization
+  // Initialization: Request cameras via WebSocket
   useEffect(() => {
-    const fetchCameras = async () => {
-      try {
-        const res = await fetch(`${API_URL}/video/cameras`)
-        const data = await res.json()
-        if (data.cameras?.length) {
-          setCameras(data.cameras)
-          if (!data.cameras.find((c: any) => c.id === selectedCamera)) setSelectedCamera(data.cameras[0].id)
-        }
-      } catch (e) { console.error(e) }
+    if (isWsConnected) {
+        send({ type: 'list_cameras' })
     }
+  }, [isWsConnected, send])
 
-    fetchCameras()
-
-    const interval = setInterval(checkHealth, 2000)
-    return () => clearInterval(interval)
-  }, [])
-
+  // Sync selected camera if it's not in the list
   useEffect(() => {
-    if (health) {
-      setSystemStatus(prev => {
-        const newVideo = health.video_status === 'capturing' ? 'online' : 'offline'
-        const newRecording = health.recording_status === 'recording'
-        
-        if (prev.video === newVideo && prev.recording === newRecording) return prev
-        
-        return {
-          ...prev,
-          video: newVideo,
-          recording: newRecording,
-          fps: health.uptime > 0 ? prev.fps : 0,
-        }
-      })
+    if (wsCameras.length > 0 && !wsCameras.find(c => c.id === selectedCamera)) {
+        setSelectedCamera(wsCameras[0].id)
     }
-  }, [health])
+  }, [wsCameras, selectedCamera])
 
   // Resizing Logic
   useEffect(() => {
@@ -140,57 +98,43 @@ function App() {
   // Actions
   const handleStartCapture = async () => {
     try {
-      const storagePath = await getSetting('storage_path')
-
-      await fetch(`${API_URL}/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            camera_id: selectedCamera,
-            storage_path: storagePath
-        })
+      send({
+        type: 'start_capture',
+        camera_id: selectedCamera,
+        width: 960,
+        height: 540
       })
       setIsCapturing(true)
 
-      // Sync pupil detection config with backend after starting capture
-      // Initialize sessionConfig from persistent config
-      try {
-        const storedConfig = await getSetting('app_config')
-        const config = storedConfig
-          ? deepMerge(DEFAULT_APP_CONFIG, JSON.parse(storedConfig))
-          : DEFAULT_APP_CONFIG
-
-        // Initialize session config base values from persistent config
-        sessionConfig.initFromPersistentConfig(config)
-
-        // Sync persistent config (camera setup, pupil detection) with backend
-        // Include session fields only if there are no active overrides
-        const hasActiveOverrides = sessionConfig.hasOverrides
-        await syncWithBackend(config, API_URL, sessionConfig.getOverrides(), !hasActiveOverrides)
-
-        // If there are active session overrides, apply them on top
-        if (hasActiveOverrides) {
-          await sessionConfig.syncToBackend()
-        }
-      } catch (syncError) {
-        console.error('Error syncing pupil config:', syncError)
+      // Initial sync of settings to Python via WebSocket
+      if (appConfig) {
+        sessionConfig.initFromPersistentConfig(appConfig)
+        // Sync current session values
+        send({
+            type: 'set_config',
+            key: 'full_sync',
+            value: sessionConfig.values
+        });
       }
     } catch (e) { console.error(e) }
   }
 
   const handleStopCapture = async () => {
-    try { await fetch(`${API_URL}/stop`, { method: 'POST' }); setIsCapturing(false) } catch (e) { console.error(e) }
+    try { 
+      send({ type: 'stop_capture' })
+      setIsCapturing(false) 
+    } catch (e) { console.error(e) }
   }
 
   // Render Capture View
   const renderCaptureView = () => (
     <div className="h-full flex flex-col font-sans text-xs">
       <StatusBar
-        isConnected={isBackendConnected}
-        videoStatus={systemStatus.video}
-        hardwareStatus={systemStatus.hardware}
-        fps={systemStatus.fps}
-        recording={systemStatus.recording}
+        isConnected={isWsConnected}
+        videoStatus={pythonStatus ? 'online' : 'offline'}
+        hardwareStatus={hardwareStatus ? 'online' : 'offline'}
+        fps={0} 
+        recording={false} 
         testType={currentTestType}
         patientName={currentPatient ? `${currentPatient.last_name}, ${currentPatient.first_name}` : null}
         onSelectTest={() => setActiveView('test_selection')}
@@ -216,8 +160,14 @@ function App() {
                       onChange={(e) => setSelectedCamera(Number(e.target.value))}
                       disabled={isCapturing}
                    >
-                      {cameras.map(c => <option key={c.id} value={c.id} className="bg-dark-800 text-dark-100">{c.name}</option>)}
-                      {cameras.length === 0 && <option value={2} className="bg-dark-800 text-dark-100">Default Camera</option>}
+                      {wsCameras.map(c => (
+                        <option key={c.id} value={c.id} className="bg-dark-800 text-dark-100">
+                          {c.name}
+                        </option>
+                      ))}
+                      {wsCameras.length === 0 && (
+                        <option value={2} className="bg-dark-800 text-dark-100">Cámara VNG</option>
+                      )}
                    </select>
                 </div>
                 
@@ -228,18 +178,12 @@ function App() {
                        Seleccionar Paciente
                      </button>
                    )}
-                   {systemStatus.recording && (
-                      <span className="flex items-center gap-1 bg-red-500/20 border border-red-500/50 text-red-400 px-2 py-0.5 rounded text-[10px] font-bold">
-                        <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                        REC
-                      </span>
-                   )}
                    {isCapturing && <span className="text-green-400 text-[10px] font-bold bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20">ONLINE</span>}
                 </div>
              </div>
 
              <div className="flex-1 bg-black flex items-center justify-center overflow-hidden">
-                <VideoFeed apiUrl={API_URL} isCapturing={isCapturing} />
+                <VideoFeed isCapturing={isCapturing} />
              </div>
           </div>
 
@@ -256,7 +200,7 @@ function App() {
                 Datos de Seguimiento
              </div>
              <div className="flex-1 overflow-hidden p-2">
-                <EyeDataPanel apiUrl={API_URL} isCapturing={isCapturing} />
+                <EyeDataPanel isCapturing={isCapturing} />
              </div>
           </div>
         </div>
@@ -269,13 +213,9 @@ function App() {
            <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
               <ControlPanel
                 isCapturing={isCapturing}
-                isRecording={systemStatus.recording}
-                hardwareStatus={systemStatus.hardware}
                 onStartCapture={handleStartCapture}
                 onStopCapture={handleStopCapture}
-                onStartRecording={async () => { try { await fetch(`${API_URL}/recording/start`, { method: 'POST' }) } catch (e) { console.error(e) } }}
-                onStopRecording={async () => { try { await fetch(`${API_URL}/recording/stop`, { method: 'POST' }) } catch (e) { console.error(e) } }}
-                onCalibrate={async () => { try { await fetch(`${API_URL}/calibrate`, { method: 'POST' }) } catch (e) { console.error(e) } }}
+                onCalibrate={() => send({ type: 'send_command', cmd: 'calibrate' })}
                 sessionConfig={sessionConfig}
                 appConfig={appConfig}
               />
@@ -331,7 +271,6 @@ function App() {
                             else setActiveView('patients');
                           }}
                           onSelectTest={async (testId) => { 
-                              // If there is a patient, create a formal session in DB
                               if (currentPatient) {
                                 const session = await createSession(
                                     currentPatient.id, 
@@ -342,7 +281,6 @@ function App() {
                                     setCurrentSessionId(session.id)
                                 }
                               } else {
-                                // If no patient, we just set the UI state for the capture view
                                 setCurrentSessionId(null);
                               }
                               
@@ -353,7 +291,7 @@ function App() {
                       )}
             
             {activeView === 'settings' && (
-                <SettingsView apiUrl={API_URL} />
+                <SettingsView />
             )}
             </div>
         </div>
