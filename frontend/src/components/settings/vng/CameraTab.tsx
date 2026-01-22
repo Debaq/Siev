@@ -78,7 +78,7 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig, apiU
     const currentRes = `${config.vng.camera.resolution_width}x${config.vng.camera.resolution_height}@${config.vng.camera.fps}`;
 
     return (
-        <div className="space-y-8 animate-fade-in">
+        <div className="space-y-6 animate-fade-in">
             <SettingsSection 
                 title="Captura de Video" 
                 description="Configure el dispositivo de entrada y los parámetros de captura para la oculografía."
@@ -86,7 +86,7 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig, apiU
                 <SettingsField label="Dispositivo de Entrada">
                     <div className="flex gap-2">
                         <select
-                            className="select flex-1"
+                            className="select flex-1 h-9 py-1 text-sm"
                             value={config.vng.camera.camera_id}
                             onChange={e => updateConfig('vng.camera.camera_id', Number(e.target.value))}
                         >
@@ -96,7 +96,7 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig, apiU
                             {cameras.length === 0 && <option value={config.vng.camera.camera_id}>Cámara {config.vng.camera.camera_id}</option>}
                         </select>
                         <button 
-                            className="btn btn-secondary p-2 h-auto" 
+                            className="btn btn-secondary p-2 h-9" 
                             onClick={fetchCameras}
                             disabled={isLoadingCameras}
                         >
@@ -110,7 +110,7 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig, apiU
                     description={applyingResolution ? "Aplicando cambios..." : `Resolución actual: ${currentRes}`}
                 >
                     <select
-                        className="select"
+                        className="select h-9 py-1 text-sm"
                         value={currentRes}
                         onChange={e => handleResolutionSelect(e.target.value)}
                         disabled={applyingResolution}
@@ -122,17 +122,17 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig, apiU
                     </select>
                 </SettingsField>
 
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-2 gap-4">
                     <SettingsField label="Exposición (Manual)" description="Ajuste para compensar luz ambiente.">
                         <input
-                            type="number" className="input"
+                            type="number" className="input h-9 text-sm"
                             value={config.vng.camera.exposure}
                             onChange={e => updateConfig('vng.camera.exposure', Number(e.target.value))}
                         />
                     </SettingsField>
                     <SettingsField label="Contraste" description="Mejora la visibilidad de la pupila.">
                         <input
-                            type="number" className="input"
+                            type="number" className="input h-9 text-sm"
                             value={config.vng.camera.contrast}
                             onChange={e => updateConfig('vng.camera.contrast', Number(e.target.value))}
                         />
@@ -141,7 +141,7 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig, apiU
             </SettingsSection>
 
             <SettingsSection title="Orientación y Transformación">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                     <SettingsField label="Espejo Horizontal" inline>
                         <SettingsToggle 
                             checked={config.vng.camera.flip_horizontal}

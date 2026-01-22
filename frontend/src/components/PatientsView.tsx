@@ -168,7 +168,7 @@ function PatientsView({ onSelectPatient }: PatientsViewProps) {
                         <button 
                           onClick={() => onSelectPatient(patient)}
                           className="p-1.5 hover:bg-siev-900/50 text-siev-400 rounded transition-colors"
-                          title="Nueva Evaluación"
+                          title="Nueva Evaluación VNG"
                         >
                           <ChevronRight className="w-4 h-4" />
                         </button>
@@ -279,7 +279,7 @@ function PatientsView({ onSelectPatient }: PatientsViewProps) {
                   className="btn btn-primary"
                 >
                   <Plus className="w-4 h-4 mr-2" />
-                  Nueva Evaluación
+                  Nueva Evaluación VNG
                 </button>
             </div>
           </div>

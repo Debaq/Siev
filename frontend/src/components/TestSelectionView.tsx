@@ -76,9 +76,16 @@ function TestSelectionView({ onSelectTest, onBack, patientName }: TestSelectionV
         >
           <ArrowLeft className="w-6 h-6" />
         </button>
+        <div className="w-10 h-10 rounded-lg bg-dark-900 border border-dark-800 flex items-center justify-center overflow-hidden">
+          <img src="/mod_vng.png" alt="VNG" className="w-8 h-8 object-contain" />
+        </div>
         <div>
-          <h1 className="text-2xl font-bold text-white">Nueva Evaluación</h1>
-          <p className="text-dark-400 text-sm">Seleccione el protocolo para: <span className="text-siev-400 font-bold">{patientName}</span></p>
+          <h1 className="text-2xl font-bold text-white">Nueva Evaluación VNG</h1>
+          <p className="text-dark-400 text-sm">
+            {patientName === "Modo Captura Libre" 
+              ? "Inicie una prueba rápida sin registro de paciente." 
+              : <>Seleccione el protocolo para: <span className="text-siev-400 font-bold">{patientName}</span></>}
+          </p>
         </div>
       </div>
 

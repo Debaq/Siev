@@ -64,6 +64,10 @@ class VideoProcesses:
         self.starburst_min_gradient = Value(ctypes.c_int, 30)
         self.fallback_threshold = Value(ctypes.c_int, 5)
 
+        # Parámetros Hybrid - Validación y re-adquisición
+        self.min_confidence_for_lock = Value(ctypes.c_float, 0.5)  # Confianza mínima para lock
+        self.revalidation_interval = Value(ctypes.c_int, 30)  # Frames entre re-validaciones
+
         # Parámetros Legacy detector - Toggles de etapas
         self.legacy_blur_enabled = Value(ctypes.c_bool, True)
         self.legacy_blur_kernel = Value(ctypes.c_int, 5)
@@ -494,6 +498,9 @@ class VideoProcesses:
                 starburst_rays=self.starburst_rays.value,
                 starburst_min_gradient=self.starburst_min_gradient.value,
                 fallback_threshold=self.fallback_threshold.value,
+                # Hybrid params
+                min_confidence_for_lock=self.min_confidence_for_lock.value,
+                revalidation_interval=self.revalidation_interval.value,
                 # Legacy detector params
                 legacy_blur_enabled=self.legacy_blur_enabled.value,
                 legacy_blur_kernel=self.legacy_blur_kernel.value,
@@ -794,6 +801,12 @@ class VideoProcesses:
             self.starburst_min_gradient.value = int(kwargs['starburst_min_gradient'])
         if 'fallback_threshold' in kwargs:
             self.fallback_threshold.value = int(kwargs['fallback_threshold'])
+
+        # Hybrid params
+        if 'min_confidence_for_lock' in kwargs:
+            self.min_confidence_for_lock.value = float(kwargs['min_confidence_for_lock'])
+        if 'revalidation_interval' in kwargs:
+            self.revalidation_interval.value = int(kwargs['revalidation_interval'])
 
         # Legacy detector params
         if 'legacy_blur_enabled' in kwargs:

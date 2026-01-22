@@ -32,7 +32,7 @@ export const TeamTab: React.FC = () => {
     };
 
     return (
-        <div className="space-y-8 animate-fade-in">
+        <div className="space-y-6 animate-fade-in">
             <SettingsSection 
                 title="Equipo de Especialistas" 
                 description="Gestione los profesionales que realizan las pruebas y firman los reportes."

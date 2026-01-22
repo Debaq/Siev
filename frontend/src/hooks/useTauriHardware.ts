@@ -21,7 +21,7 @@ interface UseTauriHardwareReturn {
   controlLed: (led: 'left' | 'right' | 'all', action: 'on' | 'off') => Promise<void>
 }
 
-export function useTauriHardware(): UseTauriHardwareReturn {
+export function useTauriHardware(config?: any): UseTauriHardwareReturn {
   const [ports, setPorts] = useState<string[]>([])
   const [isConnected, setIsConnected] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -35,6 +35,11 @@ export function useTauriHardware(): UseTauriHardwareReturn {
       try {
         unlisten = await listen<ImuData>('imu-data', (event) => {
           setImuData(event.payload)
+          // If we receive IMU data, we are definitely connected
+          setIsConnected(prev => {
+              if (!prev) return true;
+              return prev;
+          })
         })
       } catch (err) {
         console.error('Failed to setup IMU listener:', err)
@@ -46,6 +51,22 @@ export function useTauriHardware(): UseTauriHardwareReturn {
     return () => {
       if (unlisten) unlisten()
     }
+  }, []) // Removed isConnected dependency to prevent re-subscribing on every state change
+
+  // Periodic connection check
+  useEffect(() => {
+    const checkConnection = async () => {
+      try {
+        const connected = await invoke<boolean>('is_hardware_connected')
+        setIsConnected(connected)
+      } catch (err) {
+        console.error('Failed to check connection status:', err)
+      }
+    }
+
+    checkConnection()
+    const interval = setInterval(checkConnection, 2000)
+    return () => clearInterval(interval)
   }, [])
 
   const refreshPorts = useCallback(async () => {
@@ -60,7 +81,9 @@ export function useTauriHardware(): UseTauriHardwareReturn {
   }, [])
 
   const connect = useCallback(async (port: string, baudRate: number) => {
+    if (!port) return
     try {
+      console.log(`Connecting to ${port} at ${baudRate}...`)
       await invoke('connect_hardware', { port, baudRate })
       setIsConnected(true)
       setError(null)
@@ -72,6 +95,17 @@ export function useTauriHardware(): UseTauriHardwareReturn {
     }
   }, [])
 
+  // Auto-connect when config is available and port is detected
+  useEffect(() => {
+    const port = config?.hardware?.serial_port || config?.vng?.hardware?.serial_port;
+    const baudrate = config?.hardware?.baudrate || config?.vng?.hardware?.baudrate || 115200;
+
+    if (port && !isConnected && ports.includes(port)) {
+      connect(port, baudrate)
+        .catch(err => console.error("Auto-connect failed:", err))
+    }
+  }, [config, ports, isConnected, connect])
+
   const disconnect = useCallback(async () => {
     try {
       await invoke('disconnect_hardware')
@@ -82,14 +116,17 @@ export function useTauriHardware(): UseTauriHardwareReturn {
   }, [])
 
   const sendCommand = useCallback(async (cmd: string) => {
-    if (!isConnected) return
+    // If not connected, don't even try to send
     try {
       await invoke('send_hardware_command', { cmd })
     } catch (err) {
       console.error(`Failed to send command ${cmd}:`, err)
-      setError(`Failed to send command: ${cmd}`)
+      // If it fails with "Not connected", update state
+      if (typeof err === 'string' && err.includes('Not connected')) {
+        setIsConnected(false)
+      }
     }
-  }, [isConnected])
+  }, [])
 
   const controlLed = useCallback(async (led: 'left' | 'right' | 'all', action: 'on' | 'off') => {
     let cmd = ''

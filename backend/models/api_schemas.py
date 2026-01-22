@@ -29,6 +29,9 @@ class PupilDetectionConfig(BaseModel):
     starburst_rays: Optional[int] = None
     starburst_min_gradient: Optional[int] = None
     fallback_threshold: Optional[int] = None
+    # Hybrid params
+    min_confidence_for_lock: Optional[float] = None  # Confianza mínima para aceptar detección
+    revalidation_interval: Optional[int] = None  # Frames entre re-validaciones
     # Legacy detector params
     legacy_blur_enabled: Optional[bool] = None
     legacy_blur_kernel: Optional[int] = None

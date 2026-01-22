@@ -43,6 +43,12 @@ fn list_serial_ports(state: State<AppState>) -> Vec<String> {
 }
 
 #[tauri::command]
+fn is_hardware_connected(state: State<AppState>) -> bool {
+    let manager = state.hardware_manager.lock().unwrap();
+    manager.is_connected()
+}
+
+#[tauri::command]
 fn connect_hardware(
     port: String, 
     baud_rate: u32, 
@@ -202,6 +208,7 @@ pub fn run() {
             process_eye_data_batch,
             reset_calibration,
             list_serial_ports,
+            is_hardware_connected,
             connect_hardware,
             disconnect_hardware,
             send_hardware_command,

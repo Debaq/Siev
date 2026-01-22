@@ -15,7 +15,11 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     general: {
         institution: {
             name: "Centro de Diagnóstico VNG",
-            logo_path: ""
+            logo_path: "",
+            address: "",
+            phone: "",
+            email: "",
+            extra_info: ""
         },
         storage: {
             data_path: "",
@@ -46,6 +50,8 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
             starburst_rays: 16,
             starburst_min_gradient: 30,
             fallback_threshold: 5,
+            min_confidence_for_lock: 0.5,
+            revalidation_interval: 30,
             legacy: {
                 blur_enabled: true,
                 blur_kernel: 5,
@@ -95,10 +101,16 @@ export function useSettingsConfig(apiUrl: string) {
     const [isSaving, setIsSaving] = useState(false);
     const { getSetting, setSetting } = useTauriDb();
     
+    // Use a ref to store the timeout for debounced auto-save
+    const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
     const isDirty = JSON.stringify(config) !== JSON.stringify(originalConfig);
 
     useEffect(() => {
         loadConfig();
+        return () => {
+            if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+        };
     }, []);
 
     const loadConfig = async () => {
@@ -121,9 +133,6 @@ export function useSettingsConfig(apiUrl: string) {
             if (wizardClinic && (baseConfig.general.institution.name === DEFAULT_APP_CONFIG.general.institution.name || !baseConfig.general.institution.name)) {
                 baseConfig.general.institution.name = wizardClinic;
             }
-            if (wizardDoctor && !baseConfig.general.institution.doctor_name) {
-                baseConfig.general.institution.doctor_name = wizardDoctor;
-            }
             if (wizardStorage && !baseConfig.general.storage.data_path) {
                 baseConfig.general.storage.data_path = wizardStorage;
             }
@@ -139,17 +148,17 @@ export function useSettingsConfig(apiUrl: string) {
         }
     };
 
-    const saveConfig = async () => {
-        if (!config) return false;
+    const saveConfig = async (configToSave: AppConfig) => {
+        if (!configToSave) return false;
         setIsSaving(true);
         try {
             // 1. Save to Tauri DB
-            await setSetting('app_config', JSON.stringify(config));
+            await setSetting('app_config', JSON.stringify(configToSave));
             
             // 2. Sync with Python Backend (Live Updates)
-            await syncWithBackend(config, apiUrl);
+            await syncWithBackend(configToSave, apiUrl);
             
-            setOriginalConfig(config);
+            setOriginalConfig(configToSave);
             return true;
         } catch (e) {
             console.error("Failed to save config:", e);
@@ -166,21 +175,32 @@ export function useSettingsConfig(apiUrl: string) {
     const updateConfig = useCallback((path: string, value: any) => {
         setConfig(prev => {
             if (!prev) return null;
+            
+            // Check if value actually changed to avoid unnecessary updates
+            const keys = path.split('.');
+            let current: any = prev;
+            for (const key of keys) {
+                if (current === undefined || current === null) break;
+                current = current[key];
+            }
+            if (current === value) return prev;
+
             const newConfig = { ...prev };
             setDeepValue(newConfig, path, value);
+            
+            // Debounced auto-save
+            if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+            autoSaveTimerRef.current = setTimeout(() => {
+                saveConfig(newConfig);
+            }, 1000); // Save after 1 second of inactivity
+
             return newConfig;
         });
     }, []);
 
     const applyLive = async (path: string, value: any) => {
-        // Update local state
+        // Update local state and trigger auto-save
         updateConfig(path, value);
-        
-        // Immediate sync for specific settings
-        if (path.startsWith('vng.camera')) {
-            // Sync camera config immediately
-            // ... logic to call backend
-        }
     };
 
     return {
@@ -189,15 +209,15 @@ export function useSettingsConfig(apiUrl: string) {
         isSaving,
         isDirty,
         updateConfig,
-        saveConfig,
+        saveConfig: () => config && saveConfig(config),
         resetConfig,
         applyLive,
         refresh: loadConfig
     };
 }
 
-// Helper: Deep merge objects
-function deepMerge(target: any, source: any): any {
+// Helper: Deep merge objects (exported for use in App.tsx)
+export function deepMerge(target: any, source: any): any {
     const output = { ...target };
     if (isObject(target) && isObject(source)) {
         Object.keys(source).forEach(key => {
@@ -231,20 +251,64 @@ function setDeepValue(obj: any, path: string, value: any) {
     current[keys[keys.length - 1]] = value;
 }
 
-async function syncWithBackend(config: AppConfig, apiUrl: string) {
-    // 1. Video Config
-    const videoPayload = {
+/**
+ * Session override type for video config values that can be temporarily overridden.
+ */
+interface VideoSessionOverrides {
+    brightness?: number;
+    contrast?: number;
+    threshold?: [number, number];
+    erode?: [number, number];
+    nose_width?: number;
+    eye_height?: number;
+    use_yolo?: boolean;
+    show_debug?: boolean;
+}
+
+/**
+ * Sync persistent config with backend.
+ *
+ * @param config - The persistent app configuration
+ * @param apiUrl - Backend API URL
+ * @param sessionOverrides - If provided, skip these fields (they're managed by session config)
+ * @param includeSessionFields - If true, include session-controlled fields (brightness, contrast, etc.)
+ *                               Default is false to avoid overwriting session adjustments.
+ */
+export async function syncWithBackend(
+    config: AppConfig,
+    apiUrl: string,
+    sessionOverrides?: Partial<VideoSessionOverrides>,
+    includeSessionFields: boolean = false
+) {
+    const overrideKeys = sessionOverrides ? Object.keys(sessionOverrides) : [];
+
+    // 1. Video Config - only include camera setup fields by default
+    // Session-controlled fields (brightness, contrast, threshold, use_yolo, show_debug)
+    // are synced separately via sessionConfig to avoid conflicts
+    const videoPayload: Record<string, any> = {
         camera_id: config.vng.camera.camera_id,
         width: config.vng.camera.resolution_width,
         height: config.vng.camera.resolution_height,
         fps: config.vng.camera.fps,
-        exposure: config.vng.camera.exposure,
-        contrast: config.vng.camera.contrast,
         flip_h: config.vng.camera.flip_horizontal,
         flip_v: config.vng.camera.flip_vertical,
-        use_yolo: config.vng.algorithm.primary === 'yolo',
-        threshold: [config.vng.algorithm.threshold, config.vng.algorithm.threshold]
     };
+
+    // Only include session-controlled fields if explicitly requested AND not overridden
+    if (includeSessionFields) {
+        if (!overrideKeys.includes('brightness')) {
+            videoPayload.brightness = config.vng.camera.exposure;
+        }
+        if (!overrideKeys.includes('contrast')) {
+            videoPayload.contrast = config.vng.camera.contrast;
+        }
+        if (!overrideKeys.includes('use_yolo')) {
+            videoPayload.use_yolo = config.vng.algorithm.primary === 'yolo';
+        }
+        if (!overrideKeys.includes('threshold')) {
+            videoPayload.threshold = [config.vng.algorithm.threshold, config.vng.algorithm.threshold];
+        }
+    }
 
     await fetch(`${apiUrl}/video/config`, {
         method: 'POST',
@@ -252,10 +316,30 @@ async function syncWithBackend(config: AppConfig, apiUrl: string) {
         body: JSON.stringify(videoPayload)
     });
 
-    // 2. Pupil Mode
-    await fetch(`${apiUrl}/video/pupil/mode?mode=${config.vng.pupil_detection.mode}`, {
-        method: 'POST'
+    // 2. Full Pupil Detection Config (not affected by session overrides)
+    const pupilConfig = config.vng.pupil_detection;
+    const pupilPayload = {
+        mode: pupilConfig.mode,
+        search_window_multiplier: pupilConfig.search_window_multiplier,
+        dark_threshold_percent: pupilConfig.dark_threshold_percent,
+        starburst_rays: pupilConfig.starburst_rays,
+        starburst_min_gradient: pupilConfig.starburst_min_gradient,
+        fallback_threshold: pupilConfig.fallback_threshold,
+        min_confidence_for_lock: pupilConfig.min_confidence_for_lock,
+        revalidation_interval: pupilConfig.revalidation_interval,
+        legacy_blur_enabled: pupilConfig.legacy.blur_enabled,
+        legacy_blur_kernel: pupilConfig.legacy.blur_kernel,
+        legacy_clahe_enabled: pupilConfig.legacy.clahe_enabled,
+        legacy_clahe_clip_limit: pupilConfig.legacy.clahe_clip_limit,
+        legacy_clahe_grid_size: pupilConfig.legacy.clahe_grid_size,
+        legacy_morph_enabled: pupilConfig.legacy.morph_enabled,
+        legacy_morph_close_iterations: pupilConfig.legacy.morph_close_iterations,
+        legacy_morph_dilate_iterations: pupilConfig.legacy.morph_dilate_iterations
+    };
+
+    await fetch(`${apiUrl}/video/pupil/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pupilPayload)
     });
-    
-    // TODO: Send full pupil config if backend supports it
 }

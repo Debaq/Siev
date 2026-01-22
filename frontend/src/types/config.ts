@@ -11,7 +11,10 @@ export interface ModulesConfig {
 export interface InstitutionConfig {
     name: string;
     logo_path: string;
-    doctor_name?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+    extra_info?: string;
 }
 
 export interface StorageConfig {
@@ -53,6 +56,9 @@ export interface VNGPupilDetectionConfig {
     starburst_rays: number;
     starburst_min_gradient: number;
     fallback_threshold: number;
+    // Hybrid params
+    min_confidence_for_lock: number;  // Confianza mínima para aceptar detección (0-1)
+    revalidation_interval: number;    // Frames entre re-validaciones
     legacy: VNGLegacyParams;
 }
 

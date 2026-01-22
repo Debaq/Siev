@@ -37,6 +37,8 @@ class DetectorConfig:
 
     # Parámetros Hybrid
     fallback_threshold: int = 5
+    min_confidence_for_lock: float = 0.5  # Confianza mínima para aceptar detección inicial
+    revalidation_interval: int = 30  # Frames entre re-validaciones con Legacy
 
     # Parámetros Legacy - Toggles de etapas
     legacy_blur_enabled: bool = True
@@ -502,6 +504,10 @@ class HybridPupilDetector(BasePupilDetector):
     """
     Detector híbrido que usa Fast como principal y Legacy como fallback.
     Combina velocidad del Fast con robustez del Legacy.
+
+    Mejoras de robustez:
+    - Validación de confianza mínima antes de "engancharse" a una detección
+    - Re-validación periódica con Legacy para evitar drift
     """
 
     def __init__(self):
@@ -509,6 +515,8 @@ class HybridPupilDetector(BasePupilDetector):
         self.legacy_detector = LegacyPupilDetector()
         self.use_legacy_next_frame = False
         self.consecutive_fallbacks = 0
+        self.frames_since_validation = 0  # Contador para re-validación periódica
+        self.is_locked = False  # Indica si tenemos un lock confiable en la pupila
 
     def reset(self):
         """Resetea ambos detectores."""
@@ -516,30 +524,62 @@ class HybridPupilDetector(BasePupilDetector):
         self.legacy_detector.reset()
         self.use_legacy_next_frame = False
         self.consecutive_fallbacks = 0
+        self.frames_since_validation = 0
+        self.is_locked = False
 
     def detect(self, eye_gray: np.ndarray, config: DetectorConfig) -> Optional[PupilResult]:
-        # Caso 1: Forzar legacy para re-adquisición
-        if self.use_legacy_next_frame or self.fast_detector.last_position is None:
+        self.frames_since_validation += 1
+
+        # Re-validación periódica: cada N frames, forzar Legacy para verificar
+        needs_revalidation = (
+            self.is_locked and
+            self.frames_since_validation >= config.revalidation_interval
+        )
+
+        # Caso 1: Necesita adquisición inicial o re-validación
+        if self.use_legacy_next_frame or not self.is_locked or needs_revalidation:
             result = self.legacy_detector.detect(eye_gray, config)
 
             if result is not None:
-                # Transferir posición al fast detector
-                self.fast_detector.last_position = (result.center_x, result.center_y)
-                self.fast_detector.last_radius = result.radius
-                self.fast_detector.frames_without_detection = 0
-                self.use_legacy_next_frame = False
-                self.consecutive_fallbacks = 0
+                # Validar confianza antes de aceptar
+                if result.confidence >= config.min_confidence_for_lock:
+                    # Detección confiable - transferir a Fast
+                    self.fast_detector.last_position = (result.center_x, result.center_y)
+                    self.fast_detector.last_radius = result.radius
+                    self.fast_detector.frames_without_detection = 0
+                    self.use_legacy_next_frame = False
+                    self.consecutive_fallbacks = 0
+                    self.frames_since_validation = 0
+                    self.is_locked = True
 
-                # Marcar como resultado de legacy en mask
-                if result.mask is not None:
-                    cv2.putText(result.mask, "L", (5, 15),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+                    # Marcar como resultado de legacy con lock en mask
+                    if result.mask is not None:
+                        status = "L✓" if needs_revalidation else "L"
+                        cv2.putText(result.mask, status, (5, 15),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+                        # Mostrar confianza en debug
+                        cv2.putText(result.mask, f"C:{result.confidence:.2f}", (5, 30),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 0), 1)
+                else:
+                    # Confianza insuficiente - no hacer lock, seguir buscando
+                    self.is_locked = False
+                    self.consecutive_fallbacks += 1
+
+                    if result.mask is not None:
+                        cv2.putText(result.mask, "L?", (5, 15),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 165, 255), 1)
+                        cv2.putText(result.mask, f"C:{result.confidence:.2f}", (5, 30),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 165, 255), 1)
+
+                    # Retornar el resultado pero sin lock (para que el usuario vea qué detecta)
+                    return result
             else:
                 self.consecutive_fallbacks += 1
+                self.is_locked = False
 
             return result
 
-        # Caso 2: Intentar con fast detector
+        # Caso 2: Tenemos lock - usar Fast detector
         result = self.fast_detector.detect(eye_gray, config)
 
         if result is not None:
@@ -548,11 +588,14 @@ class HybridPupilDetector(BasePupilDetector):
             if result.mask is not None:
                 cv2.putText(result.mask, "F", (5, 15),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+                cv2.putText(result.mask, f"C:{result.confidence:.2f}", (5, 30),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 0), 1)
             return result
 
-        # Caso 3: Fast falló, verificar si necesitamos fallback
+        # Caso 3: Fast falló - verificar si necesitamos fallback
         if self.fast_detector.frames_without_detection >= config.fallback_threshold:
             self.use_legacy_next_frame = True
+            self.is_locked = False
             self.fast_detector.reset()
 
         return None

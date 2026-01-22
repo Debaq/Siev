@@ -156,8 +156,8 @@ export default function WelcomeWizard({ onComplete }: WelcomeWizardProps) {
           </p>
           <div className="grid grid-cols-1 gap-3">
             {[
-                { id: 'vng', name: 'Gafas VNG (Video)', desc: 'Cámara infrarroja de alta velocidad.' },
-                { id: 'stimulus_screen', name: 'Pantalla de Estímulos', desc: 'Monitor secundario para pruebas visuales.' }
+                { id: 'vng', name: 'Gafas VNG (Video)', desc: 'Cámara infrarroja de alta velocidad.', icon: '/mod_vng.png' },
+                { id: 'stimulus_screen', name: 'Pantalla de Estímulos', desc: 'Monitor secundario para pruebas visuales.', icon: '/mod_stimulus.png' }
             ].map(m => (
                 <button 
                     key={m.id}
@@ -168,14 +168,19 @@ export default function WelcomeWizard({ onComplete }: WelcomeWizardProps) {
                             : 'bg-dark-800 border-dark-700 hover:border-dark-600'
                     }`}
                 >
+                    <div className="w-12 h-12 rounded-lg bg-dark-950 border border-dark-700 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        <img src={m.icon} alt={m.name} className="w-10 h-10 object-contain" />
+                    </div>
+
+                    <div className="flex-1">
+                        <div className={`font-bold text-sm ${selectedModules[m.id] ? 'text-white' : 'text-dark-200'}`}>{m.name}</div>
+                        <div className="text-[11px] text-dark-500">{m.desc}</div>
+                    </div>
+
                     <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
                         selectedModules[m.id] ? 'bg-siev-500 border-siev-500' : 'border-dark-600'
                     }`}>
                         {selectedModules[m.id] && <Check className="w-4 h-4 text-white" />}
-                    </div>
-                    <div>
-                        <div className={`font-bold text-sm ${selectedModules[m.id] ? 'text-white' : 'text-dark-200'}`}>{m.name}</div>
-                        <div className="text-[11px] text-dark-500">{m.desc}</div>
                     </div>
                 </button>
             ))}

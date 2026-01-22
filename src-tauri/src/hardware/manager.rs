@@ -98,6 +98,10 @@ impl HardwareManager {
         Ok(())
     }
 
+    pub fn is_connected(&self) -> bool {
+        self.is_connected.load(Ordering::SeqCst)
+    }
+
     pub fn disconnect(&mut self) {
         self.should_stop.store(true, Ordering::SeqCst);
         

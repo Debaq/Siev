@@ -15,19 +15,19 @@ interface SettingsTabsProps {
 
 export const SettingsTabs: React.FC<SettingsTabsProps> = ({ tabs, activeTabId, onTabChange }) => {
     return (
-        <div className="flex items-center gap-1 border-b border-dark-800 mb-6">
+        <div className="flex items-center gap-1 border-b border-dark-800 mb-4">
             {tabs.map(tab => (
                 <button
                     key={tab.id}
                     onClick={() => onTabChange(tab.id)}
                     className={`
-                        flex items-center gap-2 px-4 py-3 text-sm font-medium transition-all relative
+                        flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all relative
                         ${activeTabId === tab.id 
                             ? 'text-siev-400' 
                             : 'text-dark-400 hover:text-dark-200 hover:bg-dark-800/50'}
                     `}
                 >
-                    {tab.icon && <tab.icon className="w-4 h-4" />}
+                    {tab.icon && <tab.icon className="w-3.5 h-3.5" />}
                     {tab.label}
                     {activeTabId === tab.id && (
                         <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-siev-500" />

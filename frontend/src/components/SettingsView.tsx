@@ -24,6 +24,7 @@ const MODULE_LIST: ModuleDefinition[] = [
         label: 'VNG', 
         name: 'Video-Oculografía', 
         icon: Activity, 
+        imagePath: '/mod_vng.png',
         color: 'text-cyan-400', 
         description: 'Análisis de nistagmo y movimientos oculares por video.' 
     },
@@ -32,6 +33,7 @@ const MODULE_LIST: ModuleDefinition[] = [
         label: 'VISUAL', 
         name: 'Pantalla de Estímulos', 
         icon: Monitor, 
+        imagePath: '/mod_stimulus.png',
         color: 'text-purple-400', 
         description: 'Control de optotipos y estímulos en monitor secundario.' 
     },
@@ -40,6 +42,7 @@ const MODULE_LIST: ModuleDefinition[] = [
         label: 'vHIT', 
         name: 'Video Head Impulse', 
         icon: Activity, 
+        imagePath: '/mod_vhit.png',
         color: 'text-orange-400', 
         description: 'Prueba de impulso cefálico asistida por video.' 
     },
@@ -48,6 +51,7 @@ const MODULE_LIST: ModuleDefinition[] = [
         label: 'PLAT', 
         name: 'Posturografía Estática', 
         icon: LayoutGrid, 
+        imagePath: '/mod_posturography.png',
         color: 'text-green-400', 
         description: 'Análisis de equilibrio en plataforma de fuerza SIEV.' 
     },
@@ -56,6 +60,7 @@ const MODULE_LIST: ModuleDefinition[] = [
         label: 'IMU', 
         name: 'Posturografía Inercial', 
         icon: Activity, 
+        imagePath: '/mod_imu.png',
         color: 'text-emerald-400', 
         description: 'Evaluación de balance mediante sensores corporales.' 
     },
@@ -88,39 +93,33 @@ const SettingsView: React.FC<SettingsViewProps> = ({ apiUrl }) => {
     return (
         <div className="h-full flex flex-col bg-dark-950 text-dark-100 overflow-hidden relative">
             {/* Header */}
-            <header className="p-6 border-b border-dark-800 shrink-0">
-                <div className="flex justify-between items-center mb-6">
+            <header className="px-6 pt-4 pb-2 border-b border-dark-800 shrink-0">
+                <div className="flex justify-between items-center mb-3">
                     <div>
-                        <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-                            <Settings className="w-6 h-6 text-siev-500" />
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                            <Settings className="w-5 h-5 text-siev-500" />
                             Configuración
                         </h2>
-                        <p className="text-sm text-dark-500 mt-1">Gestione el ecosistema SIEV y sus periféricos.</p>
+                        <p className="text-xs text-dark-500 mt-0.5">Gestione el ecosistema SIEV y sus periféricos.</p>
                     </div>
 
-                    <div className="flex gap-3">
-                        {isDirty && (
-                            <button 
-                                onClick={resetConfig}
-                                className="btn border-dark-700 bg-dark-800 text-dark-300 hover:bg-dark-700 flex items-center gap-2"
-                                disabled={isSaving}
-                            >
-                                <RotateCcw className="w-4 h-4" />
-                                Descartar
-                            </button>
+                    <div className="flex items-center gap-4">
+                        {isSaving ? (
+                            <div className="flex items-center gap-2 text-xs text-siev-400 bg-siev-500/10 px-3 py-1.5 rounded-full border border-siev-500/20">
+                                <div className="w-3 h-3 border-2 border-siev-500/20 border-t-siev-500 rounded-full animate-spin" />
+                                <span className="font-medium">Guardando...</span>
+                            </div>
+                        ) : isDirty ? (
+                            <div className="flex items-center gap-2 text-xs text-yellow-500 bg-yellow-500/10 px-3 py-1.5 rounded-full border border-yellow-500/20">
+                                <RotateCcw className="w-3 h-3 animate-spin-slow" />
+                                <span className="font-medium">Cambios pendientes...</span>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2 text-xs text-dark-500 bg-dark-800/50 px-3 py-1.5 rounded-full border border-dark-700">
+                                <Save className="w-3 h-3" />
+                                <span className="font-medium">Configuración guardada</span>
+                            </div>
                         )}
-                        <button 
-                            onClick={saveConfig}
-                            className={`btn flex items-center gap-2 px-8 ${isDirty ? 'btn-primary shadow-lg shadow-siev-500/20' : 'bg-dark-800 text-dark-500 cursor-not-allowed'}`}
-                            disabled={!isDirty || isSaving}
-                        >
-                            {isSaving ? (
-                                <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                            ) : (
-                                <Save className="w-4 h-4" />
-                            )}
-                            {isSaving ? 'Guardando...' : 'Guardar Cambios'}
-                        </button>
                     </div>
                 </div>
 
@@ -133,7 +132,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ apiUrl }) => {
             </header>
 
             {/* Main Content */}
-            <main className="flex-1 overflow-hidden p-6">
+            <main className="flex-1 overflow-hidden px-6 py-2">
                 <div className="max-w-5xl mx-auto h-full flex flex-col">
                     {activeModuleId === 'general' && (
                         <GeneralSettings config={config} updateConfig={updateConfig} />
@@ -153,14 +152,6 @@ const SettingsView: React.FC<SettingsViewProps> = ({ apiUrl }) => {
                     )}
                 </div>
             </main>
-
-            {/* Dirty Indicator Overlay */}
-            {isDirty && !isSaving && (
-                <div className="absolute bottom-6 right-6 flex items-center gap-3 px-4 py-2 bg-siev-600 text-white rounded-full shadow-2xl shadow-black animate-bounce-subtle">
-                    <Info className="w-4 h-4" />
-                    <span className="text-xs font-bold">Tienes cambios sin guardar</span>
-                </div>
-            )}
         </div>
     );
 };

@@ -30,7 +30,7 @@ export const SettingsField: React.FC<SettingsFieldProps> = ({
     }
 
     return (
-        <div className={`space-y-1.5 ${className}`}>
+        <div className={`space-y-1 ${className}`}>
             <label className="block text-sm font-medium text-dark-200">{label}</label>
             {children}
             {description && <p className="text-xs text-dark-500">{description}</p>}

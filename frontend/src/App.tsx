@@ -14,31 +14,22 @@ import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
 import { useBackend } from './hooks/useBackend'
 import { useTauriDb, Specialist } from './hooks/useTauriDb'
+import { useTauriHardware } from './hooks/useTauriHardware'
+import { syncWithBackend, DEFAULT_APP_CONFIG, deepMerge, useSettingsConfig } from './hooks/useSettingsConfig'
+import { useSessionConfig } from './hooks/useSessionConfig'
 
 const API_URL = 'http://localhost:8000'
 
-// Types
-interface SystemStatus {
-  video: 'offline' | 'online' | 'error'
-  hardware: 'offline' | 'online' | 'error'
-  recording: boolean
-  fps: number
-}
-
-interface Camera {
-  id: number; name: string; path: string
-}
-
-interface Patient {
-  id: number
-  first_name: string
-  last_name: string
-  dni: string
-}
+// ... (existing interfaces)
 
 function App() {
-  const { health, isConnected, checkHealth } = useBackend(API_URL)
+  const { health, isConnected: isBackendConnected, checkHealth } = useBackend(API_URL)
   const { getSetting, getSpecialists, createSession } = useTauriDb()
+  const { config: appConfig } = useSettingsConfig(API_URL)
+  const sessionConfig = useSessionConfig(API_URL)
+  
+  // Tauri Hardware Integration
+  const { isConnected: isHwConnected } = useTauriHardware(appConfig)
   
   // UX State
   const [showSplash, setShowSplash] = useState(true)
@@ -55,6 +46,15 @@ function App() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus>({
     video: 'offline', hardware: 'offline', recording: false, fps: 0,
   })
+
+  // Sync Hardware Status
+  useEffect(() => {
+    setSystemStatus(prev => {
+      const newStatus = isHwConnected ? 'online' : 'offline'
+      if (prev.hardware === newStatus) return prev
+      return { ...prev, hardware: newStatus }
+    })
+  }, [isHwConnected])
   const [isCapturing, setIsCapturing] = useState(false)
   const [cameras, setCameras] = useState<Camera[]>([])
   const [selectedCamera, setSelectedCamera] = useState<number>(2)
@@ -104,12 +104,19 @@ function App() {
 
   useEffect(() => {
     if (health) {
-      setSystemStatus(prev => ({
-        ...prev,
-        video: health.video_status === 'capturing' ? 'online' : 'offline',
-        hardware: health.hardware_status === 'connected' ? 'online' : 'offline',
-        fps: health.uptime > 0 ? prev.fps : 0,
-      }))
+      setSystemStatus(prev => {
+        const newVideo = health.video_status === 'capturing' ? 'online' : 'offline'
+        const newRecording = health.recording_status === 'recording'
+        
+        if (prev.video === newVideo && prev.recording === newRecording) return prev
+        
+        return {
+          ...prev,
+          video: newVideo,
+          recording: newRecording,
+          fps: health.uptime > 0 ? prev.fps : 0,
+        }
+      })
     }
   }, [health])
 
@@ -134,16 +141,40 @@ function App() {
   const handleStartCapture = async () => {
     try {
       const storagePath = await getSetting('storage_path')
-      
-      await fetch(`${API_URL}/start`, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ 
+
+      await fetch(`${API_URL}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
             camera_id: selectedCamera,
             storage_path: storagePath
-        }) 
+        })
       })
       setIsCapturing(true)
+
+      // Sync pupil detection config with backend after starting capture
+      // Initialize sessionConfig from persistent config
+      try {
+        const storedConfig = await getSetting('app_config')
+        const config = storedConfig
+          ? deepMerge(DEFAULT_APP_CONFIG, JSON.parse(storedConfig))
+          : DEFAULT_APP_CONFIG
+
+        // Initialize session config base values from persistent config
+        sessionConfig.initFromPersistentConfig(config)
+
+        // Sync persistent config (camera setup, pupil detection) with backend
+        // Include session fields only if there are no active overrides
+        const hasActiveOverrides = sessionConfig.hasOverrides
+        await syncWithBackend(config, API_URL, sessionConfig.getOverrides(), !hasActiveOverrides)
+
+        // If there are active session overrides, apply them on top
+        if (hasActiveOverrides) {
+          await sessionConfig.syncToBackend()
+        }
+      } catch (syncError) {
+        console.error('Error syncing pupil config:', syncError)
+      }
     } catch (e) { console.error(e) }
   }
 
@@ -155,36 +186,21 @@ function App() {
   const renderCaptureView = () => (
     <div className="h-full flex flex-col font-sans text-xs">
       <StatusBar
-        isConnected={isConnected}
+        isConnected={isBackendConnected}
         videoStatus={systemStatus.video}
         hardwareStatus={systemStatus.hardware}
         fps={systemStatus.fps}
         recording={systemStatus.recording}
+        testType={currentTestType}
+        patientName={currentPatient ? `${currentPatient.last_name}, ${currentPatient.first_name}` : null}
+        onSelectTest={() => setActiveView('test_selection')}
+        onSelectPatient={() => setActiveView('patients')}
       />
 
       <div className="flex-1 flex overflow-hidden">
         {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0 bg-black/20 relative">
           
-          {/* Patient Context Header */}
-          {currentPatient && (
-            <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 bg-siev-900/80 backdrop-blur border border-siev-700/50 rounded-full px-4 py-1 flex items-center gap-3 shadow-lg">
-              <div className="flex items-center gap-2">
-                <User className="w-3 h-3 text-siev-400" />
-                <span className="font-bold text-white">{currentPatient.last_name}, {currentPatient.first_name}</span>
-                {currentTestType && (
-                  <>
-                    <span className="w-1 h-1 bg-dark-500 rounded-full" />
-                    <span className="text-siev-200 text-[10px] uppercase font-bold tracking-wider">{currentTestType}</span>
-                  </>
-                )}
-              </div>
-              <button onClick={() => { setCurrentPatient(null); setActiveView('patients') }} className="text-dark-400 hover:text-white">
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          )}
-
           {/* Video Section */}
           <div className="relative flex-1 flex flex-col min-h-0">
              {/* Toolbar Overlay */}
@@ -251,7 +267,7 @@ function App() {
               Panel de Control
            </div>
            <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
-              <ControlPanel 
+              <ControlPanel
                 isCapturing={isCapturing}
                 isRecording={systemStatus.recording}
                 hardwareStatus={systemStatus.hardware}
@@ -260,7 +276,8 @@ function App() {
                 onStartRecording={async () => { try { await fetch(`${API_URL}/recording/start`, { method: 'POST' }) } catch (e) { console.error(e) } }}
                 onStopRecording={async () => { try { await fetch(`${API_URL}/recording/stop`, { method: 'POST' }) } catch (e) { console.error(e) } }}
                 onCalibrate={async () => { try { await fetch(`${API_URL}/calibrate`, { method: 'POST' }) } catch (e) { console.error(e) } }}
-                apiUrl={API_URL}
+                sessionConfig={sessionConfig}
+                appConfig={appConfig}
               />
            </div>
         </div>
@@ -306,22 +323,31 @@ function App() {
                 onSelectPatient={(p) => { setCurrentPatient(p); setActiveView('test_selection') }} 
                 />
             )}
-                      {activeView === 'test_selection' && currentPatient && (
+            {activeView === 'test_selection' && (
                         <TestSelectionView 
-                          patientName={`${currentPatient.last_name}, ${currentPatient.first_name}`}
-                          onBack={() => { setCurrentPatient(null); setActiveView('patients') }}
+                          patientName={currentPatient ? `${currentPatient.last_name}, ${currentPatient.first_name}` : "Modo Captura Libre"}
+                          onBack={() => { 
+                            if (currentPatient) setActiveView('capture');
+                            else setActiveView('patients');
+                          }}
                           onSelectTest={async (testId) => { 
-                              // Create session in Rust
-                              const session = await createSession(
-                                  currentPatient.id, 
-                                  activeSpecialist?.id || null, 
-                                  `Evaluación: ${testId}`
-                              )
-                              if (session) {
-                                  setCurrentSessionId(session.id)
-                                  setCurrentTestType(testId)
-                                  setActiveView('capture')
+                              // If there is a patient, create a formal session in DB
+                              if (currentPatient) {
+                                const session = await createSession(
+                                    currentPatient.id, 
+                                    activeSpecialist?.id || null, 
+                                    `Evaluación: ${testId}`
+                                )
+                                if (session) {
+                                    setCurrentSessionId(session.id)
+                                }
+                              } else {
+                                // If no patient, we just set the UI state for the capture view
+                                setCurrentSessionId(null);
                               }
+                              
+                              setCurrentTestType(testId)
+                              setActiveView('capture')
                           }}
                         />
                       )}

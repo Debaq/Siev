@@ -91,6 +91,20 @@ async def stream_eye_data(video_manager=Depends(get_video_manager)):
         media_type="text/event-stream"
     )
 
+@router.post("/video/reset_stream")
+async def reset_stream(video_manager=Depends(get_video_manager)):
+    """Force reset video stream - clears frame buffer to force fresh frames"""
+    with video_manager.frame_lock:
+        video_manager.latest_frame = None
+    # Clear the frame buffer queue as well
+    while not video_manager.frame_buffer.empty():
+        try:
+            video_manager.frame_buffer.get_nowait()
+        except:
+            break
+    return {"status": "reset", "message": "Video stream reset"}
+
+
 @router.post("/video/config")
 async def update_video_config(config: VideoConfig, video_manager=Depends(get_video_manager)):
     """Update video configuration"""
@@ -124,6 +138,35 @@ async def set_pupil_mode(mode: str, video_manager=Depends(get_video_manager)):
     valid_modes = ["legacy", "fast", "hybrid"]
     if mode not in valid_modes:
         raise HTTPException(status_code=400, detail=f"Invalid mode. Must be one of: {valid_modes}")
-    
+
     video_manager.set_pupil_mode(mode)
     return {"status": "updated", "pupil_mode": mode}
+
+
+@router.post("/video/pupil/config")
+async def set_pupil_config(config: PupilDetectionConfig, video_manager=Depends(get_video_manager)):
+    """Update pupil detection configuration"""
+    # Set mode if provided
+    if config.mode:
+        valid_modes = ["legacy", "fast", "hybrid"]
+        if config.mode in valid_modes:
+            video_manager.set_pupil_mode(config.mode)
+
+    # Set all other parameters
+    video_manager.set_pupil_config(
+        search_window_multiplier=config.search_window_multiplier,
+        dark_threshold_percent=config.dark_threshold_percent,
+        starburst_rays=config.starburst_rays,
+        starburst_min_gradient=config.starburst_min_gradient,
+        fallback_threshold=config.fallback_threshold,
+        legacy_blur_enabled=config.legacy_blur_enabled,
+        legacy_blur_kernel=config.legacy_blur_kernel,
+        legacy_clahe_enabled=config.legacy_clahe_enabled,
+        legacy_clahe_clip_limit=config.legacy_clahe_clip_limit,
+        legacy_clahe_grid_size=config.legacy_clahe_grid_size,
+        legacy_morph_enabled=config.legacy_morph_enabled,
+        legacy_morph_close_iterations=config.legacy_morph_close_iterations,
+        legacy_morph_dilate_iterations=config.legacy_morph_dilate_iterations
+    )
+
+    return {"status": "updated", "config": config.model_dump(exclude_none=True)}
