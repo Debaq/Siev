@@ -4,6 +4,7 @@ import {
   Cpu, Lightbulb, LightbulbOff,
   Sun, Contrast, Activity, Eye
 } from 'lucide-react'
+import { useTauriHardware } from '../hooks/useTauriHardware'
 
 interface ControlPanelProps {
   isCapturing: boolean
@@ -36,6 +37,9 @@ function ControlPanel({
   const [erode, setErode] = useState<[number, number]>([0, 0])
   const [noseWidth, setNoseWidth] = useState(0.25)
   const [eyeHeight, setEyeHeight] = useState(0.25)
+
+  // Tauri Hardware
+  const { controlLed, isConnected: isHwConnected } = useTauriHardware()
 
   const updateVideoConfig = useCallback(async (overrides: any = {}) => {
     try {
@@ -110,9 +114,9 @@ function ControlPanel({
   }
 
   const handleLed = async (led: string, action: 'on' | 'off') => {
-    try {
-      await fetch(`${apiUrl}/hardware/led/${led}/${action}`, { method: 'POST' })
-    } catch (error) { console.error(error) }
+    // Map string to literal type
+    const ledType = led as 'left' | 'right' | 'all'
+    await controlLed(ledType, action)
   }
 
   const SectionTitle = ({ icon: Icon, title }: { icon: any, title: string }) => (
@@ -306,14 +310,14 @@ function ControlPanel({
                 <button 
                   className="btn btn-secondary flex-1 p-0 h-6" 
                   onClick={() => handleLed('left', 'on')}
-                  disabled={hardwareStatus !== 'online'}
+                  disabled={!isHwConnected}
                 >
                   <Lightbulb className="w-3 h-3 text-yellow-400" />
                 </button>
                 <button 
                   className="btn btn-secondary flex-1 p-0 h-6"
                   onClick={() => handleLed('left', 'off')}
-                  disabled={hardwareStatus !== 'online'}
+                  disabled={!isHwConnected}
                 >
                   <LightbulbOff className="w-3 h-3" />
                 </button>
@@ -327,14 +331,14 @@ function ControlPanel({
                 <button 
                   className="btn btn-secondary flex-1 p-0 h-6" 
                   onClick={() => handleLed('right', 'on')}
-                  disabled={hardwareStatus !== 'online'}
+                  disabled={!isHwConnected}
                 >
                   <Lightbulb className="w-3 h-3 text-yellow-400" />
                 </button>
                 <button 
                   className="btn btn-secondary flex-1 p-0 h-6"
                   onClick={() => handleLed('right', 'off')}
-                  disabled={hardwareStatus !== 'online'}
+                  disabled={!isHwConnected}
                 >
                   <LightbulbOff className="w-3 h-3" />
                 </button>
@@ -344,7 +348,7 @@ function ControlPanel({
         <button
             className="btn btn-secondary w-full text-[10px] h-6"
             onClick={() => handleLed('all', 'off')}
-            disabled={hardwareStatus !== 'online'}
+            disabled={!isHwConnected}
           >
             APAGAR TODOS
           </button>

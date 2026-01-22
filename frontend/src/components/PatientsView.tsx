@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { 
   Search, Plus, User, Calendar, FileText, Trash2, Edit2, 
-  ChevronRight, MoreVertical, FolderOpen 
+  ChevronRight, FolderOpen 
 } from 'lucide-react'
+import PatientFormModal from './PatientFormModal'
 
 interface Patient {
   id: number
@@ -25,18 +26,15 @@ function PatientsView({ apiUrl, onSelectPatient }: PatientsViewProps) {
   const [patients, setPatients] = useState<Patient[]>([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
+  
+  // Modals State
   const [showForm, setShowForm] = useState(false)
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null)
-
-  // Form State
-  const [formData, setFormData] = useState({
-    first_name: '',
-    last_name: '',
-    dni: '',
-    email: '',
-    phone: '',
-    birth_date: ''
-  })
+  
+  // History State
+  const [showHistory, setShowHistory] = useState(false)
+  const [historyPatient, setHistoryPatient] = useState<Patient | null>(null)
+  const [sessions, setSessions] = useState<any[]>([])
 
   useEffect(() => {
     fetchPatients()
@@ -58,8 +56,19 @@ function PatientsView({ apiUrl, onSelectPatient }: PatientsViewProps) {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const fetchSessions = async (patient: Patient) => {
+    setHistoryPatient(patient)
+    setShowHistory(true)
+    setSessions([])
+    try {
+        const res = await fetch(`${apiUrl}/patients/${patient.id}/sessions`)
+        if (res.ok) {
+            setSessions(await res.json())
+        }
+    } catch (e) { console.error(e) }
+  }
+
+  const handleSavePatient = async (data: any): Promise<{ success: boolean, error?: string }> => {
     try {
       const url = editingPatient 
         ? `${apiUrl}/patients/${editingPatient.id}`
@@ -70,17 +79,21 @@ function PatientsView({ apiUrl, onSelectPatient }: PatientsViewProps) {
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(data)
       })
 
       if (res.ok) {
         setShowForm(false)
         setEditingPatient(null)
-        setFormData({ first_name: '', last_name: '', dni: '', email: '', phone: '', birth_date: '' })
         fetchPatients()
+        return { success: true }
+      } else {
+          const errorData = await res.json()
+          return { success: false, error: errorData.detail || "Error al guardar el paciente." }
       }
     } catch (error) {
       console.error(error)
+      return { success: false, error: "Error de conexión." }
     }
   }
 
@@ -94,14 +107,11 @@ function PatientsView({ apiUrl, onSelectPatient }: PatientsViewProps) {
 
   const handleEdit = (patient: Patient) => {
     setEditingPatient(patient)
-    setFormData({
-      first_name: patient.first_name,
-      last_name: patient.last_name,
-      dni: patient.dni || '',
-      email: patient.email || '',
-      phone: patient.phone || '',
-      birth_date: patient.birth_date ? patient.birth_date.split('T')[0] : ''
-    })
+    setShowForm(true)
+  }
+
+  const handleCreate = () => {
+    setEditingPatient(null)
     setShowForm(true)
   }
 
@@ -118,11 +128,7 @@ function PatientsView({ apiUrl, onSelectPatient }: PatientsViewProps) {
           <p className="text-dark-400 text-sm mt-1">Administra historias clínicas y sesiones</p>
         </div>
         <button 
-          onClick={() => {
-            setEditingPatient(null)
-            setFormData({ first_name: '', last_name: '', dni: '', email: '', phone: '', birth_date: '' })
-            setShowForm(true)
-          }}
+          onClick={handleCreate}
           className="btn btn-primary px-4 py-2 h-10"
         >
           <Plus className="w-4 h-4 mr-2" />
@@ -193,9 +199,16 @@ function PatientsView({ apiUrl, onSelectPatient }: PatientsViewProps) {
                         <button 
                           onClick={() => onSelectPatient(patient)}
                           className="p-1.5 hover:bg-siev-900/50 text-siev-400 rounded transition-colors"
-                          title="Iniciar Sesión"
+                          title="Nueva Evaluación"
                         >
                           <ChevronRight className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => fetchSessions(patient)}
+                          className="p-1.5 hover:bg-purple-900/30 text-purple-400 rounded transition-colors"
+                          title="Ver Historial"
+                        >
+                          <FolderOpen className="w-4 h-4" />
                         </button>
                         <button 
                           onClick={() => handleEdit(patient)}
@@ -221,92 +234,85 @@ function PatientsView({ apiUrl, onSelectPatient }: PatientsViewProps) {
         </div>
       </div>
 
-      {/* Modal Form */}
+      {/* Patient Form Modal - Extracted for performance */}
       {showForm && (
+        <PatientFormModal 
+            patient={editingPatient}
+            onClose={() => setShowForm(false)}
+            onSave={handleSavePatient}
+        />
+      )}
+
+      {/* History Modal */}
+      {showHistory && historyPatient && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-dark-900 border border-dark-700 rounded-lg shadow-2xl w-full max-w-lg overflow-hidden animate-fade-in">
-            <div className="px-6 py-4 border-b border-dark-800 flex justify-between items-center bg-dark-850">
-              <h3 className="text-lg font-bold text-white">
-                {editingPatient ? 'Editar Paciente' : 'Nuevo Paciente'}
-              </h3>
-              <button onClick={() => setShowForm(false)} className="text-dark-400 hover:text-white">&times;</button>
+          <div className="bg-dark-900 border border-dark-700 rounded-lg shadow-2xl w-full max-w-4xl h-[80vh] flex flex-col overflow-hidden animate-fade-in">
+            <div className="px-6 py-4 border-b border-dark-800 flex justify-between items-center bg-dark-850 shrink-0">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <FolderOpen className="w-5 h-5 text-purple-400" />
+                  Historial Clínico
+                </h3>
+                <p className="text-xs text-dark-400">
+                  {historyPatient.last_name}, {historyPatient.first_name} — {historyPatient.dni}
+                </p>
+              </div>
+              <button onClick={() => setShowHistory(false)} className="text-dark-400 hover:text-white">&times;</button>
             </div>
             
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-dark-400 mb-1">Nombre</label>
-                  <input 
-                    required 
-                    className="input" 
-                    value={formData.first_name}
-                    onChange={e => setFormData({...formData, first_name: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-dark-400 mb-1">Apellido</label>
-                  <input 
-                    required 
-                    className="input" 
-                    value={formData.last_name}
-                    onChange={e => setFormData({...formData, last_name: e.target.value})}
-                  />
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-dark-400 mb-1">DNI</label>
-                  <input 
-                    className="input" 
-                    value={formData.dni}
-                    onChange={e => setFormData({...formData, dni: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-dark-400 mb-1">Fecha Nacimiento</label>
-                  <input 
-                    type="date"
-                    className="input" 
-                    value={formData.birth_date}
-                    onChange={e => setFormData({...formData, birth_date: e.target.value})}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-dark-400 mb-1">Email</label>
-                  <input 
-                    type="email"
-                    className="input" 
-                    value={formData.email}
-                    onChange={e => setFormData({...formData, email: e.target.value})}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-dark-400 mb-1">Teléfono</label>
-                  <input 
-                    className="input" 
-                    value={formData.phone}
-                    onChange={e => setFormData({...formData, phone: e.target.value})}
-                  />
-                </div>
-              </div>
-
-              <div className="pt-4 flex justify-end gap-3">
+            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                {sessions.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-dark-500">
+                        <FileText className="w-12 h-12 mb-4 opacity-20" />
+                        <p>No hay evaluaciones registradas para este paciente.</p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {sessions.map((session) => (
+                            <div key={session.id} className="bg-dark-800 border border-dark-700 rounded-lg p-4 hover:border-siev-500/50 transition-colors group">
+                                <div className="flex justify-between items-start mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <Calendar className="w-4 h-4 text-dark-400" />
+                                        <span className="text-sm font-medium text-white">
+                                            {new Date(session.date).toLocaleDateString()}
+                                        </span>
+                                        <span className="text-xs text-dark-500">
+                                            {new Date(session.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                        </span>
+                                    </div>
+                                    <span className="text-xs bg-dark-950 text-dark-300 px-2 py-0.5 rounded border border-dark-700">
+                                        {session.duration_seconds}s
+                                    </span>
+                                </div>
+                                <p className="text-sm text-dark-300 mb-4 line-clamp-2">
+                                    {session.description || 'Sin descripción'}
+                                </p>
+                                <div className="flex gap-2">
+                                    <button className="flex-1 btn btn-secondary text-xs py-1.5">
+                                        Ver Informe
+                                    </button>
+                                    <button className="flex-1 btn btn-primary text-xs py-1.5">
+                                        Reproducir
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+            
+            <div className="p-4 border-t border-dark-800 bg-dark-850 flex justify-end gap-3 shrink-0">
                 <button 
-                  type="button"
-                  onClick={() => setShowForm(false)} 
-                  className="btn btn-secondary"
+                  onClick={() => {
+                      setShowHistory(false)
+                      onSelectPatient(historyPatient)
+                  }} 
+                  className="btn btn-primary"
                 >
-                  Cancelar
+                  <Plus className="w-4 h-4 mr-2" />
+                  Nueva Evaluación
                 </button>
-                <button type="submit" className="btn btn-primary">
-                  {editingPatient ? 'Guardar Cambios' : 'Crear Paciente'}
-                </button>
-              </div>
-            </form>
+            </div>
           </div>
         </div>
       )}

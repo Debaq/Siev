@@ -10,6 +10,7 @@ import {
   Tooltip,
 } from 'recharts'
 import { Eye, Activity, ChevronLeft, ChevronRight, LucideIcon } from 'lucide-react'
+import { invoke } from '@tauri-apps/api/core'
 
 interface EyeDataPanelProps {
   apiUrl: string
@@ -137,26 +138,53 @@ function EyeDataPanel({ apiUrl, isCapturing }: EyeDataPanelProps) {
     const eventSource = new EventSource(`${apiUrl}/stream/eye_data`)
     eventSourceRef.current = eventSource
 
-    eventSource.onmessage = (event) => {
+    eventSource.onmessage = async (event) => {
       try {
-        const data = JSON.parse(event.data)
-
-        // Handle both single objects (legacy) and arrays (batch)
-        const newPoints: EyeDataPoint[] = (Array.isArray(data) ? data : [data]).map(p => ({
-          timestamp: p.timestamp,
-          leftX: p.left_eye?.[0] ?? null,
-          leftY: p.left_eye?.[1] ?? null,
-          rightX: p.right_eye?.[0] ?? null,
-          rightY: p.right_eye?.[1] ?? null,
-        }))
+        const rawData = JSON.parse(event.data)
+        const batch = Array.isArray(rawData) ? rawData : [rawData]
+        
+        // Process batch through Rust Kalman Filter
+        const processedPoints: EyeDataPoint[] = []
+        
+        for (const p of batch) {
+            try {
+                // Prepare data for Rust
+                const rustInput = {
+                    left_eye: p.left_eye ? [p.left_eye[0], p.left_eye[1]] : null,
+                    right_eye: p.right_eye ? [p.right_eye[0], p.right_eye[1]] : null,
+                    timestamp: p.timestamp
+                }
+                
+                // Invoke Rust command
+                const result: any = await invoke('process_eye_data', { data: rustInput })
+                
+                processedPoints.push({
+                    timestamp: result.timestamp,
+                    leftX: result.left ? result.left[0] : null,
+                    leftY: result.left ? result.left[1] : null,
+                    rightX: result.right ? result.right[0] : null,
+                    rightY: result.right ? result.right[1] : null,
+                })
+                
+                // Update calibration status based on Rust state
+                if (result.is_calibrated !== undefined) setIsCalibrated(result.is_calibrated)
+                
+            } catch (err) {
+                console.error("Rust processing error:", err)
+                // Fallback to raw data if Rust fails
+                processedPoints.push({
+                    timestamp: p.timestamp,
+                    leftX: p.left_eye?.[0] ?? null,
+                    leftY: p.left_eye?.[1] ?? null,
+                    rightX: p.right_eye?.[0] ?? null,
+                    rightY: p.right_eye?.[1] ?? null,
+                })
+            }
+        }
 
         // Accumulate data and schedule throttled update
-        pendingDataRef.current.push(...newPoints)
+        pendingDataRef.current.push(...processedPoints)
         scheduleUpdate()
-
-        // Use the last point's calibration status (this is lightweight, no throttle needed)
-        const lastRaw = Array.isArray(data) ? data[data.length - 1] : data
-        if (lastRaw) setIsCalibrated(lastRaw.is_calibrated ?? false)
 
       } catch (error) { console.error(error) }
     }

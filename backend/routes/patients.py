@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.exc import IntegrityError
 
 from database.service import db_service
 from models.api_schemas import PatientCreate, PatientUpdate, PatientResponse, SessionResponse
@@ -18,8 +19,11 @@ def get_db():
 @router.post("/patients", response_model=PatientResponse)
 async def create_patient(patient: PatientCreate, db: DBSession = Depends(get_db)):
     """Create a new patient"""
-    new_patient = db_service.create_patient(db, patient.model_dump())
-    return new_patient
+    try:
+        new_patient = db_service.create_patient(db, patient.model_dump())
+        return new_patient
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail="El DNI ya está registrado en el sistema.")
 
 @router.get("/patients", response_model=List[PatientResponse])
 async def get_patients(skip: int = 0, limit: int = 100, search: Optional[str] = None, db: DBSession = Depends(get_db)):
@@ -38,10 +42,13 @@ async def get_patient(patient_id: int, db: DBSession = Depends(get_db)):
 @router.put("/patients/{patient_id}", response_model=PatientResponse)
 async def update_patient(patient_id: int, patient: PatientUpdate, db: DBSession = Depends(get_db)):
     """Update a patient"""
-    updated = db_service.update_patient(db, patient_id, patient.model_dump(exclude_unset=True))
-    if not updated:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    return updated
+    try:
+        updated = db_service.update_patient(db, patient_id, patient.model_dump(exclude_unset=True))
+        if not updated:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        return updated
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail="El DNI ya está registrado en el sistema.")
 
 @router.delete("/patients/{patient_id}")
 async def delete_patient(patient_id: int, db: DBSession = Depends(get_db)):

@@ -6,7 +6,9 @@ import StatusBar from './components/StatusBar'
 import EyeDataPanel from './components/EyeDataPanel'
 import SettingsView from './components/SettingsView'
 import PatientsView from './components/PatientsView'
+import TestSelectionView from './components/TestSelectionView'
 import Sidebar from './components/Sidebar'
+import TitleBar from './components/TitleBar'
 import { useBackend } from './hooks/useBackend'
 
 const API_URL = 'http://localhost:8000'
@@ -34,8 +36,9 @@ function App() {
   const { health, isConnected, checkHealth } = useBackend(API_URL)
   
   // Navigation State
-  const [activeView, setActiveView] = useState<'capture' | 'patients' | 'settings'>('capture')
+  const [activeView, setActiveView] = useState<'capture' | 'patients' | 'settings' | 'test_selection'>('patients')
   const [currentPatient, setCurrentPatient] = useState<Patient | null>(null)
+  const [currentTestType, setCurrentTestType] = useState<string | null>(null)
 
   // App State
   const [systemStatus, setSystemStatus] = useState<SystemStatus>({
@@ -131,9 +134,14 @@ function App() {
               <div className="flex items-center gap-2">
                 <User className="w-3 h-3 text-siev-400" />
                 <span className="font-bold text-white">{currentPatient.last_name}, {currentPatient.first_name}</span>
-                <span className="text-dark-400 font-mono text-[10px]">{currentPatient.dni}</span>
+                {currentTestType && (
+                  <>
+                    <span className="w-1 h-1 bg-dark-500 rounded-full" />
+                    <span className="text-siev-200 text-[10px] uppercase font-bold tracking-wider">{currentTestType}</span>
+                  </>
+                )}
               </div>
-              <button onClick={() => setCurrentPatient(null)} className="text-dark-400 hover:text-white">
+              <button onClick={() => { setCurrentPatient(null); setActiveView('patients') }} className="text-dark-400 hover:text-white">
                 <X className="w-3 h-3" />
               </button>
             </div>
@@ -227,19 +235,29 @@ function App() {
   )
 
   return (
-    <div className="h-screen bg-dark-950 flex overflow-hidden">
-      <Sidebar activeView={activeView} onNavigate={setActiveView} />
-      <div className="flex-1 bg-dark-950 relative">
-        {activeView === 'capture' && renderCaptureView()}
-        {activeView === 'patients' && (
-          <PatientsView 
-            apiUrl={API_URL} 
-            onSelectPatient={(p) => { setCurrentPatient(p); setActiveView('capture') }} 
-          />
-        )}
-        {activeView === 'settings' && (
-          <SettingsView apiUrl={API_URL} />
-        )}
+    <div className="h-screen bg-dark-950 flex flex-col overflow-hidden border border-dark-800">
+      <TitleBar />
+      <div className="flex-1 flex overflow-hidden relative">
+        <Sidebar activeView={activeView} onNavigate={setActiveView} />
+        <div className="flex-1 bg-dark-950 relative overflow-hidden">
+          {activeView === 'capture' && renderCaptureView()}
+          {activeView === 'patients' && (
+            <PatientsView 
+              apiUrl={API_URL} 
+              onSelectPatient={(p) => { setCurrentPatient(p); setActiveView('test_selection') }} 
+            />
+          )}
+          {activeView === 'test_selection' && currentPatient && (
+            <TestSelectionView 
+              patientName={`${currentPatient.last_name}, ${currentPatient.first_name}`}
+              onBack={() => { setCurrentPatient(null); setActiveView('patients') }}
+              onSelectTest={(testId) => { setCurrentTestType(testId); setActiveView('capture') }}
+            />
+          )}
+          {activeView === 'settings' && (
+            <SettingsView apiUrl={API_URL} />
+          )}
+        </div>
       </div>
     </div>
   )

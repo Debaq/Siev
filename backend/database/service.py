@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session as DBSession
 from .models import Base, Patient, Session
@@ -6,11 +7,12 @@ from typing import List, Optional
 from datetime import datetime
 
 # Database configuration
-DB_FOLDER = os.path.join(os.getcwd(), "data")
-if not os.path.exists(DB_FOLDER):
-    os.makedirs(DB_FOLDER)
+# Get absolute path to the 'backend' directory
+BASE_DIR = Path(__file__).resolve().parent.parent
+DB_FOLDER = BASE_DIR / "data"
+DB_FOLDER.mkdir(exist_ok=True)
 
-DB_PATH = f"sqlite:///{os.path.join(DB_FOLDER, 'siev_patients.db')}"
+DB_PATH = f"sqlite:///{DB_FOLDER / 'siev_patients.db'}"
 
 class DatabaseService:
     def __init__(self):

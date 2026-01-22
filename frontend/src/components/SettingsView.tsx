@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Settings, Camera, Activity, FileText, Monitor, Save, Database, Cpu } from 'lucide-react'
+import { useTauriHardware } from '../hooks/useTauriHardware'
 
 interface SettingsViewProps {
   apiUrl: string
@@ -13,6 +14,9 @@ function SettingsView({ apiUrl }: SettingsViewProps) {
   const [resolutions, setResolutions] = useState<string[]>([])
   const [showSuccess, setShowSuccess] = useState(false)
   const [applyingResolution, setApplyingResolution] = useState(false)
+  
+  // Tauri Hardware Hook
+  const { ports, connect, disconnect, isConnected: isHwConnected, refreshPorts } = useTauriHardware()
 
   useEffect(() => {
     fetchConfig()
@@ -303,17 +307,20 @@ function SettingsView({ apiUrl }: SettingsViewProps) {
           {/* Hardware Settings */}
           {activeTab === 'hardware' && (
             <div className="space-y-6 animate-fade-in">
-              <h3 className="text-lg font-bold text-white border-b border-dark-700 pb-2">Hardware Externo</h3>
+              <h3 className="text-lg font-bold text-white border-b border-dark-700 pb-2">Hardware Externo (Tauri/Rust)</h3>
               
               <div>
                   <label className="block text-sm font-medium text-dark-300 mb-1">Puerto Serial (IMU / Lights)</label>
                   <div className="flex gap-2">
-                    <input 
-                        className="input" 
+                    <select 
+                        className="select" 
                         value={config.hardware.serial_port}
                         onChange={e => updateConfig('hardware', 'serial_port', e.target.value)}
-                    />
-                    <button className="btn btn-secondary">Detectar</button>
+                    >
+                        <option value="">Seleccione un puerto...</option>
+                        {ports.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                    <button className="btn btn-secondary" onClick={refreshPorts}>Refrescar</button>
                   </div>
               </div>
 
@@ -328,6 +335,28 @@ function SettingsView({ apiUrl }: SettingsViewProps) {
                       <option value="115200">115200</option>
                       <option value="250000">250000</option>
                   </select>
+              </div>
+
+              <div className="flex items-center gap-4 pt-2">
+                  <div className={`text-sm ${isHwConnected ? 'text-green-400' : 'text-red-400'}`}>
+                      Estado: {isHwConnected ? 'CONECTADO' : 'DESCONECTADO'}
+                  </div>
+                  {!isHwConnected ? (
+                      <button 
+                        className="btn btn-primary"
+                        onClick={() => connect(config.hardware.serial_port, config.hardware.baudrate)}
+                        disabled={!config.hardware.serial_port}
+                      >
+                        Conectar Hardware
+                      </button>
+                  ) : (
+                      <button 
+                        className="btn btn-danger"
+                        onClick={disconnect}
+                      >
+                        Desconectar
+                      </button>
+                  )}
               </div>
 
               <div>
