@@ -7,7 +7,14 @@ use super::kalman::{KalmanFilter, KalmanConfig};
 pub struct RawEyeData {
     pub left_eye: Option<[f64; 2]>,
     pub right_eye: Option<[f64; 2]>,
+    pub processed: Option<ProcessedFromBackend>,
     pub timestamp: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProcessedFromBackend {
+    pub left_eye: Option<[f64; 2]>,
+    pub right_eye: Option<[f64; 2]>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +36,9 @@ pub struct EyeProcessor {
     calibration_samples_right: Vec<Vector2<f64>>,
     is_calibrated: bool,
     calibration_target_samples: usize,
+
+    // Controls
+    pub filtering_enabled: bool,
 }
 
 impl EyeProcessor {
@@ -43,10 +53,31 @@ impl EyeProcessor {
             calibration_samples_right: Vec::with_capacity(30),
             is_calibrated: false,
             calibration_target_samples: 30,
+            filtering_enabled: true,
         }
     }
 
     pub fn process(&mut self, data: RawEyeData) -> ProcessedEyeData {
+        self.process_internal(data)
+    }
+
+    fn process_internal(&mut self, data: RawEyeData) -> ProcessedEyeData {
+        if !self.filtering_enabled {
+            // Return raw or Python-processed data directly
+            let (l, r) = if let Some(p) = data.processed {
+                (p.left_eye, p.right_eye)
+            } else {
+                (data.left_eye, data.right_eye)
+            };
+
+            return ProcessedEyeData {
+                left: l,
+                right: r,
+                timestamp: data.timestamp,
+                is_calibrated: true, // Mark as "calibrated" to show it's ready
+            };
+        }
+
         // 1. Calibration Collection
         if !self.is_calibrated && self.left_center.is_none() {
             if let Some(left) = data.left_eye {
@@ -111,6 +142,12 @@ impl EyeProcessor {
             timestamp: data.timestamp,
             is_calibrated: self.is_calibrated,
         }
+    }
+
+    pub fn process_batch(&mut self, batch: Vec<RawEyeData>) -> Vec<ProcessedEyeData> {
+        batch.into_iter()
+             .map(|data| self.process_internal(data))
+             .collect()
     }
 
     fn finalize_calibration(&mut self) {

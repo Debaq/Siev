@@ -7,9 +7,13 @@ import EyeDataPanel from './components/EyeDataPanel'
 import SettingsView from './components/SettingsView'
 import PatientsView from './components/PatientsView'
 import TestSelectionView from './components/TestSelectionView'
+import WelcomeWizard from './components/WelcomeWizard'
+import UserSelectionScreen from './components/UserSelectionScreen'
+import SplashScreen from './components/SplashScreen'
 import Sidebar from './components/Sidebar'
 import TitleBar from './components/TitleBar'
 import { useBackend } from './hooks/useBackend'
+import { useTauriDb, Specialist } from './hooks/useTauriDb'
 
 const API_URL = 'http://localhost:8000'
 
@@ -34,11 +38,18 @@ interface Patient {
 
 function App() {
   const { health, isConnected, checkHealth } = useBackend(API_URL)
+  const { getSetting, getSpecialists, createSession } = useTauriDb()
   
+  // UX State
+  const [showSplash, setShowSplash] = useState(true)
+
   // Navigation State
-  const [activeView, setActiveView] = useState<'capture' | 'patients' | 'settings' | 'test_selection'>('patients')
+  const [activeView, setActiveView] = useState<'capture' | 'patients' | 'settings' | 'test_selection' | 'onboarding' | 'user_selection'>('user_selection')
   const [currentPatient, setCurrentPatient] = useState<Patient | null>(null)
   const [currentTestType, setCurrentTestType] = useState<string | null>(null)
+  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null)
+  const [activeSpecialist, setActiveSpecialist] = useState<Specialist | null>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
 
   // App State
   const [systemStatus, setSystemStatus] = useState<SystemStatus>({
@@ -49,6 +60,28 @@ function App() {
   const [selectedCamera, setSelectedCamera] = useState<number>(2)
   const [dataPanelHeight, setDataPanelHeight] = useState(240)
   const [isResizing, setIsResizing] = useState(false)
+
+  // Check Initialization
+  useEffect(() => {
+    async function checkInit() {
+      try {
+        const initialized = await getSetting('app_initialized')
+        if (initialized !== 'true') {
+          setActiveView('onboarding')
+        } else {
+          setIsInitialized(true)
+          const specialists = await getSpecialists()
+          if (specialists.length === 1) {
+              setActiveSpecialist(specialists[0])
+              setActiveView('patients')
+          } else {
+              setActiveView('user_selection')
+          }
+        }
+      } catch (e) { console.error(e) }
+    }
+    checkInit()
+  }, [])
 
   // Initialization
   useEffect(() => {
@@ -100,10 +133,15 @@ function App() {
   // Actions
   const handleStartCapture = async () => {
     try {
+      const storagePath = await getSetting('storage_path')
+      
       await fetch(`${API_URL}/start`, { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ camera_id: selectedCamera }) 
+        body: JSON.stringify({ 
+            camera_id: selectedCamera,
+            storage_path: storagePath
+        }) 
       })
       setIsCapturing(true)
     } catch (e) { console.error(e) }
@@ -228,37 +266,72 @@ function App() {
         </div>
       </div>
       <footer className="bg-dark-950 border-t border-dark-800 px-3 py-1 text-[10px] text-dark-600 flex justify-between items-center shrink-0 select-none">
-         <span>Sistema Video-Oculografía</span>
+         <span>Sistema Integrado de Evaluación Vestibular (SIEV)</span>
          <span>v1.0.0</span>
       </footer>
     </div>
   )
 
   return (
-    <div className="h-screen bg-dark-950 flex flex-col overflow-hidden border border-dark-800">
+    <div className="h-screen bg-dark-950 flex flex-col overflow-hidden border border-dark-800 relative">
+      {showSplash && <SplashScreen onFinished={() => setShowSplash(false)} />}
+      
       <TitleBar />
-      <div className="flex-1 flex overflow-hidden relative">
-        <Sidebar activeView={activeView} onNavigate={setActiveView} />
-        <div className="flex-1 bg-dark-950 relative overflow-hidden">
-          {activeView === 'capture' && renderCaptureView()}
-          {activeView === 'patients' && (
-            <PatientsView 
-              apiUrl={API_URL} 
-              onSelectPatient={(p) => { setCurrentPatient(p); setActiveView('test_selection') }} 
+      
+      {activeView === 'user_selection' ? (
+        <UserSelectionScreen 
+            onSelect={(spec) => {
+                setActiveSpecialist(spec)
+                setActiveView('patients')
+            }}
+        />
+      ) : (
+        <div className="flex-1 flex overflow-hidden relative">
+            <Sidebar 
+                activeView={activeView} 
+                onNavigate={setActiveView} 
+                activeSpecialist={activeSpecialist}
+                onLogout={() => {
+                    setActiveSpecialist(null)
+                    setActiveView('user_selection')
+                }}
             />
-          )}
-          {activeView === 'test_selection' && currentPatient && (
-            <TestSelectionView 
-              patientName={`${currentPatient.last_name}, ${currentPatient.first_name}`}
-              onBack={() => { setCurrentPatient(null); setActiveView('patients') }}
-              onSelectTest={(testId) => { setCurrentTestType(testId); setActiveView('capture') }}
-            />
-          )}
-          {activeView === 'settings' && (
-            <SettingsView apiUrl={API_URL} />
-          )}
+            <div className="flex-1 bg-dark-950 relative overflow-hidden">
+            {activeView === 'onboarding' && (
+                <WelcomeWizard onComplete={() => setActiveView('user_selection')} />
+            )}
+            {activeView === 'capture' && renderCaptureView()}
+            {activeView === 'patients' && (
+                <PatientsView 
+                onSelectPatient={(p) => { setCurrentPatient(p); setActiveView('test_selection') }} 
+                />
+            )}
+                      {activeView === 'test_selection' && currentPatient && (
+                        <TestSelectionView 
+                          patientName={`${currentPatient.last_name}, ${currentPatient.first_name}`}
+                          onBack={() => { setCurrentPatient(null); setActiveView('patients') }}
+                          onSelectTest={async (testId) => { 
+                              // Create session in Rust
+                              const session = await createSession(
+                                  currentPatient.id, 
+                                  activeSpecialist?.id || null, 
+                                  `Evaluación: ${testId}`
+                              )
+                              if (session) {
+                                  setCurrentSessionId(session.id)
+                                  setCurrentTestType(testId)
+                                  setActiveView('capture')
+                              }
+                          }}
+                        />
+                      )}
+            
+            {activeView === 'settings' && (
+                <SettingsView apiUrl={API_URL} />
+            )}
+            </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

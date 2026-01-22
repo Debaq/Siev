@@ -4,6 +4,7 @@ Video Manager API - Refactored without PyQt dependencies
 Provides video capture, processing, and streaming for the FastAPI server.
 """
 
+import os
 import cv2
 import numpy as np
 import time
@@ -46,6 +47,7 @@ class VideoManagerAPI:
         self.nose_width = 0.25
         self.eye_height = 0.25
         self.use_yolo = True
+        self.storage_path: Optional[str] = None
 
         # State
         self.is_capturing = False
@@ -96,7 +98,8 @@ class VideoManagerAPI:
         erode: List[int] = [0, 0],
         nose_width: float = 0.25,
         eye_height: float = 0.25,
-        use_yolo: bool = True
+        use_yolo: bool = True,
+        storage_path: Optional[str] = None
     ) -> bool:
         """
         Initialize the video capture system.
@@ -113,6 +116,7 @@ class VideoManagerAPI:
             nose_width: Width of nose ROI separation
             eye_height: Height of eye ROI
             use_yolo: Whether to use YOLO detection
+            storage_path: Base path for storing recorded videos
 
         Returns:
             bool: True if initialization was successful
@@ -129,6 +133,7 @@ class VideoManagerAPI:
             self.nose_width = nose_width
             self.eye_height = eye_height
             self.use_yolo = use_yolo
+            self.storage_path = storage_path
 
             # Create video processes
             self.video_processes = VideoProcesses(
@@ -357,6 +362,13 @@ class VideoManagerAPI:
             # Save recording
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             filename = f"recording_{timestamp}.avi"
+            
+            if self.storage_path:
+                try:
+                    os.makedirs(self.storage_path, exist_ok=True)
+                    filename = os.path.join(self.storage_path, filename)
+                except Exception as e:
+                    logger.error(f"Error creating storage directory: {e}")
 
             try:
                 height, width = self.recording_frames[0].shape[:2]

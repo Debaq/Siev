@@ -17,6 +17,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Math & Processing
@@ -27,6 +28,9 @@ serialport = "4.6"
 tokio = { version = "1", features = ["full"] }
 thiserror = "2"
 ts-rs = "10.0" # Optional: for generating TypeScript types from Rust structs if needed later
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono"] }
+chrono = { version = "0.4", features = ["serde"] }
 
 [features]
 default = ["custom-protocol"]

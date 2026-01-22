@@ -7,7 +7,6 @@ from fastapi.responses import StreamingResponse
 
 from models.api_schemas import VideoConfig, StatusResponse, PupilDetectionConfig
 from dependencies import get_video_manager
-from utils.config_store import config_store
 
 router = APIRouter(tags=["Video"])
 
@@ -35,20 +34,9 @@ async def start_capture(config: Optional[VideoConfig] = None, video_manager=Depe
             use_yolo=config.use_yolo
         )
     else:
-        cfg = config_store.get()
-        success = video_manager.initialize(
-            camera_id=cfg['video'].get('camera_id', 2),
-            width=cfg['video'].get('resolution_width', 960),
-            height=cfg['video'].get('resolution_height', 540),
-            fps=cfg['video'].get('fps', 120),
-            brightness=cfg['video'].get('brightness', -21),
-            contrast=cfg['video'].get('contrast', 50),
-            threshold=cfg['video'].get('threshold', [0, 0]),
-            erode=cfg['video'].get('erode', [0, 0]),
-            nose_width=cfg['video'].get('nose_width', 0.25),
-            eye_height=cfg['video'].get('eye_height', 0.25),
-            use_yolo=cfg['video'].get('use_yolo', True)
-        )
+        # Initialize with defaults if no config provided
+        # Rust backend should eventually provide this via API call or CLI args
+        success = video_manager.initialize()
 
     if success:
         video_manager.start_capture()
@@ -138,8 +126,4 @@ async def set_pupil_mode(mode: str, video_manager=Depends(get_video_manager)):
         raise HTTPException(status_code=400, detail=f"Invalid mode. Must be one of: {valid_modes}")
     
     video_manager.set_pupil_mode(mode)
-    cfg = config_store.get()
-    if 'pupil_detection' not in cfg: cfg['pupil_detection'] = {}
-    cfg['pupil_detection']['mode'] = mode
-    config_store.update(cfg)
     return {"status": "updated", "pupil_mode": mode}

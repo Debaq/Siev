@@ -1,11 +1,13 @@
 import { Video, Users, Settings, LogOut } from 'lucide-react'
 
 interface SidebarProps {
-  activeView: 'capture' | 'patients' | 'settings' | 'test_selection'
+  activeView: 'capture' | 'patients' | 'settings' | 'test_selection' | 'onboarding' | 'user_selection'
   onNavigate: (view: 'capture' | 'patients' | 'settings') => void
+  onLogout: () => void
+  activeSpecialist: { name: string } | null
 }
 
-function Sidebar({ activeView, onNavigate }: SidebarProps) {
+function Sidebar({ activeView, onNavigate, onLogout, activeSpecialist }: SidebarProps) {
   const isCaptureActive = activeView === 'capture' || activeView === 'test_selection'
 
   const MenuItem = ({ view, icon: Icon, label, isActive }: { view: string, icon: any, label: string, isActive?: boolean }) => (
@@ -31,9 +33,19 @@ function Sidebar({ activeView, onNavigate }: SidebarProps) {
         <MenuItem view="settings" icon={Settings} label="Ajustes" isActive={activeView === 'settings'} />
       </div>
 
-      <div className="w-full mt-auto">
-        <button className="w-full p-3 flex flex-col items-center gap-1 text-dark-600 hover:text-red-400 transition-colors">
-          <LogOut className="w-5 h-5" />
+      <div className="w-full mt-auto mb-2 flex justify-center">
+        <button 
+            onClick={onLogout}
+            className="w-10 h-10 rounded-full bg-dark-800 hover:bg-dark-700 border border-dark-700 flex items-center justify-center transition-all group relative"
+            title={`Sesión: ${activeSpecialist?.name || 'Desconocido'}`}
+        >
+          {activeSpecialist ? (
+              <span className="text-xs font-bold text-dark-300 group-hover:hidden">
+                  {activeSpecialist.name.substring(0, 2).toUpperCase()}
+              </span>
+          ) : <LogOut className="w-4 h-4 text-dark-400" />}
+          
+          <LogOut className="w-4 h-4 text-red-400 absolute hidden group-hover:block animate-in fade-in zoom-in duration-200" />
         </button>
       </div>
     </div>

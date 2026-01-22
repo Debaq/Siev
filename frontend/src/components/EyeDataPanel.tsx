@@ -33,6 +33,9 @@ interface ChartSectionProps {
   color2: string
   chartData: Array<EyeDataPoint & { index: number }>
   isCalibrated?: boolean
+  onResetCalibration?: () => void
+  useRustFilter: boolean
+  onToggleFilter: () => void
 }
 
 const ChartSection = memo(function ChartSection({
@@ -42,7 +45,10 @@ const ChartSection = memo(function ChartSection({
   color1,
   color2,
   chartData,
-  isCalibrated
+  isCalibrated,
+  onResetCalibration,
+  useRustFilter,
+  onToggleFilter
 }: ChartSectionProps) {
   return (
     <div className="flex flex-col h-full bg-dark-900/50 border border-dark-800 rounded overflow-hidden min-w-0">
@@ -51,23 +57,43 @@ const ChartSection = memo(function ChartSection({
           <Icon className="w-2.5 h-2.5" />
           <span>{title}</span>
         </div>
-        {title.includes('Horizontal') && isCalibrated && (
-          <span className="text-[8px] text-green-400 font-bold bg-green-950/50 px-1 rounded border border-green-900">CAL</span>
-        )}
+        <div className="flex items-center gap-2">
+            {title.includes('Horizontal') && (
+            <button 
+                onClick={onToggleFilter}
+                className={`text-[8px] font-bold px-1 rounded border transition-colors ${useRustFilter ? 'text-siev-400 bg-siev-950/50 border-siev-900' : 'text-dark-400 bg-dark-800 border-dark-700'}`}
+                title={useRustFilter ? "Usando Filtro Rust (Optimizado)" : "Usando Datos Originales (Backend)"}
+            >
+                {useRustFilter ? 'FILTRO: ON' : 'FILTRO: OFF'}
+            </button>
+            )}
+            {title.includes('Horizontal') && isCalibrated && useRustFilter && (
+            <span className="text-[8px] text-green-400 font-bold bg-green-950/50 px-1 rounded border border-green-900">CAL</span>
+            )}
+            {title.includes('Horizontal') && useRustFilter && (
+            <button 
+                onClick={onResetCalibration}
+                className="text-[8px] text-dark-400 hover:text-white bg-dark-800 hover:bg-dark-700 px-1 rounded border border-dark-700 transition-colors"
+                title="Reiniciar Calibración"
+            >
+                RESET
+            </button>
+            )}
+        </div>
       </div>
       <div className="flex-1 min-h-0">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+          <LineChart data={chartData} syncId="eyeData" margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" opacity={0.4} />
             <XAxis dataKey="index" hide />
-            <YAxis stroke="#475569" tick={{ fontSize: 8 }} axisLine={false} tickLine={false} />
+            <YAxis stroke="#475569" tick={{ fontSize: 8 }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
             <Tooltip
               contentStyle={{ backgroundColor: '#020617', border: '1px solid #1e293b', fontSize: '9px', padding: '2px 6px' }}
               itemStyle={{ padding: 0 }}
             />
             <Legend iconType="circle" iconSize={6} wrapperStyle={{ fontSize: '9px', bottom: 0 }} />
-            <Line type="monotone" dataKey={dataKeys[0]} stroke={color1} name="OD" dot={false} strokeWidth={1.5} isAnimationActive={false} connectNulls={true} />
-            <Line type="monotone" dataKey={dataKeys[1]} stroke={color2} name="OI" dot={false} strokeWidth={1.5} isAnimationActive={false} connectNulls={true} />
+            <Line type="linear" dataKey={dataKeys[0]} stroke={color1} name="OD" dot={false} strokeWidth={1.5} isAnimationActive={false} connectNulls={false} />
+            <Line type="linear" dataKey={dataKeys[1]} stroke={color2} name="OI" dot={false} strokeWidth={1.5} isAnimationActive={false} connectNulls={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -75,17 +101,29 @@ const ChartSection = memo(function ChartSection({
   )
 })
 
-const MAX_DATA_POINTS = 500
+const MAX_DATA_POINTS = 1000
 const UPDATE_INTERVAL_MS = 50 // Throttle updates to ~20fps for smooth rendering
 
 function EyeDataPanel({ apiUrl, isCapturing }: EyeDataPanelProps) {
   const [eyeData, setEyeData] = useState<EyeDataPoint[]>([])
   const [isCalibrated, setIsCalibrated] = useState(false)
+  const [useRustFilter, setUseRustFilter] = useState(false) // Default to false to use original backend logic
   const eventSourceRef = useRef<EventSource | null>(null)
 
   const [splitRatio, setSplitRatio] = useState(0.5)
   const [isResizing, setIsResizing] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  const handleResetCalibration = () => {
+    invoke('reset_calibration').catch(console.error)
+    setIsCalibrated(false)
+  }
+
+  const toggleRustFilter = () => {
+    const newValue = !useRustFilter
+    setUseRustFilter(newValue)
+    invoke('set_filtering_enabled', { enabled: newValue }).catch(console.error)
+  }
 
   // Throttled update system to prevent flickering
   const pendingDataRef = useRef<EyeDataPoint[]>([])
@@ -105,6 +143,11 @@ function EyeDataPanel({ apiUrl, isCapturing }: EyeDataPanelProps) {
       pendingDataRef.current = []
       return
     }
+
+    // Reset calibration and clear data when starting new capture
+    invoke('reset_calibration').catch(console.error)
+    invoke('set_filtering_enabled', { enabled: useRustFilter }).catch(console.error)
+    setEyeData([]) 
 
     const flushPendingData = () => {
       if (pendingDataRef.current.length === 0) return
@@ -143,48 +186,51 @@ function EyeDataPanel({ apiUrl, isCapturing }: EyeDataPanelProps) {
         const rawData = JSON.parse(event.data)
         const batch = Array.isArray(rawData) ? rawData : [rawData]
         
-        // Process batch through Rust Kalman Filter
-        const processedPoints: EyeDataPoint[] = []
-        
-        for (const p of batch) {
-            try {
-                // Prepare data for Rust
-                const rustInput = {
-                    left_eye: p.left_eye ? [p.left_eye[0], p.left_eye[1]] : null,
-                    right_eye: p.right_eye ? [p.right_eye[0], p.right_eye[1]] : null,
-                    timestamp: p.timestamp
-                }
-                
-                // Invoke Rust command
-                const result: any = await invoke('process_eye_data', { data: rustInput })
-                
-                processedPoints.push({
-                    timestamp: result.timestamp,
-                    leftX: result.left ? result.left[0] : null,
-                    leftY: result.left ? result.left[1] : null,
-                    rightX: result.right ? result.right[0] : null,
-                    rightY: result.right ? result.right[1] : null,
-                })
-                
-                // Update calibration status based on Rust state
-                if (result.is_calibrated !== undefined) setIsCalibrated(result.is_calibrated)
-                
-            } catch (err) {
-                console.error("Rust processing error:", err)
-                // Fallback to raw data if Rust fails
-                processedPoints.push({
-                    timestamp: p.timestamp,
-                    leftX: p.left_eye?.[0] ?? null,
-                    leftY: p.left_eye?.[1] ?? null,
-                    rightX: p.right_eye?.[0] ?? null,
-                    rightY: p.right_eye?.[1] ?? null,
-                })
-            }
-        }
+        // Prepare data for Rust batch processing
+        const rustBatch = batch.map(p => ({
+            left_eye: p.left_eye ? [p.left_eye[0], p.left_eye[1]] : null,
+            right_eye: p.right_eye ? [p.right_eye[0], p.right_eye[1]] : null,
+            processed: p.processed ? {
+                left_eye: p.processed[0],
+                right_eye: p.processed[1]
+            } : null,
+            timestamp: p.timestamp
+        }))
 
-        // Accumulate data and schedule throttled update
-        pendingDataRef.current.push(...processedPoints)
-        scheduleUpdate()
+        try {
+            // Invoke Rust batch command
+            const results: any[] = await invoke('process_eye_data_batch', { batch: rustBatch })
+            
+            const processedPoints = results.map(result => ({
+                timestamp: result.timestamp,
+                leftX: result.left ? result.left[0] : null,
+                leftY: result.left ? result.left[1] : null,
+                rightX: result.right ? result.right[0] : null,
+                rightY: result.right ? result.right[1] : null,
+            }))
+
+            // Update calibration status once per batch if needed
+            if (results.length > 0 && results[results.length - 1].is_calibrated !== undefined) {
+                setIsCalibrated(results[results.length - 1].is_calibrated)
+            }
+
+            // Accumulate data and schedule throttled update
+            pendingDataRef.current.push(...processedPoints)
+            scheduleUpdate()
+
+        } catch (err) {
+            console.error("Rust batch processing error:", err)
+            // Fallback to raw data if Rust fails
+            const fallbackPoints = batch.map(p => ({
+                timestamp: p.timestamp,
+                leftX: p.left_eye?.[0] ?? null,
+                leftY: p.left_eye?.[1] ?? null,
+                rightX: p.right_eye?.[0] ?? null,
+                rightY: p.right_eye?.[1] ?? null,
+            }))
+            pendingDataRef.current.push(...fallbackPoints)
+            scheduleUpdate()
+        }
 
       } catch (error) { console.error(error) }
     }
@@ -244,6 +290,9 @@ function EyeDataPanel({ apiUrl, isCapturing }: EyeDataPanelProps) {
             color2="#0ea5e9"
             chartData={chartData}
             isCalibrated={isCalibrated}
+            onResetCalibration={handleResetCalibration}
+            useRustFilter={useRustFilter}
+            onToggleFilter={toggleRustFilter}
           />
         </div>
       )}
@@ -283,6 +332,9 @@ function EyeDataPanel({ apiUrl, isCapturing }: EyeDataPanelProps) {
             color2="#0ea5e9"
             chartData={chartData}
             isCalibrated={isCalibrated}
+            onResetCalibration={handleResetCalibration}
+            useRustFilter={useRustFilter}
+            onToggleFilter={toggleRustFilter}
           />
         </div>
       )}

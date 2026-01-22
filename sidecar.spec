@@ -49,10 +49,6 @@ hiddenimports = [
     'torch',
     'torchvision',
     'ultralytics',
-    # Serial communication
-    'serial',
-    'serial.tools',
-    'serial.tools.list_ports',
 ]
 
 # Exclude unnecessary packages to reduce size
@@ -63,6 +59,12 @@ excludes = [
     'PyQt6',
     'PyQt5',
     'pyqtgraph',
+    'scipy',
+    'pandas',
+    'notebook',
+    'ipython',
+    'sqlalchemy',
+    'serial',
 ]
 
 block_cipher = None

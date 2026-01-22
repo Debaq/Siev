@@ -18,6 +18,7 @@ class VideoConfig(BaseModel):
     eye_height: float = 0.25
     use_yolo: bool = True
     show_debug: bool = False
+    storage_path: Optional[str] = None
 
 
 class PupilDetectionConfig(BaseModel):

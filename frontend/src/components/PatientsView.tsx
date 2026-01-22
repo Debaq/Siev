@@ -4,28 +4,25 @@ import {
   ChevronRight, FolderOpen 
 } from 'lucide-react'
 import PatientFormModal from './PatientFormModal'
-
-interface Patient {
-  id: number
-  first_name: string
-  last_name: string
-  dni: string
-  birth_date: string | null
-  email: string | null
-  phone: string | null
-  created_at: string
-  session_count: number
-}
+import { useTauriDb, Patient } from '../hooks/useTauriDb'
 
 interface PatientsViewProps {
-  apiUrl: string
   onSelectPatient: (patient: Patient) => void
 }
 
-function PatientsView({ apiUrl, onSelectPatient }: PatientsViewProps) {
+function PatientsView({ onSelectPatient }: PatientsViewProps) {
   const [patients, setPatients] = useState<Patient[]>([])
-  const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
+  
+  // DB Hook
+  const {
+      loading, 
+      getPatients, 
+      createPatient, 
+      updatePatient, 
+      deletePatient, 
+      getSessions 
+  } = useTauriDb()
   
   // Modals State
   const [showForm, setShowForm] = useState(false)
@@ -37,72 +34,44 @@ function PatientsView({ apiUrl, onSelectPatient }: PatientsViewProps) {
   const [sessions, setSessions] = useState<any[]>([])
 
   useEffect(() => {
-    fetchPatients()
+    loadPatients()
   }, [search])
 
-  const fetchPatients = async () => {
-    setLoading(true)
-    try {
-      const query = search ? `?search=${search}` : ''
-      const res = await fetch(`${apiUrl}/patients${query}`)
-      if (res.ok) {
-        const data = await res.json()
-        setPatients(data)
-      }
-    } catch (error) {
-      console.error(error)
-    } finally {
-      setLoading(false)
-    }
+  const loadPatients = async () => {
+    const data = await getPatients(search)
+    setPatients(data)
   }
 
   const fetchSessions = async (patient: Patient) => {
     setHistoryPatient(patient)
     setShowHistory(true)
     setSessions([])
-    try {
-        const res = await fetch(`${apiUrl}/patients/${patient.id}/sessions`)
-        if (res.ok) {
-            setSessions(await res.json())
-        }
-    } catch (e) { console.error(e) }
+    const data = await getSessions(patient.id)
+    setSessions(data)
   }
 
-  const handleSavePatient = async (data: any): Promise<{ success: boolean, error?: string }> => {
-    try {
-      const url = editingPatient 
-        ? `${apiUrl}/patients/${editingPatient.id}`
-        : `${apiUrl}/patients`
-      
-      const method = editingPatient ? 'PUT' : 'POST'
-      
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      })
+  const handleSavePatient = async (data: any) => {
+    let result
+    if (editingPatient) {
+        result = await updatePatient(editingPatient.id, data)
+    } else {
+        result = await createPatient(data)
+    }
 
-      if (res.ok) {
+    if (result.success) {
         setShowForm(false)
         setEditingPatient(null)
-        fetchPatients()
+        loadPatients()
         return { success: true }
-      } else {
-          const errorData = await res.json()
-          return { success: false, error: errorData.detail || "Error al guardar el paciente." }
-      }
-    } catch (error) {
-      console.error(error)
-      return { success: false, error: "Error de conexión." }
+    } else {
+        return { success: false, error: result.error }
     }
   }
 
   const handleDelete = async (id: number) => {
     if (!confirm('¿Estás seguro de eliminar este paciente?')) return
-    try {
-      await fetch(`${apiUrl}/patients/${id}`, { method: 'DELETE' })
-      fetchPatients()
-    } catch (error) { console.error(error) }
+    const success = await deletePatient(id)
+    if (success) loadPatients()
   }
 
   const handleEdit = (patient: Patient) => {

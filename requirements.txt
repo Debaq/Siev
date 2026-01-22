@@ -7,25 +7,14 @@ sse-starlette>=1.6.0
 # Procesamiento de video e imágenes
 opencv-python==4.11.0.86
 ultralytics==8.3.161
+Pillow>=9.5.0
 
-# Cálculos científicos y matemáticos
+# Cálculos
 numpy>=1.24.0
-scipy>=1.10.0
-matplotlib>=3.7.0
 
-# Comunicación serial
-pyserial>=3.5
-
-# Machine Learning (dependencia de ultralytics)
+# Machine Learning
 torch>=2.0.0
 torchvision>=0.15.0
 
-# Procesamiento de datos
-polars>=0.20.0
-
-# Utilidades adicionales
-Pillow>=9.5.0
-requests>=2.28.0
-
-# Dependencias opcionales para mejor rendimiento
+# Utilidades
 psutil>=5.9.0

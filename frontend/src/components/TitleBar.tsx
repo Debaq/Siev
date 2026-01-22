@@ -1,67 +1,112 @@
 import { useState, useEffect } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { X, Minus, Square, Copy } from 'lucide-react'
+import { X, Minus, Square, Copy, Maximize2, Shrink } from 'lucide-react'
 
 export default function TitleBar() {
   const [isMaximized, setIsMaximized] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   const appWindow = getCurrentWindow()
 
-  useEffect(() => {
-    const checkMaximized = async () => {
-      setIsMaximized(await appWindow.isMaximized())
+  // Function to sync state with the actual window
+  const updateWindowState = async () => {
+    try {
+      const maximized = await appWindow.isMaximized()
+      const fullscreen = await appWindow.isFullscreen()
+      setIsMaximized(maximized)
+      setIsFullscreen(fullscreen)
+    } catch (e) {
+      console.error("Failed to update window state:", e)
     }
-    
-    // Check initially
-    checkMaximized()
+  }
 
-    // Listen for resize events to update the icon
+  useEffect(() => {
+    updateWindowState()
+
+    // Listen for resize to catch maximize/unmaximize from OS gestures
     const unlisten = appWindow.onResized(() => {
-      checkMaximized()
+      updateWindowState()
     })
+
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (await appWindow.isFullscreen()) {
+          await appWindow.setFullscreen(false)
+          updateWindowState()
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
 
     return () => {
       unlisten.then(f => f())
+      window.removeEventListener('keydown', handleKeyDown)
     }
   }, [])
 
-  const handleMinimize = () => appWindow.minimize()
-  const handleMaximize = async () => {
-    await appWindow.toggleMaximize()
-    setIsMaximized(await appWindow.isMaximized())
+  const handleMinimize = async () => {
+    await appWindow.minimize()
   }
-  const handleClose = () => appWindow.close()
+
+  const handleMaximize = async () => {
+    try {
+      await appWindow.toggleMaximize()
+      setTimeout(updateWindowState, 100)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const handleFullscreen = async () => {
+    const current = await appWindow.isFullscreen()
+    await appWindow.setFullscreen(!current)
+    setTimeout(updateWindowState, 100)
+  }
+
+  const handleClose = async () => {
+    await appWindow.close()
+  }
 
   return (
-    <div 
+    <div className="h-8 bg-dark-950 flex items-center select-none border-b border-dark-800 shrink-0 overflow-hidden">
+      
+      {/* Logo & Draggable Title Area */}
+      <div 
         data-tauri-drag-region 
-        className="h-8 bg-dark-950 flex justify-between items-center select-none border-b border-dark-800 shrink-0"
-    >
-      {/* App Logo/Title - Draggable Area */}
-      <div className="flex items-center gap-3 px-4 h-full pointer-events-none">
-        <div className="w-4 h-4 bg-siev-600 rounded flex items-center justify-center text-[10px] font-bold text-white shadow-sm">
-            S
-        </div>
-        <span className="text-xs font-semibold text-dark-300 tracking-wide">
+        className="flex-1 h-full flex items-center gap-3 px-4 cursor-default"
+      >
+        <img src="/logo-small.png" alt="Logo" className="w-4 h-4 pointer-events-none" />
+        <span className="text-xs font-semibold text-dark-300 tracking-wide pointer-events-none">
             SIEV <span className="text-dark-600 font-normal">v1.0.0</span>
         </span>
       </div>
 
-      {/* Window Controls - Non-Draggable */}
-      <div className="flex h-full">
+      {/* Control Buttons Area */}
+      <div className="flex h-full shrink-0">
+        <button
+          onClick={handleFullscreen}
+          className="h-full px-3 hover:bg-dark-800 text-dark-400 hover:text-white transition-colors focus:outline-none"
+          title={isFullscreen ? "Salir de Pantalla Completa" : "Pantalla Completa"}
+        >
+          {isFullscreen ? <Shrink className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+        </button>
+        
         <button
           onClick={handleMinimize}
-          className="h-full px-4 hover:bg-dark-800 text-dark-400 hover:text-white transition-colors focus:outline-none"
+          className="h-full px-3 hover:bg-dark-800 text-dark-400 hover:text-white transition-colors focus:outline-none"
           title="Minimizar"
         >
           <Minus className="w-3.5 h-3.5" />
         </button>
+        
         <button
           onClick={handleMaximize}
-          className="h-full px-4 hover:bg-dark-800 text-dark-400 hover:text-white transition-colors focus:outline-none"
+          className="h-full px-3 hover:bg-dark-800 text-dark-400 hover:text-white transition-colors focus:outline-none"
           title={isMaximized ? "Restaurar" : "Maximizar"}
         >
           {isMaximized ? <Copy className="w-3 h-3" /> : <Square className="w-3 h-3" />}
         </button>
+        
         <button
           onClick={handleClose}
           className="h-full px-4 hover:bg-red-600 text-dark-400 hover:text-white transition-colors focus:outline-none"
