@@ -9,7 +9,13 @@ use serde_json;
 
 use crate::websocket::messages::WsMessage;
 
-type Tx = broadcast::Sender<String>;
+#[derive(Clone, Debug)]
+pub enum BroadcastPacket {
+    Text(String),
+    Binary(Vec<u8>),
+}
+
+type Tx = broadcast::Sender<BroadcastPacket>;
 
 pub struct WebSocketServer {
     port: Arc<Mutex<u16>>,
@@ -37,8 +43,12 @@ impl WebSocketServer {
 
     pub fn broadcast(&self, msg: &WsMessage) {
         if let Ok(json) = serde_json::to_string(msg) {
-            let _ = self.tx.send(json);
+            let _ = self.tx.send(BroadcastPacket::Text(json));
         }
+    }
+
+    pub fn broadcast_binary(&self, data: Vec<u8>) {
+        let _ = self.tx.send(BroadcastPacket::Binary(data));
     }
 
     pub async fn start(&self, addr: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -83,8 +93,13 @@ impl WebSocketServer {
 
         // Task to forward broadcasts to this client
         let send_task = tokio::spawn(async move {
-            while let Ok(msg) = broadcast_rx.recv().await {
-                if let Err(e) = ws_sender.send(TungsteniteMessage::Text(msg.into())).await {
+            while let Ok(packet) = broadcast_rx.recv().await {
+                let ws_msg = match packet {
+                    BroadcastPacket::Text(txt) => TungsteniteMessage::Text(txt.into()),
+                    BroadcastPacket::Binary(bin) => TungsteniteMessage::Binary(bin.into()),
+                };
+                
+                if let Err(e) = ws_sender.send(ws_msg).await {
                     eprintln!("Error sending to ws client {}: {}", addr, e);
                     break;
                 }

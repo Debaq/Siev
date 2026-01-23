@@ -15,7 +15,6 @@ use hardware::manager::HardwareManager;
 use math::processor::{EyeProcessor, ProcessedEyeData, RawEyeData};
 use websocket::{WebSocketServer, WsMessage};
 use bridge::python_bridge::BridgeEvent;
-use base64::{Engine as _, engine::general_purpose};
 use tauri_plugin_shell::ShellExt;
 
 // Application State
@@ -398,8 +397,8 @@ pub fn run() {
                             ws_broadcast.broadcast(&WsMessage::EyeData(processed));
                         }
                         BridgeEvent::VideoFrame(jpeg) => {
-                            let base64_data = general_purpose::STANDARD.encode(jpeg);
-                            ws_broadcast.broadcast(&WsMessage::VideoFrame { data: base64_data });
+                            // Send raw binary frame for performance
+                            ws_broadcast.broadcast_binary(jpeg);
                         }
                         BridgeEvent::Disconnected => {
                             ws_broadcast.broadcast(&WsMessage::Status {

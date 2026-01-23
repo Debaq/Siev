@@ -64,6 +64,7 @@ export function useWebSocket() {
             console.log(`Connecting to WebSocket on port ${port}...`);
             
             const socket = new WebSocket(`ws://127.0.0.1:${port}`);
+            socket.binaryType = 'blob';
             
             socket.onopen = () => {
                 console.log('WebSocket connected');
@@ -75,11 +76,18 @@ export function useWebSocket() {
             };
             
             socket.onmessage = (event) => {
+                // Handle binary video frame
+                if (event.data instanceof Blob) {
+                    listeners.current.video_frame.forEach(cb => cb(event.data));
+                    return;
+                }
+
                 try {
                     const msg: WsMessage = JSON.parse(event.data);
                     
                     switch (msg.type) {
                         case 'video_frame':
+                            // Fallback for legacy base64 frames if any
                             listeners.current.video_frame.forEach(cb => cb(msg.data));
                             break;
                         case 'eye_data':

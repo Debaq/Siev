@@ -113,35 +113,51 @@ function EyeDataPanel({ isCapturing }: EyeDataPanelProps) {
   const [isResizing, setIsResizing] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Handle new eye data from WebSocket via Listener
+  // Handle new eye data from WebSocket via Listener with Throttling
   useEffect(() => {
     if (!isCapturing) return
 
-    const handleData = (data: any) => { // Type 'any' used to match listener signature, cast inside
+    let pendingPoints: EyeDataPoint[] = [];
+    let animationFrameId: number;
+    
+    // Sync with monitor refresh rate (60Hz, 90Hz, 144Hz, etc.)
+    const flushBuffer = () => {
+        if (pendingPoints.length > 0) {
+            setHistory(prev => {
+                const combined = [...prev, ...pendingPoints];
+                return combined.length > MAX_DATA_POINTS ? combined.slice(-MAX_DATA_POINTS) : combined;
+            });
+            pendingPoints = [];
+        }
+        animationFrameId = requestAnimationFrame(flushBuffer);
+    };
+
+    const handleData = (data: any) => { 
          const wsEyeData = data as { left: number[] | null, right: number[] | null, timestamp: number, is_calibrated: boolean };
          
-         setIsCalibrated(wsEyeData.is_calibrated);
+         if (wsEyeData.is_calibrated !== isCalibrated) {
+             setIsCalibrated(wsEyeData.is_calibrated);
+         }
 
-         setHistory(prev => {
-            const newPoint: EyeDataPoint = {
-                timestamp: wsEyeData.timestamp,
-                leftX: wsEyeData.left?.[0] ?? null,
-                leftY: wsEyeData.left?.[1] ?? null,
-                rightX: wsEyeData.right?.[0] ?? null,
-                rightY: wsEyeData.right?.[1] ?? null,
-            }
-            const combined = [...prev, newPoint]
-            // Keep last N points
-            return combined.length > MAX_DATA_POINTS ? combined.slice(-MAX_DATA_POINTS) : combined
-        })
+         const newPoint: EyeDataPoint = {
+            timestamp: wsEyeData.timestamp,
+            leftX: wsEyeData.left?.[0] ?? null,
+            leftY: wsEyeData.left?.[1] ?? null,
+            rightX: wsEyeData.right?.[0] ?? null,
+            rightY: wsEyeData.right?.[1] ?? null,
+        };
+        
+        pendingPoints.push(newPoint);
     };
 
     addListener('eye_data', handleData);
+    animationFrameId = requestAnimationFrame(flushBuffer);
     
     return () => {
         removeListener('eye_data', handleData);
+        cancelAnimationFrame(animationFrameId);
     }
-  }, [isCapturing, addListener, removeListener])
+  }, [isCapturing, addListener, removeListener, isCalibrated])
 
   // Clear history on restart
   useEffect(() => {

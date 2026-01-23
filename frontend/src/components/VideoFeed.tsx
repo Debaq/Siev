@@ -10,6 +10,11 @@ function VideoFeed({ isCapturing }: VideoFeedProps) {
   const { addListener, removeListener } = useWebSocket()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [hasSignal, setHasSignal] = useState(false)
+  
+  // Refs for the rendering loop logic
+  const latestFrameRef = useRef<Blob | string | null>(null);
+  const isRenderingRef = useRef(false);
+  const animationFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!isCapturing) {
@@ -17,34 +22,82 @@ function VideoFeed({ isCapturing }: VideoFeedProps) {
         return;
     }
 
-    const image = new Image();
-    
-    const handleFrame = (data: string) => {
-        if (!canvasRef.current) return;
+    // 1. WebSocket Listener: Just update the latest frame reference (Zero overhead)
+    const handleFrame = (data: Blob | string) => {
+        latestFrameRef.current = data;
         setHasSignal(true);
+    };
+
+    // 2. Render Loop: Decoupled from network rate, synced to monitor refresh rate
+    const renderLoop = async () => {
+        if (!canvasRef.current || !latestFrameRef.current) {
+            animationFrameRef.current = requestAnimationFrame(renderLoop);
+            return;
+        }
+
+        // If already rendering a frame, skip this V-Sync cycle to avoid tearing/ordering issues
+        if (isRenderingRef.current) {
+            animationFrameRef.current = requestAnimationFrame(renderLoop);
+            return;
+        }
+
+        isRenderingRef.current = true;
+        const data = latestFrameRef.current;
         
-        // Load image and draw to canvas
-        // Note: Ideally backend sends blobs, but for base64 this is the way
-        image.onload = () => {
-            if (!canvasRef.current) return;
-            // Update canvas dimensions if needed to match source
-            if (canvasRef.current.width !== image.width || canvasRef.current.height !== image.height) {
-                canvasRef.current.width = image.width;
-                canvasRef.current.height = image.height;
+        // Clear the ref so we don't re-render the same frame next time
+        // (unless you want persistence, but for live video, clearing avoids duplicate work)
+        latestFrameRef.current = null; 
+
+        try {
+            if (data instanceof Blob) {
+                // Fast path: Binary
+                const bitmap = await createImageBitmap(data);
+                
+                // Check if component is still mounted and canvas exists
+                if (canvasRef.current) {
+                    if (canvasRef.current.width !== bitmap.width || canvasRef.current.height !== bitmap.height) {
+                        canvasRef.current.width = bitmap.width;
+                        canvasRef.current.height = bitmap.height;
+                    }
+                    
+                    const ctx = canvasRef.current.getContext('2d', { alpha: false, desynchronized: true });
+                    if (ctx) {
+                        ctx.drawImage(bitmap, 0, 0);
+                    }
+                }
+                bitmap.close();
+            } else {
+                // Legacy path: Base64
+                await new Promise<void>((resolve) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        if (canvasRef.current) {
+                             if (canvasRef.current.width !== img.width || canvasRef.current.height !== img.height) {
+                                canvasRef.current.width = img.width;
+                                canvasRef.current.height = img.height;
+                            }
+                            const ctx = canvasRef.current.getContext('2d', { alpha: false });
+                            ctx?.drawImage(img, 0, 0);
+                        }
+                        resolve();
+                    };
+                    img.src = `data:image/jpeg;base64,${data}`;
+                });
             }
-            const ctx = canvasRef.current.getContext('2d', { alpha: false }); // alpha: false optimizes rendering
-            if (ctx) {
-                ctx.drawImage(image, 0, 0);
-            }
-        };
-        image.src = `data:image/jpeg;base64,${data}`;
+        } catch (e) {
+            console.error("Frame render error:", e);
+        } finally {
+            isRenderingRef.current = false;
+            animationFrameRef.current = requestAnimationFrame(renderLoop);
+        }
     };
 
     addListener('video_frame', handleFrame);
+    animationFrameRef.current = requestAnimationFrame(renderLoop);
     
     return () => {
         removeListener('video_frame', handleFrame);
-        // Clear canvas or state if needed
+        if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current);
     };
   }, [isCapturing, addListener, removeListener]);
 
