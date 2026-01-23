@@ -1,7 +1,7 @@
 # src/managers/video_manager_api.py
 """
 Video Manager API - Refactored without PyQt dependencies
-Provides video capture, processing, and streaming for the FastAPI server.
+Provides video capture, processing, and streaming via TCP to Rust orchestrator.
 """
 
 import os
@@ -34,7 +34,7 @@ class VideoManagerAPI:
     def __init__(self):
         # Video processing
         self.video_processes: Optional[VideoProcesses] = None
-        self.camera_id = 2
+        self.camera_id = 0
 
         # Configuration
         self.cap_width = 960
@@ -88,7 +88,7 @@ class VideoManagerAPI:
 
     def initialize(
         self,
-        camera_id: int = 2,
+        camera_id: int = 0,
         width: int = 960,
         height: int = 540,
         fps: int = 120,
@@ -134,6 +134,18 @@ class VideoManagerAPI:
             self.eye_height = eye_height
             self.use_yolo = use_yolo
             self.storage_path = storage_path
+
+            # Stop existing processes if they exist to release resources (camera)
+            if self.video_processes:
+                logger.info("Stopping existing video processes before re-initialization")
+                try:
+                    self.video_processes.stop()
+                    self.video_processes = None
+                    # Give the OS time to release the video device handle
+                    time.sleep(1.0)
+                except Exception as e:
+                    logger.error(f"Error stopping existing video processes: {e}")
+                    self.video_processes = None
 
             # Create video processes
             self.video_processes = VideoProcesses(
@@ -194,15 +206,19 @@ class VideoManagerAPI:
 
     def stop_capture(self):
         """Stop video capture"""
+        logger.info("Stopping video capture...")
         self.reader_running = False
+        self.is_capturing = False
 
         if self.reader_thread and self.reader_thread.is_alive():
-            self.reader_thread.join(timeout=2.0)
+            self.reader_thread.join(timeout=1.0)
+        self.reader_thread = None
 
         if self.video_processes:
             self.video_processes.stop()
+            self.video_processes = None
 
-        self.is_capturing = False
+        self.is_initialized = False
         logger.info("Video capture stopped")
 
     def _frame_reader_loop(self):

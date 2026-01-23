@@ -1,0 +1,12 @@
+#!/bin/bash
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+CURRENT="$DIR"
+while [ "$CURRENT" != "/" ]; do
+  if [ -f "$CURRENT/backend/main.py" ]; then
+    python3 "$CURRENT/backend/main.py" "$@"
+    exit $?
+  fi
+  CURRENT="$(dirname "$CURRENT")"
+done
+echo "Error: Could not find backend/main.py" >&2
+exit 1

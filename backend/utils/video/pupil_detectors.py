@@ -20,6 +20,7 @@ class PupilResult:
     radius: int
     confidence: float  # 0.0 - 1.0
     mask: Optional[np.ndarray] = None  # Para visualización debug
+    found: bool = True
 
 
 @dataclass
@@ -64,7 +65,8 @@ class BasePupilDetector(ABC):
             config: Configuración del detector
 
         Returns:
-            PupilResult con la posición de la pupila o None si no se detectó
+            PupilResult con la posición de la pupila.
+            Si no se detectó, retorna PupilResult con found=False y la máscara de debug.
         """
         pass
 
@@ -158,7 +160,7 @@ class LegacyPupilDetector(BasePupilDetector):
             mask = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
 
             if not contours:
-                return None
+                return PupilResult(0, 0, 0, 0.0, mask, found=False)
 
             # 5. Filtrar contornos válidos
             valid_contours = []
@@ -168,7 +170,7 @@ class LegacyPupilDetector(BasePupilDetector):
                     valid_contours.append(c)
 
             if not valid_contours:
-                return None
+                return PupilResult(0, 0, 0, 0.0, mask, found=False)
 
             # 6. Tomar el contorno más grande
             largest_contour = max(valid_contours, key=cv2.contourArea)
@@ -211,12 +213,13 @@ class LegacyPupilDetector(BasePupilDetector):
                 center_y=center_y,
                 radius=radius,
                 confidence=confidence,
-                mask=mask
+                mask=mask,
+                found=True
             )
 
         except Exception as e:
             print(f"Error en LegacyPupilDetector: {e}")
-            return None
+            return PupilResult(0, 0, 0, 0.0, None, found=False)
 
 
 class FastPupilDetector(BasePupilDetector):
@@ -241,6 +244,9 @@ class FastPupilDetector(BasePupilDetector):
     def detect(self, eye_gray: np.ndarray, config: DetectorConfig) -> Optional[PupilResult]:
         try:
             eh, ew = eye_gray.shape[:2]
+            
+            # Crear máscara para debug INICIALMENTE
+            mask = cv2.cvtColor(eye_gray.copy(), cv2.COLOR_GRAY2BGR)
 
             # Determinar región de búsqueda
             if self.last_position is not None:
@@ -248,6 +254,13 @@ class FastPupilDetector(BasePupilDetector):
                 search_region, offset_x, offset_y = self._get_search_window(
                     eye_gray, config.search_window_multiplier
                 )
+                
+                # Dibujar ventana de búsqueda en máscara
+                window_size = int(self.last_radius * config.search_window_multiplier)
+                cv2.rectangle(mask,
+                             (offset_x, offset_y),
+                             (offset_x + search_region.shape[1], offset_y + search_region.shape[0]),
+                             (255, 255, 0), 1)
             else:
                 # Búsqueda en toda la imagen
                 search_region = eye_gray
@@ -257,7 +270,7 @@ class FastPupilDetector(BasePupilDetector):
             dark_center = self._find_darkest_region(search_region)
             if dark_center is None:
                 self.frames_without_detection += 1
-                return None
+                return PupilResult(0, 0, 0, 0.0, mask, found=False)
 
             dark_x, dark_y = dark_center
 
@@ -273,6 +286,12 @@ class FastPupilDetector(BasePupilDetector):
                 local_threshold,
                 config.starburst_min_gradient
             )
+            
+            # Dibujar puntos del starburst en máscara
+            for px, py in border_points:
+                abs_px = int(px + offset_x)
+                abs_py = int(py + offset_y)
+                cv2.circle(mask, (abs_px, abs_py), 1, (0, 255, 255), -1)
 
             if len(border_points) < 4:
                 # No suficientes puntos, usar fallback con threshold
@@ -281,7 +300,7 @@ class FastPupilDetector(BasePupilDetector):
                 )
                 if result is None:
                     self.frames_without_detection += 1
-                    return None
+                    return PupilResult(0, 0, 0, 0.0, mask, found=False)
                 center_x, center_y, radius = result
             else:
                 # Calcular centro y radio desde puntos del starburst
@@ -294,7 +313,7 @@ class FastPupilDetector(BasePupilDetector):
             # Validar que esté dentro de la imagen
             if not (0 <= final_x < ew and 0 <= final_y < eh):
                 self.frames_without_detection += 1
-                return None
+                return PupilResult(0, 0, 0, 0.0, mask, found=False)
 
             # Limitar radio
             min_radius = 5
@@ -309,24 +328,7 @@ class FastPupilDetector(BasePupilDetector):
             self.last_radius = radius
             self.frames_without_detection = 0
 
-            # Crear máscara para debug
-            mask = cv2.cvtColor(eye_gray.copy(), cv2.COLOR_GRAY2BGR)
-
-            # Dibujar ventana de búsqueda
-            if offset_x > 0 or offset_y > 0:
-                window_size = int(self.last_radius * config.search_window_multiplier)
-                cv2.rectangle(mask,
-                             (offset_x, offset_y),
-                             (offset_x + search_region.shape[1], offset_y + search_region.shape[0]),
-                             (255, 255, 0), 1)
-
-            # Dibujar puntos del starburst
-            for px, py in border_points:
-                abs_px = int(px + offset_x)
-                abs_py = int(py + offset_y)
-                cv2.circle(mask, (abs_px, abs_py), 1, (0, 255, 255), -1)
-
-            # Dibujar círculo final
+            # Dibujar círculo final en máscara
             cv2.circle(mask, (final_x, final_y), radius, (0, 255, 0), 1)
             cv2.circle(mask, (final_x, final_y), 2, (255, 0, 0), -1)
 
@@ -335,13 +337,14 @@ class FastPupilDetector(BasePupilDetector):
                 center_y=final_y,
                 radius=radius,
                 confidence=confidence,
-                mask=mask
+                mask=mask,
+                found=True
             )
 
         except Exception as e:
             print(f"Error en FastPupilDetector: {e}")
             self.frames_without_detection += 1
-            return None
+            return PupilResult(0, 0, 0, 0.0, None, found=False)
 
     def _get_search_window(self, image: np.ndarray, multiplier: float) -> Tuple[np.ndarray, int, int]:
         """Extrae ventana de búsqueda alrededor de la última posición conocida."""
@@ -403,7 +406,7 @@ class FastPupilDetector(BasePupilDetector):
         if region.size == 0:
             return 50  # Valor por defecto
 
-        darkest_value = np.min(region)
+        darkest_value = int(np.min(region))
 
         # Umbral = valor más oscuro + porcentaje de offset
         threshold = int(darkest_value + (255 - darkest_value) * percent_offset / 100)
@@ -428,7 +431,8 @@ class FastPupilDetector(BasePupilDetector):
             dx = np.cos(angle)
             dy = np.sin(angle)
 
-            prev_value = image[center_y, center_x] if 0 <= center_y < h and 0 <= center_x < w else 0
+            # Cast to int to avoid numpy uint8 overflow during subtraction later
+            prev_value = int(image[center_y, center_x]) if 0 <= center_y < h and 0 <= center_x < w else 0
 
             # Recorrer el rayo desde el centro hacia afuera
             for step in range(1, max_length):
@@ -439,7 +443,7 @@ class FastPupilDetector(BasePupilDetector):
                 if not (0 <= x < w and 0 <= y < h):
                     break
 
-                current_value = image[y, x]
+                current_value = int(image[y, x])
                 gradient = current_value - prev_value
 
                 # Detectar borde: cambio significativo de oscuro a claro
@@ -540,7 +544,8 @@ class HybridPupilDetector(BasePupilDetector):
         if self.use_legacy_next_frame or not self.is_locked or needs_revalidation:
             result = self.legacy_detector.detect(eye_gray, config)
 
-            if result is not None:
+            # Verificar si se encontró y cumple confianza
+            if result.found:
                 # Validar confianza antes de aceptar
                 if result.confidence >= config.min_confidence_for_lock:
                     # Detección confiable - transferir a Fast
@@ -560,6 +565,8 @@ class HybridPupilDetector(BasePupilDetector):
                         # Mostrar confianza en debug
                         cv2.putText(result.mask, f"C:{result.confidence:.2f}", (5, 30),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 0), 1)
+                    
+                    return result
                 else:
                     # Confianza insuficiente - no hacer lock, seguir buscando
                     self.is_locked = False
@@ -571,18 +578,18 @@ class HybridPupilDetector(BasePupilDetector):
                         cv2.putText(result.mask, f"C:{result.confidence:.2f}", (5, 30),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 165, 255), 1)
 
-                    # Retornar el resultado pero sin lock (para que el usuario vea qué detecta)
+                    # Retornar el resultado aunque no sea confiable (para debug)
                     return result
             else:
                 self.consecutive_fallbacks += 1
                 self.is_locked = False
-
-            return result
+                # Retornar resultado fallido (contiene máscara)
+                return result
 
         # Caso 2: Tenemos lock - usar Fast detector
         result = self.fast_detector.detect(eye_gray, config)
 
-        if result is not None:
+        if result.found:
             self.consecutive_fallbacks = 0
             # Marcar como resultado de fast en mask
             if result.mask is not None:
@@ -593,12 +600,15 @@ class HybridPupilDetector(BasePupilDetector):
             return result
 
         # Caso 3: Fast falló - verificar si necesitamos fallback
+        # Si falló, result contiene la máscara de intento fallido
         if self.fast_detector.frames_without_detection >= config.fallback_threshold:
             self.use_legacy_next_frame = True
             self.is_locked = False
             self.fast_detector.reset()
-
-        return None
+            # Opcional: intentar legacy inmediatamente?
+            # Por ahora retornamos el fallo del fast, el siguiente frame usará legacy
+        
+        return result
 
 
 # Factory para crear el detector según configuración

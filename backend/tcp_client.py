@@ -10,8 +10,10 @@ from protocol import Message, FrameCodec, MessageType
 
 logger = logging.getLogger(__name__)
 
+# TCP connection settings for Rust orchestrator
+# Must match the values in src-tauri/src/bridge/tcp_server.rs
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 9999
+DEFAULT_PORT = 9999  # Rust TCP server listens on this port
 READ_BUFFER_SIZE = 64 * 1024
 
 

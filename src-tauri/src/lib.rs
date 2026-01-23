@@ -1,5 +1,6 @@
 use std::sync::{Mutex, Arc};
 use tauri::{State, Window, Manager};
+use tauri_plugin_shell::process::CommandChild;
 
 pub mod bridge;
 pub mod database;
@@ -24,6 +25,7 @@ pub struct AppState {
     pub db: Arc<DatabaseService>,
     pub python_bridge: Arc<PythonBridge>,
     pub ws_server: Arc<WebSocketServer>,
+    pub python_child: Arc<Mutex<Option<CommandChild>>>,
 }
 
 // --- Math & Processing Commands ---
@@ -295,10 +297,7 @@ pub fn run() {
                             let _ = bridge_cmds.stop_capture().await;
                         }
                         WsMessage::SetConfig { key, value } => {
-                            // Convert value to i32 if it is a number, for legacy config
-                            if let Some(v) = value.as_i64() {
-                                let _ = bridge_cmds.set_camera_config(&key, v as i32).await;
-                            }
+                            let _ = bridge_cmds.set_config(&key, value).await;
                         }
                         WsMessage::ConnectHardware { port: _, baud_rate: _ } => {
                             // Find a window to pass to connect (any window will do for events)
@@ -323,30 +322,47 @@ pub fn run() {
                 bridge_for_tcp.start();
             });
 
-            // Start Python Sidecar
+            // Start Python Sidecar with proper lifecycle management
+            let python_child: Arc<Mutex<Option<CommandChild>>> = Arc::new(Mutex::new(None));
+            let python_child_clone = Arc::clone(&python_child);
+
             let shell = app.shell();
-            let sidecar = shell.sidecar("python-worker").map_err(|e| e.to_string())?;
-            
-            tauri::async_runtime::spawn(async move {
-                println!("Starting Python sidecar...");
-                let (mut rx, _child) = sidecar.spawn().expect("Failed to spawn python-worker sidecar");
-                
-                while let Some(event) = rx.recv().await {
-                    match event {
-                        tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
-                            println!("[Python] {}", String::from_utf8_lossy(&line).trim());
+            match shell.sidecar("python-worker") {
+                Ok(sidecar) => {
+                    tauri::async_runtime::spawn(async move {
+                        println!("Starting Python sidecar...");
+                        match sidecar.spawn() {
+                            Ok((mut rx, child)) => {
+                                println!("[Python] Sidecar spawned successfully (PID: {:?})", child.pid());
+                                // Store child handle for cleanup
+                                *python_child_clone.lock().unwrap() = Some(child);
+
+                                while let Some(event) = rx.recv().await {
+                                    match event {
+                                        tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
+                                            println!("[Python] {}", String::from_utf8_lossy(&line).trim());
+                                        }
+                                        tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
+                                            eprintln!("[Python Error] {}", String::from_utf8_lossy(&line).trim());
+                                        }
+                                        tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
+                                            println!("[Python] Process terminated with code {:?}", payload.code);
+                                            *python_child_clone.lock().unwrap() = None;
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("[Python] Failed to spawn sidecar: {:?}", e);
+                            }
                         }
-                        tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
-                            eprintln!("[Python Error] {}", String::from_utf8_lossy(&line).trim());
-                        }
-                        tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
-                            println!("[Python] Process terminated with code {:?}", payload.code);
-                            // In a production app, we should probably implement auto-restart here
-                        }
-                        _ => {}
-                    }
+                    });
                 }
-            });
+                Err(e) => {
+                    eprintln!("[Python] Failed to create sidecar command: {}", e);
+                }
+            }
 
             let ws_broadcast = Arc::clone(&ws_server);
             let mut bridge_events = python_bridge.subscribe();
@@ -417,9 +433,34 @@ pub fn run() {
                 db: Arc::new(db_service),
                 python_bridge,
                 ws_server,
+                python_child,
             });
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                // Kill Python process when window is destroyed
+                if let Some(state) = window.try_state::<AppState>() {
+                    if let Ok(mut child_guard) = state.python_child.lock() {
+                        if let Some(child) = child_guard.take() {
+                            let pid = child.pid();
+                            println!("[Python] Killing sidecar on window close (PID: {:?})", pid);
+                            // Kill the child process
+                            let _ = child.kill();
+                            // Also kill the entire process group to catch Python subprocess
+                            #[cfg(unix)]
+                            {
+                                use std::process::Command;
+                                // Kill all processes in the process group
+                                let _ = Command::new("pkill")
+                                    .args(["-TERM", "-P", &pid.to_string()])
+                                    .output();
+                            }
+                        }
+                    }
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             get_version,

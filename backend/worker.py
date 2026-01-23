@@ -11,21 +11,29 @@ import json
 import traceback
 from typing import Optional, Dict, Any
 
-from tcp_client import ReconnectingTcpClient
+from tcp_client import ReconnectingTcpClient, DEFAULT_PORT, DEFAULT_HOST
 from protocol import Message, Command, MessageType
 import dependencies
 from managers.video_manager_api import VideoManagerAPI
 
-# Configure logging
+# Configure logging with forced flush
+class FlushingStreamHandler(logging.StreamHandler):
+    def emit(self, record):
+        super().emit(record)
+        self.flush()
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # More verbose for debugging
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[FlushingStreamHandler(sys.stdout)]
 )
 logger = logging.getLogger("SIEV-Worker")
 
+# Also capture warnings
+logging.captureWarnings(True)
+
 class SievWorker:
-    def __init__(self, host: str = "127.0.0.1", port: int = 9999):
+    def __init__(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
         self.host = host
         self.port = port
         self.client = ReconnectingTcpClient(
@@ -149,12 +157,74 @@ class SievWorker:
 
             elif cmd.cmd == "set_config":
                 params = cmd.params
-                # Map old keys to new if needed, or handle full sync
-                if cmd.params.get('brightness') is not None:
-                    self.video_manager.update_config(brightness=params.get("brightness"))
-                if cmd.params.get('contrast') is not None:
-                    self.video_manager.update_config(contrast=params.get("contrast"))
-                # ... handle other keys
+                
+                # Handle structured key/value pair from WsMessage::SetConfig
+                if "key" in params and "value" in params:
+                    key = params["key"]
+                    value = params["value"]
+                    
+                    if key == "session_update" and isinstance(value, dict):
+                        # Bulk update of multiple config parameters
+                        # Filter to only pass valid arguments to update_config
+                        valid_args = [
+                            'brightness', 'contrast', 'threshold', 'erode', 
+                            'nose_width', 'eye_height', 'use_yolo', 'show_debug'
+                        ]
+                        filtered_args = {k: v for k, v in value.items() if k in valid_args}
+                        if filtered_args:
+                            self.video_manager.update_config(**filtered_args)
+                        success = True
+                        
+                    elif key == "pupil_mode":
+                        # Specific method for pupil detection mode
+                        self.video_manager.set_pupil_mode(value)
+                        success = True
+                        
+                    elif key == "camera_setup" and isinstance(value, dict):
+                        # Re-initialization parameters
+                        # Only initialize if safe (e.g. not capturing)
+                        if not self.video_manager.is_capturing:
+                            valid_init_args = [
+                                'camera_id', 'width', 'height', 'fps', 
+                                'brightness', 'contrast', 'threshold', 'erode',
+                                'nose_width', 'eye_height', 'use_yolo', 'storage_path'
+                            ]
+                            filtered_init = {k: v for k, v in value.items() if k in valid_init_args}
+                            self.video_manager.initialize(**filtered_init)
+                        else:
+                            logger.warning("Received camera_setup while capturing. Ignoring to prevent interruption.")
+                        success = True
+                        
+                    else:
+                        # Standard configuration update
+                        # Verify key is valid for update_config
+                        valid_config_args = [
+                            'brightness', 'contrast', 'threshold', 'erode', 
+                            'nose_width', 'eye_height', 'use_yolo', 'show_debug'
+                        ]
+                        if key in valid_config_args:
+                            self.video_manager.update_config(**{key: value})
+                        else:
+                            logger.warning(f"Ignored unknown config key in set_config: {key}")
+                        success = True
+                        
+                else:
+                    # Handle direct flat parameters (legacy or bulk)
+                    config_to_update = params
+                    valid_config_args = [
+                        'brightness', 'contrast', 'threshold', 'erode', 
+                        'nose_width', 'eye_height', 'use_yolo', 'show_debug'
+                    ]
+                    # Filter keys
+                    filtered_config = {k: v for k, v in config_to_update.items() if k in valid_config_args}
+                    
+                    if filtered_config:
+                        self.video_manager.update_config(**filtered_config)
+                    
+                    success = True
+
+            elif cmd.cmd == "set_pupil_config":
+                self.video_manager.set_pupil_config(**cmd.params)
                 success = True
 
             elif cmd.cmd == "list_cameras":
@@ -234,9 +304,10 @@ class SievWorker:
 
 if __name__ == "__main__":
     import multiprocessing
+    import signal
     multiprocessing.freeze_support()
-    
-    port = 9999
+
+    port = DEFAULT_PORT
     if len(sys.argv) > 1:
         try:
             port = int(sys.argv[1])
@@ -244,7 +315,23 @@ if __name__ == "__main__":
             pass
             
     worker = SievWorker(port=port)
+    
+    # Handle signals for graceful shutdown
+    def handle_signal(sig, frame):
+        logger.info(f"Received signal {sig}, initiating shutdown...")
+        asyncio.create_task(worker.stop())
+        
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    # Register signal handlers if supported (not on Windows usually, but this is Linux)
+    if sys.platform != 'win32':
+        loop.add_signal_handler(signal.SIGINT, lambda: asyncio.create_task(worker.stop()))
+        loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.create_task(worker.stop()))
+
     try:
-        asyncio.run(worker.start())
+        loop.run_until_complete(worker.start())
     except KeyboardInterrupt:
         pass
+    finally:
+        loop.close()

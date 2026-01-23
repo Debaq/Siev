@@ -7,18 +7,20 @@ from multiprocessing import Value, Array
 import time
 import ctypes
 import logging
+import sys
 from utils.path_utils import get_model_file_path
 from utils.video.simulated_box import SimulatedBox
 from utils.video.pupil_detectors import (
     create_pupil_detector, DetectorConfig, PupilResult
 )
 
+# Use the root logger configured in worker.py
 logger = logging.getLogger(__name__)
 
 
 class VideoProcesses:
-    def __init__(self, camera_id=2, cap_width=960, 
-                 cap_height=540, cap_fps=120, 
+    def __init__(self, camera_id=0, cap_width=960,
+                 cap_height=540, cap_fps=120,
                  brightness=-21, contrast=50):
         # Configuración de la cámara
         self.camera_id = camera_id
@@ -95,41 +97,58 @@ class VideoProcesses:
     
     def setup_camera(self):
         """Configura la cámara con los parámetros actuales"""
-        logger.info(f"Opening camera {self.camera_id} via V4L2...")
+        print(f"--- INICIANDO CONFIGURACIÓN DE CÁMARA ---", flush=True)
+        print(f"Configuración Objetivo: ID={self.camera_id}, Resolución={self.cap_width}x{self.cap_height}, FPS={self.cap_fps}", flush=True)
+        print(f"Parámetros Hardware: Brillo={self.brightness.value}, Contraste={self.contrast.value}", flush=True)
         
         # En Linux, CAP_V4L2 es más rápido y estable
-        cap = cv2.VideoCapture(self.camera_id, cv2.CAP_V4L2)
+        cap = cv2.VideoCapture(self.camera_id)
         
-        # 1. SOLICITAR MJPG PRIMERO
-        logger.info(f"Requesting MJPG format")
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
+        if not cap.isOpened():
+            logger.error(f"ERROR: No se pudo abrir el elemento VideoCapture para el ID {self.camera_id}")
+            return cap
+
+        # Obtener nombre del backend
+        backend_name = cap.getBackendName()
+        print(f"Backend OpenCV: {backend_name}", flush=True)
+
+        # 1. SOLICITAR MJPG
+        fourcc_mjpg = cv2.VideoWriter_fourcc('M', 'J', 'P', 'G')
+        success_fourcc = cap.set(cv2.CAP_PROP_FOURCC, fourcc_mjpg)
+        print(f"Establecer MJPG FourCC: {'ÉXITO' if success_fourcc else 'FALLIDO'}", flush=True)
         
         # 2. CONFIGURAR RESOLUCIÓN
-        logger.info(f"Setting resolution to {self.cap_width}x{self.cap_height}")
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cap_width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cap_height)
+        success_w = cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cap_width)
+        success_h = cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cap_height)
+        print(f"Establecer Resolución {self.cap_width}x{self.cap_height}: Ancho={'OK' if success_w else 'ERR'}, Alto={'OK' if success_h else 'ERR'}", flush=True)
         
         # 3. CONFIGURAR FPS
-        logger.info(f"Setting target FPS to {self.cap_fps}")
-        cap.set(cv2.CAP_PROP_FPS, self.cap_fps)
+        success_fps = cap.set(cv2.CAP_PROP_FPS, self.cap_fps)
+        print(f"Establecer FPS Objetivo {self.cap_fps}: {'ÉXITO' if success_fps else 'FALLIDO'}", flush=True)
         
         # Otras configuraciones de hardware
         cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         
-        # Verificar configuración real
+        # Verificar configuración real aplicada por el driver
         w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
         h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
         f = cap.get(cv2.CAP_PROP_FPS)
-        fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
-        fourcc_str = "".join([chr((fourcc >> 8 * i) & 0xFF) for i in range(4)])
+        fourcc_val = int(cap.get(cv2.CAP_PROP_FOURCC))
+        fourcc_str = "".join([chr((fourcc_val >> 8 * i) & 0xFF) for i in range(4)])
         
-        logger.info(f"CAMERA STATUS: {w}x{h} @ {f} FPS, Format: {fourcc_str}")
+        print(f"--- ESTADO FINAL DEL ELEMENTO CV ---", flush=True)
+        print(f"Resolución Real: {w}x{h}", flush=True)
+        print(f"FPS Real: {f}", flush=True)
+        print(f"Formato Real (FourCC): {fourcc_str} ({fourcc_val})", flush=True)
         
         # Aplicar brillo/contraste
-        cap.set(cv2.CAP_PROP_BRIGHTNESS, self.brightness.value)
-        cap.set(cv2.CAP_PROP_CONTRAST, self.contrast.value)
+        success_b = cap.set(cv2.CAP_PROP_BRIGHTNESS, self.brightness.value)
+        success_c = cap.set(cv2.CAP_PROP_CONTRAST, self.contrast.value)
+        print(f"Establecer Brillo ({self.brightness.value}): {'OK' if success_b else 'ERR'}", flush=True)
+        print(f"Establecer Contraste ({self.contrast.value}): {'OK' if success_c else 'ERR'}", flush=True)
         
+        print(f"--- CONFIGURACIÓN DE CÁMARA COMPLETADA ---", flush=True)
         return cap
     
     def _try_open_camera(self, max_attempts=5, delay=0.5):
@@ -163,11 +182,12 @@ class VideoProcesses:
         """Proceso dedicado exclusivamente a capturar frames"""
         logger.info("Starting capture process")
 
-        # Intentar abrir la cámara
-        cap, success = self._try_open_camera(max_attempts=5, delay=0.5)
+        # Intentar abrir la cámara con más persistencia
+        # Aumentamos intentos y delay para dar tiempo al hardware de liberarse
+        cap, success = self._try_open_camera(max_attempts=10, delay=1.0)
 
         if not success:
-            logger.error("Error: Could not open camera after 5 attempts")
+            logger.error("Error: Could not open camera after 10 attempts")
             self.cap_error.value = True
             return
 
@@ -546,7 +566,6 @@ class VideoProcesses:
                 result = detector.detect(eye_gray, detector_config)
 
                 if result:
-                    cx, cy, radius = result.center_x, result.center_y, result.radius
                     mask = result.mask
 
                     # Determinar color por ojo
@@ -565,6 +584,7 @@ class VideoProcesses:
                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
 
                     # Modo debug: mostrar máscara de umbralización
+                    # Se muestra incluso si no se encontró pupila, para diagnosticar fallos
                     if self.slider_th_pressed.value:
                         roi = final_frame[ey:ey+eh, ex:ex+ew]
                         # Superponer máscara con transparencia
@@ -579,24 +599,28 @@ class VideoProcesses:
                         cv2.putText(final_frame, th_text, (ex + 2, ey + eh - 5),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 255, 255), 1, cv2.LINE_AA)
 
-                    # Dibujar círculo de la pupila
-                    cv2.circle(final_frame[ey:ey+eh, ex:ex+ew], (cx, cy), radius, color, 1)
+                    # Dibujar círculo y guardar posición SOLO si se encontró
+                    if result.found:
+                        cx, cy, radius = result.center_x, result.center_y, result.radius
 
-                    # Calcular coordenadas absolutas
-                    abs_x = ex + cx
-                    abs_y = ey + cy
+                        # Dibujar círculo de la pupila
+                        cv2.circle(final_frame[ey:ey+eh, ex:ex+ew], (cx, cy), radius, color, 1)
 
-                    # Dibujar cruces en centro de pupila
-                    longitud_cruz = 5
-                    cv2.line(final_frame, (abs_x - longitud_cruz, abs_y), (abs_x + longitud_cruz, abs_y), color, 1)
-                    cv2.line(final_frame, (abs_x, abs_y - longitud_cruz), (abs_x, abs_y + longitud_cruz), color, 1)
+                        # Calcular coordenadas absolutas
+                        abs_x = ex + cx
+                        abs_y = ey + cy
 
-                    # Guardar posición
-                    abs_y_neg = abs_y * -1
-                    if is_right_eye:
-                        pupil_positions[0] = [abs_x, abs_y_neg]
-                    else:
-                        pupil_positions[1] = [abs_x, abs_y_neg]
+                        # Dibujar cruces en centro de pupila
+                        longitud_cruz = 5
+                        cv2.line(final_frame, (abs_x - longitud_cruz, abs_y), (abs_x + longitud_cruz, abs_y), color, 1)
+                        cv2.line(final_frame, (abs_x, abs_y - longitud_cruz), (abs_x, abs_y + longitud_cruz), color, 1)
+
+                        # Guardar posición
+                        abs_y_neg = abs_y * -1
+                        if is_right_eye:
+                            pupil_positions[0] = [abs_x, abs_y_neg]
+                        else:
+                            pupil_positions[1] = [abs_x, abs_y_neg]
 
             # Dibujar indicador de modo debug
             if self.slider_th_pressed.value:
@@ -762,11 +786,23 @@ class VideoProcesses:
 
     def start(self):
         """Inicia todos los procesos"""
+        # Reset running flag (may be False from previous stop)
+        self.running.value = True
+
+        # Create fresh queues
+        self.frame_queue = mp.Queue(maxsize=2)
+        self.detection_queue = mp.Queue(maxsize=2)
+        self.result_queue = mp.Queue(maxsize=2)
         self.ui_queue = mp.Queue(maxsize=2)
 
         self.capture_process = mp.Process(target=self.capture_worker)
         self.detection_process = mp.Process(target=self.detection_worker)
         self.processing_process = mp.Process(target=self.processing_worker)
+
+        # Set as daemon so they die if parent dies
+        self.capture_process.daemon = True
+        self.detection_process.daemon = True
+        self.processing_process.daemon = True
 
         self.capture_process.start()
         self.detection_process.start()
@@ -848,40 +884,42 @@ class VideoProcesses:
     def stop(self):
         """Detiene todos los procesos de forma segura"""
         logger.info("Initiating process stop...")
-        
+
         # Primero señalizar que los procesos deben terminar
         if hasattr(self, 'running'):
             self.running.value = False
-        
+
         # Dar tiempo para que los procesos terminen normalmente
-        time.sleep(0.5)
-        
+        time.sleep(0.3)
+
         # Limpiar colas para evitar bloqueos
         for queue_name in ['frame_queue', 'detection_queue', 'result_queue', 'ui_queue']:
             if hasattr(self, queue_name):
                 self._clear_queue(getattr(self, queue_name))
-        
+
         # Verificar y terminar procesos uno por uno
         for process_name in ['capture_process', 'detection_process', 'processing_process']:
             if hasattr(self, process_name):
                 process = getattr(self, process_name)
-                if process and process.is_alive():
-                    logger.info(f"Stopping {process_name}")
-                    process.join(timeout=1.0)  # Dar más tiempo para terminar limpiamente
-                    
+                if process is not None:
                     if process.is_alive():
-                        logger.warning(f"Forcing termination of {process_name}")
-                        process.terminate()
+                        logger.info(f"Stopping {process_name}")
                         process.join(timeout=0.5)
-                        
-                        # Si sigue vivo después de terminate, usar SIGKILL como último recurso
+
                         if process.is_alive():
-                            logger.error(f"Using SIGKILL for {process_name}")
-                            try:
-                                import os, signal
-                                os.kill(process.pid, signal.SIGKILL)
-                            except Exception as e:
-                                logger.error(f"Error terminating process: {e}")
+                            logger.warning(f"Forcing termination of {process_name}")
+                            process.terminate()
+                            process.join(timeout=0.3)
+
+                            if process.is_alive():
+                                logger.error(f"Using SIGKILL for {process_name}")
+                                try:
+                                    import os, signal
+                                    os.kill(process.pid, signal.SIGKILL)
+                                except Exception as e:
+                                    logger.error(f"Error terminating process: {e}")
+                    # Reset reference to None
+                    setattr(self, process_name, None)
         
         logger.info("All processes stopped")
 

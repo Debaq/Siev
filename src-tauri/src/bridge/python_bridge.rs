@@ -194,12 +194,18 @@ impl PythonBridge {
         self.send_command("list_cameras").await
     }
 
-    /// Set camera configuration
-    pub async fn set_camera_config(&self, key: &str, value: i32) -> io::Result<()> {
+    /// Set generic configuration
+    pub async fn set_config(&self, key: &str, value: serde_json::Value) -> io::Result<()> {
         let params = serde_json::json!({
-            key: value
+            "key": key,
+            "value": value
         });
         self.send_command_with_params("set_config", params).await
+    }
+
+    /// Set camera configuration (Legacy - kept for compatibility)
+    pub async fn set_camera_config(&self, key: &str, value: i32) -> io::Result<()> {
+        self.set_config(key, serde_json::Value::from(value)).await
     }
 
     /// Set pupil detection configuration
