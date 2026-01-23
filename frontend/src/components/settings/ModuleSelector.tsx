@@ -1,5 +1,5 @@
 import React from 'react';
-import { LucideIcon, FileText, Activity, Monitor, LayoutGrid, Lock } from 'lucide-react';
+import { LucideIcon } from 'lucide-react';
 
 export interface ModuleDefinition {
     id: string;

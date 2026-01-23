@@ -32,9 +32,7 @@ function App() {
   const [activeView, setActiveView] = useState<'capture' | 'patients' | 'settings' | 'test_selection' | 'onboarding' | 'user_selection'>('user_selection')
   const [currentPatient, setCurrentPatient] = useState<Patient | null>(null)
   const [currentTestType, setCurrentTestType] = useState<string | null>(null)
-  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null)
   const [activeSpecialist, setActiveSpecialist] = useState<Specialist | null>(null)
-  const [isInitialized, setIsInitialized] = useState(false)
 
   // App State
   const [isCapturing, setIsCapturing] = useState(false)
@@ -50,7 +48,6 @@ function App() {
         if (initialized !== 'true') {
           setActiveView('onboarding')
         } else {
-          setIsInitialized(true)
           const specialists = await getSpecialists()
           if (specialists.length === 1) {
               setActiveSpecialist(specialists[0])
@@ -272,16 +269,11 @@ function App() {
                           }}
                           onSelectTest={async (testId) => { 
                               if (currentPatient) {
-                                const session = await createSession(
+                                await createSession(
                                     currentPatient.id, 
                                     activeSpecialist?.id || null, 
                                     `Evaluación: ${testId}`
                                 )
-                                if (session) {
-                                    setCurrentSessionId(session.id)
-                                }
-                              } else {
-                                setCurrentSessionId(null);
                               }
                               
                               setCurrentTestType(testId)

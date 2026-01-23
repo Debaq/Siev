@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, User, Trash2, LogIn } from 'lucide-react'
+import { Plus, User, Trash2 } from 'lucide-react'
 import { useTauriDb, Specialist } from '../hooks/useTauriDb'
 
 interface UserSelectionScreenProps {

@@ -1,4 +1,4 @@
-import { Video, Users, Settings, LogOut } from 'lucide-react'
+import { Users, Settings, LogOut } from 'lucide-react'
 
 interface MenuItemProps {
   view: string

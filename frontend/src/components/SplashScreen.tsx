@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react'
-import { Activity, Eye } from 'lucide-react'
+import { useState, useEffect } from 'react'
 
 interface SplashScreenProps {
   onFinished: () => void

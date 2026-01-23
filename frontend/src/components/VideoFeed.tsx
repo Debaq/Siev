@@ -1,4 +1,5 @@
 import { Video, VideoOff } from 'lucide-react'
+import { useRef, useEffect, useState } from 'react'
 import { useWebSocket } from '../contexts/WebSocketContext'
 
 interface VideoFeedProps {
@@ -6,7 +7,46 @@ interface VideoFeedProps {
 }
 
 function VideoFeed({ isCapturing }: VideoFeedProps) {
-  const { videoFrame } = useWebSocket()
+  const { addListener, removeListener } = useWebSocket()
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [hasSignal, setHasSignal] = useState(false)
+
+  useEffect(() => {
+    if (!isCapturing) {
+        setHasSignal(false);
+        return;
+    }
+
+    const image = new Image();
+    
+    const handleFrame = (data: string) => {
+        if (!canvasRef.current) return;
+        setHasSignal(true);
+        
+        // Load image and draw to canvas
+        // Note: Ideally backend sends blobs, but for base64 this is the way
+        image.onload = () => {
+            if (!canvasRef.current) return;
+            // Update canvas dimensions if needed to match source
+            if (canvasRef.current.width !== image.width || canvasRef.current.height !== image.height) {
+                canvasRef.current.width = image.width;
+                canvasRef.current.height = image.height;
+            }
+            const ctx = canvasRef.current.getContext('2d', { alpha: false }); // alpha: false optimizes rendering
+            if (ctx) {
+                ctx.drawImage(image, 0, 0);
+            }
+        };
+        image.src = `data:image/jpeg;base64,${data}`;
+    };
+
+    addListener('video_frame', handleFrame);
+    
+    return () => {
+        removeListener('video_frame', handleFrame);
+        // Clear canvas or state if needed
+    };
+  }, [isCapturing, addListener, removeListener]);
 
   if (!isCapturing) {
     return (
@@ -21,19 +61,19 @@ function VideoFeed({ isCapturing }: VideoFeedProps) {
   }
 
   return (
-    <div className="w-full h-full relative flex items-center justify-center">
-      {videoFrame ? (
-        <img
-          src={`data:image/jpeg;base64,${videoFrame}`}
-          alt="Video Feed"
-          className="max-w-full max-h-full object-contain"
-        />
-      ) : (
-        <div className="flex flex-col items-center gap-2">
+    <div className="w-full h-full relative flex items-center justify-center bg-black">
+      <canvas 
+        ref={canvasRef}
+        className={`max-w-full max-h-full object-contain ${hasSignal ? 'block' : 'hidden'}`}
+      />
+      
+      {!hasSignal && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
           <div className="w-8 h-8 border-2 border-siev-500 border-t-transparent rounded-full animate-spin" />
           <span className="text-xs text-dark-400">Esperando señal...</span>
         </div>
       )}
+      
       {/* Video overlay with status */}
       <div className="absolute top-2 left-2 flex items-center gap-2">
         <div className="glass px-2 py-1 rounded flex items-center gap-2">

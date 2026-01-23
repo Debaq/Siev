@@ -1,5 +1,5 @@
 import React from 'react';
-import { Lock, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 import { SettingsSection } from '../shared/SettingsSection';
 import { SettingsToggle } from '../shared/SettingsToggle';
 

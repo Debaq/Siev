@@ -1,6 +1,40 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  /* SIEV brand colors */
+  --color-siev-50: #f0f9ff;
+  --color-siev-100: #e0f2fe;
+  --color-siev-200: #bae6fd;
+  --color-siev-300: #7dd3fc;
+  --color-siev-400: #38bdf8;
+  --color-siev-500: #0ea5e9;
+  --color-siev-600: #0284c7;
+  --color-siev-700: #0369a1;
+  --color-siev-800: #075985;
+  --color-siev-900: #0c4a6e;
+  --color-siev-950: #082f49;
+
+  /* Dark theme colors */
+  --color-dark-50: #f8fafc;
+  --color-dark-100: #f1f5f9;
+  --color-dark-200: #e2e8f0;
+  --color-dark-300: #cbd5e1;
+  --color-dark-400: #94a3b8;
+  --color-dark-500: #64748b;
+  --color-dark-600: #475569;
+  --color-dark-700: #334155;
+  --color-dark-800: #1e293b;
+  --color-dark-900: #0f172a;
+  --color-dark-950: #020617;
+
+  /* Fonts */
+  --font-sans: "Inter", "system-ui", "sans-serif";
+  --font-mono: "JetBrains Mono", "Menlo", "monospace";
+
+  /* Animations */
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-spin-slow: spin 2s linear infinite;
+}
 
 @layer base {
   html { 
@@ -9,7 +43,7 @@
   }
   body {
     @apply bg-dark-950 text-dark-100 min-h-screen text-xs;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--font-sans);
   }
 }
 

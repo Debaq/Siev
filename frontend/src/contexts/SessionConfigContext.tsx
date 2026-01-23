@@ -1,15 +1,15 @@
-import React, { createContext, useContext, ReactNode } from 'react';
+import { createContext, useContext, ReactNode } from 'react';
 import { useSessionConfig, UseSessionConfigReturn } from '../hooks/useSessionConfig';
 
 const SessionConfigContext = createContext<UseSessionConfigReturn | null>(null);
 
 interface SessionConfigProviderProps {
     children: ReactNode;
-    apiUrl: string;
+    send?: (msg: any) => void;
 }
 
-export function SessionConfigProvider({ children, apiUrl }: SessionConfigProviderProps) {
-    const sessionConfig = useSessionConfig(apiUrl);
+export function SessionConfigProvider({ children, send }: SessionConfigProviderProps) {
+    const sessionConfig = useSessionConfig(send);
 
     return (
         <SessionConfigContext.Provider value={sessionConfig}>

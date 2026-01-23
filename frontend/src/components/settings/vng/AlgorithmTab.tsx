@@ -1,5 +1,5 @@
 import React from 'react';
-import { Cpu, Target, Zap, Eye, Settings2 } from 'lucide-react';
+import { Target, Eye } from 'lucide-react';
 import { SettingsSection } from '../shared/SettingsSection';
 import { SettingsField } from '../shared/SettingsField';
 import { AppConfig } from '../../../types/config';
@@ -13,7 +13,6 @@ interface AlgorithmTabProps {
 export const AlgorithmTab: React.FC<AlgorithmTabProps> = ({ config, updateConfig }) => {
     const { send } = useWebSocket();
     const pupilConfig = config.vng.pupil_detection;
-    const legacyConfig = pupilConfig.legacy;
 
     // Send debug toggle to backend via WebSocket
     const handleDebugToggle = (enabled: boolean) => {

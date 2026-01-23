@@ -1,4 +1,5 @@
 export interface ModulesConfig {
+    [key: string]: boolean;
     vng: boolean;
     stimulus_screen: boolean;
     vhit: boolean;

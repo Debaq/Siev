@@ -104,30 +104,44 @@ const ChartSection = memo(function ChartSection({
 const MAX_DATA_POINTS = 500
 
 function EyeDataPanel({ isCapturing }: EyeDataPanelProps) {
-  const { eyeData: wsEyeData } = useWebSocket()
+  const { addListener, removeListener } = useWebSocket()
   const [history, setHistory] = useState<EyeDataPoint[]>([])
+  const [isCalibrated, setIsCalibrated] = useState(false)
   const [useRustFilter, setUseRustFilter] = useState(true)
   
   const [splitRatio, setSplitRatio] = useState(0.5)
   const [isResizing, setIsResizing] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Handle new eye data from WebSocket
+  // Handle new eye data from WebSocket via Listener
   useEffect(() => {
-    if (!wsEyeData || !isCapturing) return
+    if (!isCapturing) return
 
-    setHistory(prev => {
-        const newPoint: EyeDataPoint = {
-            timestamp: wsEyeData.timestamp,
-            leftX: wsEyeData.left?.[0] ?? null,
-            leftY: wsEyeData.left?.[1] ?? null,
-            rightX: wsEyeData.right?.[0] ?? null,
-            rightY: wsEyeData.right?.[1] ?? null,
-        }
-        const combined = [...prev, newPoint]
-        return combined.length > MAX_DATA_POINTS ? combined.slice(-MAX_DATA_POINTS) : combined
-    })
-  }, [wsEyeData, isCapturing])
+    const handleData = (data: any) => { // Type 'any' used to match listener signature, cast inside
+         const wsEyeData = data as { left: number[] | null, right: number[] | null, timestamp: number, is_calibrated: boolean };
+         
+         setIsCalibrated(wsEyeData.is_calibrated);
+
+         setHistory(prev => {
+            const newPoint: EyeDataPoint = {
+                timestamp: wsEyeData.timestamp,
+                leftX: wsEyeData.left?.[0] ?? null,
+                leftY: wsEyeData.left?.[1] ?? null,
+                rightX: wsEyeData.right?.[0] ?? null,
+                rightY: wsEyeData.right?.[1] ?? null,
+            }
+            const combined = [...prev, newPoint]
+            // Keep last N points
+            return combined.length > MAX_DATA_POINTS ? combined.slice(-MAX_DATA_POINTS) : combined
+        })
+    };
+
+    addListener('eye_data', handleData);
+    
+    return () => {
+        removeListener('eye_data', handleData);
+    }
+  }, [isCapturing, addListener, removeListener])
 
   // Clear history on restart
   useEffect(() => {
@@ -190,7 +204,7 @@ function EyeDataPanel({ isCapturing }: EyeDataPanelProps) {
             color1="#f43f5e"
             color2="#0ea5e9"
             chartData={chartData}
-            isCalibrated={wsEyeData?.is_calibrated}
+            isCalibrated={isCalibrated}
             onResetCalibration={handleResetCalibration}
             useRustFilter={useRustFilter}
             onToggleFilter={toggleRustFilter}
@@ -231,7 +245,7 @@ function EyeDataPanel({ isCapturing }: EyeDataPanelProps) {
             color1="#f43f5e"
             color2="#0ea5e9"
             chartData={chartData}
-            isCalibrated={wsEyeData?.is_calibrated}
+            isCalibrated={isCalibrated}
             onResetCalibration={handleResetCalibration}
             useRustFilter={useRustFilter}
             onToggleFilter={toggleRustFilter}

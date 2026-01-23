@@ -1,15 +1,14 @@
-import React, { createContext, useContext, ReactNode } from 'react';
-import { useWebSocket as useWebSocketHook, EyeData, ImuData } from '../hooks/useWebSocket';
+import { createContext, useContext, ReactNode } from 'react';
+import { useWebSocket as useWebSocketHook } from '../hooks/useWebSocket';
 
 interface WebSocketContextType {
     connected: boolean;
     pythonStatus: boolean;
     hardwareStatus: boolean;
     cameras: any[];
-    eyeData: EyeData | null;
-    imuData: ImuData | null;
-    videoFrame: string | null;
     send: (msg: any) => void;
+    addListener: (type: string, callback: (data: any) => void) => void;
+    removeListener: (type: string, callback: (data: any) => void) => void;
 }
 
 const WebSocketContext = createContext<WebSocketContextType | undefined>(undefined);

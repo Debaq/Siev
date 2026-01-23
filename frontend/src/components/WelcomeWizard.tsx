@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { 
-  ArrowRight, Check, HardDrive, Building, Activity, LayoutGrid, CheckCircle2
+  ArrowRight, Check, HardDrive, Building, Activity, LayoutGrid
 } from 'lucide-react'
 import { useTauriDb } from '../hooks/useTauriDb'
 import { invoke } from '@tauri-apps/api/core'

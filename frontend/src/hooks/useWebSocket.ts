@@ -28,17 +28,35 @@ export type WsMessage =
     | { type: 'connect_hardware'; port: string; baud_rate: number }
     | { type: 'send_hardware_command'; cmd: string };
 
+type ListenerCallback = (data: any) => void;
+
 export function useWebSocket() {
+    // Low frequency state (UI Status)
     const [connected, setConnected] = useState(false);
     const [pythonStatus, setPythonStatus] = useState(false);
     const [hardwareStatus, setHardwareStatus] = useState(false);
     const [cameras, setCameras] = useState<any[]>([]);
-    const [eyeData, setEyeData] = useState<EyeData | null>(null);
-    const [imuData, setImuData] = useState<ImuData | null>(null);
-    const [videoFrame, setVideoFrame] = useState<string | null>(null);
     
     const ws = useRef<WebSocket | null>(null);
     const reconnectTimeout = useRef<number | null>(null);
+    
+    // Subscription system for high-frequency data
+    const listeners = useRef<Record<string, Set<ListenerCallback>>>({
+        video_frame: new Set(),
+        eye_data: new Set(),
+        imu_data: new Set()
+    });
+
+    const addListener = useCallback((type: string, callback: ListenerCallback) => {
+        if (!listeners.current[type]) listeners.current[type] = new Set();
+        listeners.current[type].add(callback);
+    }, []);
+
+    const removeListener = useCallback((type: string, callback: ListenerCallback) => {
+        if (listeners.current[type]) {
+            listeners.current[type].delete(callback);
+        }
+    }, []);
 
     const connect = useCallback(async () => {
         try {
@@ -61,23 +79,25 @@ export function useWebSocket() {
                     const msg: WsMessage = JSON.parse(event.data);
                     
                     switch (msg.type) {
+                        case 'video_frame':
+                            listeners.current.video_frame.forEach(cb => cb(msg.data));
+                            break;
                         case 'eye_data':
-                            setEyeData({
+                            const eData: EyeData = {
                                 left: msg.left,
                                 right: msg.right,
                                 timestamp: msg.timestamp,
                                 is_calibrated: msg.is_calibrated
-                            });
-                            break;
-                        case 'video_frame':
-                            setVideoFrame(msg.data);
+                            };
+                            listeners.current.eye_data.forEach(cb => cb(eData));
                             break;
                         case 'imu_data':
-                            setImuData({
+                            const iData: ImuData = {
                                 yaw: msg.yaw,
                                 pitch: msg.pitch,
                                 roll: msg.roll
-                            });
+                            };
+                            listeners.current.imu_data.forEach(cb => cb(iData));
                             break;
                         case 'status':
                             setPythonStatus(msg.python_connected);
@@ -98,7 +118,6 @@ export function useWebSocket() {
             socket.onclose = () => {
                 console.warn('WebSocket disconnected');
                 setConnected(false);
-                // Attempt to reconnect after 2 seconds
                 reconnectTimeout.current = window.setTimeout(connect, 2000);
             };
             
@@ -117,12 +136,8 @@ export function useWebSocket() {
     useEffect(() => {
         connect();
         return () => {
-            if (ws.current) {
-                ws.current.close();
-            }
-            if (reconnectTimeout.current) {
-                clearTimeout(reconnectTimeout.current);
-            }
+            if (ws.current) ws.current.close();
+            if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
         };
     }, [connect]);
 
@@ -139,9 +154,8 @@ export function useWebSocket() {
         pythonStatus,
         hardwareStatus,
         cameras,
-        eyeData,
-        imuData,
-        videoFrame,
-        send
+        send,
+        addListener,
+        removeListener
     };
 }

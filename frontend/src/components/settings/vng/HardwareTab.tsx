@@ -1,5 +1,5 @@
 import React from 'react';
-import { Monitor, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { SettingsSection } from '../shared/SettingsSection';
 import { SettingsField } from '../shared/SettingsField';
 import { useTauriHardware } from '../../../hooks/useTauriHardware';
