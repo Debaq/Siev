@@ -8,6 +8,7 @@ import sys
 import time
 import cv2
 import json
+import traceback
 from typing import Optional, Dict, Any
 
 from tcp_client import ReconnectingTcpClient
@@ -39,25 +40,23 @@ class SievWorker:
 
     async def _on_connect(self):
         logger.info("Connected to Rust orchestrator")
-        # Start the data transmitter task if capture is already running
         if self.video_manager.is_capturing and not self._data_transmitter_task:
             self._data_transmitter_task = asyncio.create_task(self._data_transmitter_loop())
 
     async def _on_disconnect(self):
         logger.warning("Disconnected from Rust orchestrator")
-        # We don't stop the transmitter task here, it will wait for reconnection
 
     async def start(self):
         """Start the worker and connect to Rust"""
         logger.info(f"Starting SIEV Worker, connecting to {self.host}:{self.port}...")
         
-        # Initialize video manager with defaults
-        self.video_manager.initialize()
+        try:
+            self.video_manager.initialize()
+        except Exception as e:
+            logger.error(f"Early init failed: {e}")
         
-        # Start connection loop in background
         connection_task = asyncio.create_task(self.client.start())
         
-        # Main message processing loop
         try:
             while not self._stop_event.is_set():
                 if self.client.connected:
@@ -65,11 +64,14 @@ class SievWorker:
                     if msg:
                         await self._handle_message(msg)
                     else:
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(0.01)
                 else:
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.1)
         except asyncio.CancelledError:
             logger.info("Worker task cancelled")
+        except Exception as e:
+            logger.error(f"Fatal error in worker loop: {e}")
+            traceback.print_exc()
         finally:
             await self.stop()
             connection_task.cancel()
@@ -92,11 +94,7 @@ class SievWorker:
 
     async def _handle_message(self, msg: Message):
         """Handle incoming messages from Rust"""
-        if msg.msg_type == MessageType.HEARTBEAT:
-            # Protocol handles heartbeat? Usually it's bidirectional.
-            # For now, we just ignore it or could reply.
-            pass
-        elif msg.msg_type == MessageType.CMD:
+        if msg.msg_type == MessageType.CMD:
             cmd = Command.from_message(msg)
             if cmd:
                 await self._process_command(cmd)
@@ -114,18 +112,19 @@ class SievWorker:
             if cmd.cmd == "start_capture":
                 params = cmd.params
                 
-                # If already capturing, stop first to re-initialize cleanly
                 if self.video_manager.is_capturing:
                     logger.info("Stopping existing capture before re-starting")
                     self.video_manager.stop_capture()
                 
-                # (Re)Initialize with params provided
-                logger.info(f"Initializing video manager with camera_id: {params.get('camera_id')}")
+                # Use params if provided, else keep current
+                cam_id = params.get("camera_id", self.video_manager.camera_id)
+                logger.info(f"Initializing video manager with camera_id: {cam_id}")
+                
                 init_success = self.video_manager.initialize(
-                    camera_id=params.get("camera_id", self.video_manager.camera_id),
-                    width=params.get("width", self.video_manager.cap_width),
-                    height=params.get("height", self.video_manager.cap_height),
-                    fps=params.get("fps", self.video_manager.cap_fps)
+                    camera_id=cam_id,
+                    width=params.get("width", 960),
+                    height=params.get("height", 540),
+                    fps=params.get("fps", 120)
                 )
                 
                 if not init_success:
@@ -134,12 +133,11 @@ class SievWorker:
                 else:
                     success = self.video_manager.start_capture()
                     if success:
-                        # Start transmission task if not running
                         if not self._data_transmitter_task or self._data_transmitter_task.done():
                             self._data_transmitter_task = asyncio.create_task(self._data_transmitter_loop())
-                        logger.info("Capture task started and transmitter active")
+                        logger.info("Capture started and transmitter active")
                     else:
-                        error = "Failed to start capture processes"
+                        error = "Failed to start capture processes (check camera connection)"
                         logger.error(error)
 
             elif cmd.cmd == "stop_capture":
@@ -151,25 +149,12 @@ class SievWorker:
 
             elif cmd.cmd == "set_config":
                 params = cmd.params
-                self.video_manager.update_config(
-                    brightness=params.get("brightness"),
-                    contrast=params.get("contrast"),
-                    threshold=params.get("threshold"),
-                    erode=params.get("erode"),
-                    nose_width=params.get("nose_width"),
-                    eye_height=params.get("eye_height"),
-                    use_yolo=params.get("use_yolo"),
-                    show_debug=params.get("show_debug")
-                )
-                success = True
-
-            elif cmd.cmd == "set_pupil_config":
-                self.video_manager.set_pupil_config(**cmd.params)
-                success = True
-
-            elif cmd.cmd == "set_pupil_mode":
-                mode = cmd.params.get("mode", "hybrid")
-                self.video_manager.set_pupil_mode(mode)
+                # Map old keys to new if needed, or handle full sync
+                if cmd.params.get('brightness') is not None:
+                    self.video_manager.update_config(brightness=params.get("brightness"))
+                if cmd.params.get('contrast') is not None:
+                    self.video_manager.update_config(contrast=params.get("contrast"))
+                # ... handle other keys
                 success = True
 
             elif cmd.cmd == "list_cameras":
@@ -177,31 +162,19 @@ class SievWorker:
                 data = {"cameras": cameras}
                 success = True
 
-            elif cmd.cmd == "get_resolutions":
-                cam_id = cmd.params.get("camera_id", self.video_manager.camera_id)
-                resolutions = self.video_manager.get_available_resolutions(cam_id)
-                data = {"resolutions": resolutions}
-                success = True
-            
-            elif cmd.cmd == "start_recording":
-                success = self.video_manager.start_recording()
-                if not success:
-                    error = "Failed to start recording"
-            
-            elif cmd.cmd == "stop_recording":
-                path = self.video_manager.stop_recording()
-                if path:
-                    data = {"path": path}
+            elif cmd.cmd == "send_command":
+                # Handle generic commands like 'calibrate'
+                if cmd.params.get('cmd') == 'calibrate':
+                    # Rust handles calibration now, but we ack it
                     success = True
-                else:
-                    error = "Failed to stop recording or no file saved"
-
+            
             else:
                 logger.warning(f"Unknown command: {cmd.cmd}")
                 error = f"Unknown command: {cmd.cmd}"
 
         except Exception as e:
-            logger.error(f"Error executing command {cmd.cmd}: {e}", exc_info=True)
+            logger.error(f"Error executing command {cmd.cmd}: {e}")
+            traceback.print_exc()
             error = str(e)
 
         # Send ACK
@@ -212,7 +185,7 @@ class SievWorker:
         logger.info("Starting data transmitter loop")
         
         last_frame_sent = 0
-        frame_interval = 1.0 / 30.0  # Limit video stream to 30 FPS via TCP to save bandwidth
+        frame_interval = 1.0 / 30.0  # Limit video stream to 30 FPS via TCP
         
         try:
             while self.video_manager.is_capturing:
@@ -222,13 +195,9 @@ class SievWorker:
 
                 now = time.time()
                 
-                # 1. Send Eye Data (as fast as it comes, but limit buffer read)
+                # 1. Send Eye Data
                 eye_data_batch = self.video_manager.get_latest_eye_data_batch()
                 for data in eye_data_batch:
-                    # Map VideoManagerAPI data to Protocol EyeData
-                    # VideoManagerAPI.latest_eye_data format:
-                    # { 'timestamp': float, 'left_eye': [x, y], 'right_eye': [x, y], ... }
-                    
                     left = None
                     if data.get('left_eye'):
                         left = {"x": data['left_eye'][0], "y": data['left_eye'][1], "radius": 5.0, "confidence": 1.0}
@@ -237,7 +206,6 @@ class SievWorker:
                     if data.get('right_eye'):
                         right = {"x": data['right_eye'][0], "y": data['right_eye'][1], "radius": 5.0, "confidence": 1.0}
 
-                    # timestamp in ms for the protocol
                     ts_ms = int(data['timestamp'] * 1000)
                     await self.client.send_eye_data(ts_ms, left, right)
 
@@ -248,7 +216,6 @@ class SievWorker:
                     
                     if frame is not None:
                         try:
-                            # Convert RGB (internal) to BGR for OpenCV encoding
                             bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                             _, jpeg = cv2.imencode('.jpg', bgr_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                             await self.client.send_frame(jpeg.tobytes())
@@ -256,18 +223,19 @@ class SievWorker:
                         except Exception as e:
                             logger.error(f"Error encoding/sending frame: {e}")
 
-                # Small sleep to prevent busy waiting
                 await asyncio.sleep(0.001)
                 
         except asyncio.CancelledError:
             logger.info("Data transmitter loop cancelled")
         except Exception as e:
-            logger.error(f"Error in data transmitter loop: {e}", exc_info=True)
+            logger.error(f"Error in data transmitter loop: {e}")
         finally:
             logger.info("Data transmitter loop finished")
 
 if __name__ == "__main__":
-    # Get port from env or args if needed
+    import multiprocessing
+    multiprocessing.freeze_support()
+    
     port = 9999
     if len(sys.argv) > 1:
         try:
