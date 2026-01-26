@@ -1,4 +1,72 @@
 // ============================================
+// Stimulus Configuration Types
+// ============================================
+
+export type StimulusColor = 'red' | 'green' | 'blue' | 'white';
+export type StimulusShape = 'circle' | 'square' | 'cross' | 'pediatric_dog' | 'pediatric_cat';
+
+export interface StimulusTargetConfig {
+    size_degrees: number;         // Size in visual degrees (e.g., 0.5, 1.0)
+    color: StimulusColor;
+    shape: StimulusShape;
+    brightness: number;           // 0-100%
+}
+
+export interface CalibrationConfig {
+    type: 'points_5' | 'points_7' | 'points_9';
+    horizontal_fov: number;       // e.g., 20 or 30 degrees
+    vertical_fov: number;         // e.g., 10 or 20 degrees
+    duration_per_point: number;   // seconds
+    auto_advance: boolean;        // true = wait for lock, false = fixed time
+}
+
+export interface SaccadeConfig {
+    type: 'random' | 'fixed' | 'anti';
+    min_amplitude: number;        // degrees (e.g., 5)
+    max_amplitude: number;        // degrees (e.g., 30)
+    min_interval: number;         // seconds (e.g., 1.5)
+    max_interval: number;         // seconds (e.g., 2.5)
+    direction: 'horizontal' | 'vertical' | 'both';
+    count: number;                // Number of saccades
+}
+
+export interface PursuitConfig {
+    type: 'sinusoidal' | 'sum_of_sines' | 'step_ramp';
+    frequencies: number[];        // e.g., [0.1, 0.2, 0.4] Hz
+    amplitudes: number[];         // degrees (e.g., 15, 20)
+    peak_velocity?: number;       // deg/s limit
+    direction: 'horizontal' | 'vertical';
+    cycles_per_frequency: number;
+}
+
+export interface GazeConfig {
+    points: {
+        x: number; // degrees
+        y: number; // degrees
+        duration: number; // seconds
+    }[];
+    randomize_order: boolean;
+}
+
+export interface OPKConfig {
+    pattern: 'bars' | 'checkerboard';
+    velocities: number[];         // deg/s (e.g., [20, 40, 60])
+    velocity: number;             // Single velocity for preview
+    direction: 'left' | 'right' | 'up' | 'down';
+    contrast: number;             // 0-100%
+    stripe_width: number;         // degrees
+    fixation_enabled?: boolean;   // Optional fixation point
+    loop?: boolean;               // Loop sequence indefinitely
+}
+
+export type VNGTestConfig = 
+    | { test: 'calibration'; params: CalibrationConfig }
+    | { test: 'saccades'; params: SaccadeConfig }
+    | { test: 'pursuit'; params: PursuitConfig }
+    | { test: 'gaze'; params: GazeConfig }
+    | { test: 'opk'; params: OPKConfig };
+
+// ============================================
 // VNG Test Result Types
 // ============================================
 

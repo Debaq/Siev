@@ -57,7 +57,7 @@ class VideoProcesses:
 
         # Configuración del detector de pupila
         # Modos: 0=legacy, 1=fast, 2=hybrid
-        self.pupil_mode = Value(ctypes.c_int, 2)  # Default: hybrid
+        self.pupil_mode = Value(ctypes.c_int, 0)  # Default: legacy
 
         # Parámetros Fast detector
         self.search_window_multiplier = Value(ctypes.c_float, 3.0)
@@ -466,7 +466,7 @@ class VideoProcesses:
         # Crear detectores para cada ojo
         mode_map = {0: "legacy", 1: "fast", 2: "hybrid"}
         current_mode_value = self.pupil_mode.value
-        current_mode = mode_map.get(current_mode_value, "hybrid")
+        current_mode = mode_map.get(current_mode_value, "legacy")
         detector_right = create_pupil_detector(current_mode)
         detector_left = create_pupil_detector(current_mode)
         logger.info(f"Pupil detectors initialized in mode: {current_mode}")
@@ -479,7 +479,7 @@ class VideoProcesses:
             # Verificar si el modo cambió
             if self.pupil_mode.value != current_mode_value:
                 current_mode_value = self.pupil_mode.value
-                current_mode = mode_map.get(current_mode_value, "hybrid")
+                current_mode = mode_map.get(current_mode_value, "legacy")
                 detector_right = create_pupil_detector(current_mode)
                 detector_left = create_pupil_detector(current_mode)
                 logger.info(f"Pupil detectors changed to mode: {current_mode}")
@@ -820,8 +820,8 @@ class VideoProcesses:
             self.pupil_mode.value = mode_map[mode]
             logger.info(f"Pupil detection mode changed to: {mode}")
         else:
-            logger.warning(f"Unknown mode: {mode}. Using 'hybrid' as default.")
-            self.pupil_mode.value = 2
+            logger.warning(f"Unknown mode: {mode}. Using 'legacy' as default.")
+            self.pupil_mode.value = 0
 
     def set_pupil_config(self, **kwargs):
         """

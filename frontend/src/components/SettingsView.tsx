@@ -6,6 +6,8 @@ import { GeneralSettings } from './settings/general';
 import { VNGSettings } from './settings/vng';
 import { useWebSocket } from '../contexts/WebSocketContext';
 
+import { StimulusScreenSettings } from './settings/stimulus/StimulusScreenSettings';
+
 const MODULE_LIST: ModuleDefinition[] = [
     { 
         id: 'general', 
@@ -147,14 +149,7 @@ const SettingsView: React.FC = () => {
                         <VNGSettings config={config} updateConfig={updateConfig} />
                     )}
                     {activeModuleId === 'stimulus_screen' && (
-                        <div className="flex-1 flex flex-col items-center justify-center text-center p-20 bg-dark-900/50 rounded-2xl border border-dark-800 border-dashed">
-                            <Monitor className="w-16 h-16 text-dark-700 mb-6" />
-                            <h3 className="text-xl font-bold text-white mb-2">Módulo de Estímulos</h3>
-                            <p className="text-dark-500 max-w-md">
-                                La configuración de la pantalla de estímulos se encuentra en desarrollo. 
-                                Permite controlar el monitor secundario para pruebas visuales.
-                            </p>
-                        </div>
+                        <StimulusScreenSettings config={config} updateConfig={updateConfig} />
                     )}
                 </div>
             </main>

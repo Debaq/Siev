@@ -577,6 +577,41 @@ async fn calculate_vng_metrics(
     }
 }
 
+#[tauri::command]
+async fn open_external_display(
+    app: tauri::AppHandle
+) -> Result<bool, String> {
+    let label = "external-display";
+    
+    // Focus existing if open
+    if let Some(window) = app.get_webview_window(label) {
+        let _ = window.set_focus();
+        let _ = window.unminimize();
+        return Ok(false);
+    }
+
+    println!("Creating external display window");
+
+    let win_builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        label,
+        tauri::WebviewUrl::App("/#/external-display".into())
+    )
+    .title("SIEV Pantalla Externa")
+    .inner_size(600.0, 450.0) // Restaurar tamaño original más compacto
+    .fullscreen(false)
+    .resizable(true)
+    .focused(true)
+    .decorations(false) // SIN bordes del sistema (User request)
+    .always_on_top(false);
+
+    let window = win_builder.build().map_err(|e| e.to_string())?;
+    
+    let _ = window.set_focus();
+
+    Ok(true)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -831,22 +866,35 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
-                // Kill Python process when window is destroyed
-                if let Some(state) = window.try_state::<AppState>() {
-                    if let Ok(mut child_guard) = state.python_child.lock() {
-                        if let Some(child) = child_guard.take() {
-                            let pid = child.pid();
-                            println!("[Python] Killing sidecar on window close (PID: {:?})", pid);
-                            // Kill the child process
-                            let _ = child.kill();
-                            // Also kill the entire process group to catch Python subprocess
-                            #[cfg(unix)]
-                            {
-                                use std::process::Command;
-                                // Kill all processes in the process group
-                                let _ = Command::new("pkill")
-                                    .args(["-TERM", "-P", &pid.to_string()])
-                                    .output();
+                // Only act if the main window is closed to prevent killing python on side-window close
+                if window.label() == "main" {
+                    println!("Main window destroyed, cleaning up...");
+                    
+                    // Close ALL other windows
+                    for (label, win) in window.app_handle().webview_windows() {
+                        if label != "main" {
+                            println!("Closing window: {}", label);
+                            let _ = win.close();
+                        }
+                    }
+
+                    // Kill Python process
+                    if let Some(state) = window.try_state::<AppState>() {
+                        if let Ok(mut child_guard) = state.python_child.lock() {
+                            if let Some(child) = child_guard.take() {
+                                let pid = child.pid();
+                                println!("[Python] Killing sidecar on main window close (PID: {:?})", pid);
+                                // Kill the child process
+                                let _ = child.kill();
+                                // Also kill the entire process group to catch Python subprocess
+                                #[cfg(unix)]
+                                {
+                                    use std::process::Command;
+                                    // Kill all processes in the process group
+                                    let _ = Command::new("pkill")
+                                        .args(["-TERM", "-P", &pid.to_string()])
+                                        .output();
+                                }
                             }
                         }
                     }
@@ -891,7 +939,8 @@ pub fn run() {
             save_vng_test_result,
             get_vng_test_results,
             get_reference_values,
-            calculate_vng_metrics
+            calculate_vng_metrics,
+            open_external_display
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

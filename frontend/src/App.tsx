@@ -17,8 +17,15 @@ import { useTauriDb, Specialist, Patient } from './hooks/useTauriDb'
 import { useSettingsConfig } from './hooks/useSettingsConfig'
 import { useSessionConfig } from './hooks/useSessionConfig'
 import { useWebSocket } from './contexts/WebSocketContext'
+import { CalibrationPage } from './pages/CalibrationPage'
 
-function App() {
+import { ExternalDisplayPage } from './pages/ExternalDisplayPage'
+
+// --- SEPARATION OF CONCERNS ---
+
+// MainApp contains all the heavy logic (WebSockets, DB, etc.)
+// This component should ONLY run in the main window.
+const MainApp = () => {
   const { connected: isWsConnected, pythonStatus, hardwareStatus, cameras: wsCameras, send } = useWebSocket()
   const { getSetting, getSpecialists, createSession } = useTauriDb()
   
@@ -124,8 +131,15 @@ function App() {
         // Sync current session values
         send({
             type: 'set_config',
-            key: 'full_sync',
+            key: 'session_update',
             value: sessionConfig.values
+        });
+        // Sync pupil detection mode from persistent config
+        const pupilMode = appConfig?.vng?.pupil_detection?.mode ?? 'legacy';
+        send({
+            type: 'set_config',
+            key: 'pupil_mode',
+            value: pupilMode
         });
       }
     } catch (e) { console.error(e) }
@@ -231,6 +245,7 @@ function App() {
                 sessionConfig={sessionConfig}
                 appConfig={appConfig}
                 currentSession={currentSession}
+                currentTestType={currentTestType}
               />
            </div>
         </div>
@@ -307,6 +322,34 @@ function App() {
       )}
     </div>
   )
+}
+
+// App Router - Decides which app to load based on URL/Hash
+// This prevents the secondary window from loading heavy hooks
+function App() {
+  const [isCalibrationWindow, setIsCalibrationWindow] = useState(false);
+  const [isExternalDisplay, setIsExternalDisplay] = useState(false);
+
+  useEffect(() => {
+    // Check hash immediately
+    const hash = window.location.hash;
+    if (hash === '#/calibration') {
+      setIsCalibrationWindow(true);
+    } else if (hash === '#/external-display' || hash === '#/stimulus') {
+       // Support legacy hash for a moment or redirect
+      setIsExternalDisplay(true);
+    }
+  }, []);
+
+  if (isCalibrationWindow) {
+    return <CalibrationPage />;
+  }
+
+  if (isExternalDisplay) {
+    return <ExternalDisplayPage />;
+  }
+
+  return <MainApp />;
 }
 
 export default App

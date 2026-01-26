@@ -44,7 +44,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
             roi_enabled: true
         },
         pupil_detection: {
-            mode: 'hybrid',
+            mode: 'legacy',
             search_window_multiplier: 3.0,
             dark_threshold_percent: 20,
             starburst_rays: 16,
@@ -100,9 +100,16 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     },
     stimulus_screen: {
         display: {
-            screen_index: 1,
-            resolution: "1920x1080",
-            fullscreen: true
+            monitor_name: "",
+            monitor_index: -1,
+            scale_factor: 1,
+            resolution_width: 0,
+            resolution_height: 0,
+            physical_width_mm: 0,
+            physical_height_mm: 0,
+            distance_cm: 100,
+            is_calibrated: false,
+            pixel_density: 0
         }
     }
 };

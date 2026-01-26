@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/capabilities.json",
   "identifier": "default",
   "description": "Default permissions for the SIEV application",
-  "windows": ["main"],
+  "windows": ["main", "calibration-window", "external-display"],
   "permissions": [
     "core:default",
     "core:window:allow-close",

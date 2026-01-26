@@ -7,6 +7,7 @@ import {
 import { useTauriHardware } from '../hooks/useTauriHardware'
 import { UseSessionConfigReturn } from '../hooks/useSessionConfig'
 import { useWebSocket } from '../contexts/WebSocketContext'
+import { StimulusController } from './StimulusController'
 
 interface ControlPanelProps {
   isCapturing: boolean
@@ -16,6 +17,7 @@ interface ControlPanelProps {
   sessionConfig: UseSessionConfigReturn
   appConfig: any
   currentSession?: any
+  currentTestType?: string | null
 }
 
 function ControlPanel({
@@ -25,7 +27,8 @@ function ControlPanel({
   onCalibrate,
   sessionConfig,
   appConfig,
-  currentSession
+  currentSession,
+  currentTestType
 }: ControlPanelProps) {
   const { send, hardwareStatus: _wsHardwareStatus } = useWebSocket()
   const [isRecording, setIsRecording] = useState(false)
@@ -359,6 +362,13 @@ function ControlPanel({
       </div>
 
       <div className="border-t border-dark-800 my-1" />
+
+      {/* Stimulus Control (Only if test type matches) */}
+      {currentTestType && ['calibration_gaze', 'saccades', 'pursuit', 'optokinetic', 'gaze'].includes(currentTestType) && (
+        <div className="mb-2">
+          <StimulusController testType={currentTestType} appConfig={appConfig} />
+        </div>
+      )}
 
       {/* Hardware (Always visible as it's critical during capture) */}
       <SectionTitle icon={Activity} title="Hardware" />

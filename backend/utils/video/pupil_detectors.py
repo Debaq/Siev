@@ -628,5 +628,5 @@ def create_pupil_detector(mode: str) -> BasePupilDetector:
         "hybrid": HybridPupilDetector
     }
 
-    detector_class = detectors.get(mode, HybridPupilDetector)
+    detector_class = detectors.get(mode, LegacyPupilDetector)
     return detector_class()

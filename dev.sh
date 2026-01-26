@@ -18,6 +18,15 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# ---------------------------------------------------------
+# Step 0: Cleanup
+# ---------------------------------------------------------
+echo -e "${YELLOW}Cleaning up existing SIEV processes...${NC}"
+# Kill any existing python backend, sidecars or tauri processes
+pkill -f "backend/main.py" || true
+pkill -f "python-worker" || true
+pkill -f "siev" || true
+
 # Helper: Prompt with Timeout
 ask_with_default() {
     # $1 = Prompt text, $2 = Default, $3 = Var Name
@@ -106,7 +115,57 @@ else
     echo -e "${YELLOW}⚠ Python dependencies missing.${NC}"
     
     # Check for managers
-    if ! command -v micromamba >/dev/null 2>&1 && ! command -v conda >/dev/null 2>&1; then
+    # Helper to detect managers more robustly
+    detect_managers() {
+        # 1. Check PATH first
+        if command -v micromamba >/dev/null 2>&1; then return 0; fi
+        if command -v conda >/dev/null 2>&1; then return 0; fi
+
+        # 2. Try to extract location from user's interactive shell (loads .bashrc)
+        # This catches custom installs where MAMBA_EXE/CONDA_EXE are set in .bashrc
+        local mamba_exe
+        mamba_exe=$(bash -i -c "echo \"\$MAMBA_EXE\"" 2>/dev/null | tail -n 1) # tail to avoid prompt noise
+        if [ -n "$mamba_exe" ] && [ -x "$mamba_exe" ]; then
+             echo -e "${YELLOW}Found MAMBA_EXE via interactive shell: $mamba_exe${NC}"
+             # Add the directory of the executable to PATH so subsequent calls work
+             export PATH="$(dirname "$mamba_exe"):$PATH"
+             return 0
+        fi
+
+        local conda_exe
+        conda_exe=$(bash -i -c "echo \"\$CONDA_EXE\"" 2>/dev/null | tail -n 1)
+        if [ -n "$conda_exe" ] && [ -x "$conda_exe" ]; then
+             echo -e "${YELLOW}Found CONDA_EXE via interactive shell: $conda_exe${NC}"
+             export PATH="$(dirname "$conda_exe"):$PATH"
+             return 0
+        fi
+
+        # 3. Check common installation paths
+        local common_paths=(
+            "$HOME/.local/bin"
+            "$HOME/micromamba/bin"
+            "$HOME/miniconda3/bin"
+            "$HOME/anaconda3/bin"
+            "$HOME/miniforge3/bin"
+            "/opt/conda/bin"
+            "/usr/local/bin"
+        )
+
+        for p in "${common_paths[@]}"; do
+            if [ -x "$p/micromamba" ]; then
+                echo -e "${YELLOW}Found micromamba in $p, adding to PATH...${NC}"
+                export PATH="$p:$PATH"
+                return 0
+            elif [ -x "$p/conda" ]; then
+                echo -e "${YELLOW}Found conda in $p, adding to PATH...${NC}"
+                export PATH="$p:$PATH"
+                return 0
+            fi
+        done
+        return 1
+    }
+
+    if ! detect_managers; then
         echo -e "${YELLOW}No Conda or Micromamba found.${NC}"
         ask_with_default "Install Micromamba now?" "Y" INSTALL_MAMBA
         if [[ "$INSTALL_MAMBA" =~ ^[Yy] ]]; then
@@ -122,7 +181,9 @@ else
     if [[ "$SETUP_ENV" =~ ^[Yy] ]]; then
         # Determine default manager
         DEF_MGR="micromamba"
-        if ! command -v micromamba >/dev/null 2>&1 && command -v conda >/dev/null 2>&1; then
+        # Check if conda is preferred/available if micromamba isn't
+        if ! (command -v micromamba >/dev/null 2>&1 || micromamba --version >/dev/null 2>&1) && \
+           (command -v conda >/dev/null 2>&1 || conda --version >/dev/null 2>&1); then
             DEF_MGR="conda"
         fi
 
@@ -130,7 +191,8 @@ else
         ask_with_default "Environment name?" "siev" ENV_NAME
         
         # 1. Initialize Shell Hook
-        if command -v $MGR >/dev/null 2>&1; then
+        # Allow if command -v works OR if --version works (handling user's edge case)
+        if command -v $MGR >/dev/null 2>&1 || $MGR --version >/dev/null 2>&1; then
             if [ "$MGR" = "micromamba" ]; then
                 eval "$(micromamba shell hook --shell bash)"
             else

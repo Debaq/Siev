@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Camera, Cpu, Monitor, Activity, FileText } from 'lucide-react';
+import { Camera, Cpu, Monitor, Activity, FileText, Target } from 'lucide-react';
 import { SettingsTabs, TabDefinition } from '../SettingsTabs';
 import { CameraTab } from './CameraTab';
 import { AlgorithmTab } from './AlgorithmTab';
 import { HardwareTab } from './HardwareTab';
 import { CalibrationTab } from './CalibrationTab';
 import { ReportTab } from './ReportTab';
+import { VisualStimuliTab } from './VisualStimuliTab';
 
 interface VNGSettingsProps {
     config: any;
@@ -16,6 +17,7 @@ const VNG_TABS: TabDefinition[] = [
     { id: 'camera', label: 'Cámara', icon: Camera },
     { id: 'algorithm', label: 'Algoritmo', icon: Cpu },
     { id: 'hardware', label: 'Hardware', icon: Monitor },
+    { id: 'stimuli', label: 'Estímulos', icon: Target },
     { id: 'calibration', label: 'Calibración', icon: Activity },
     { id: 'report', label: 'Informe', icon: FileText },
 ];
@@ -40,6 +42,13 @@ export const VNGSettings: React.FC<VNGSettingsProps> = ({ config, updateConfig }
                 )}
                 {activeTab === 'hardware' && (
                     <HardwareTab config={config} updateConfig={updateConfig} />
+                )}
+                {activeTab === 'stimuli' && (
+                    <VisualStimuliTab 
+                        config={config.vng} 
+                        stimulusConfig={config.stimulus_screen}
+                        updateConfig={updateConfig} 
+                    />
                 )}
                 {activeTab === 'calibration' && (
                     <CalibrationTab config={config} updateConfig={updateConfig} />

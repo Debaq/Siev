@@ -1,6 +1,6 @@
 import { 
   Activity, Eye, MoveHorizontal, RotateCcw, Thermometer, 
-  ArrowLeft, PlayCircle 
+  ArrowLeft, PlayCircle, Target
 } from 'lucide-react'
 
 interface TestSelectionViewProps {
@@ -20,9 +20,18 @@ const TESTS = [
     border: 'border-blue-500/20'
   },
   {
+    id: 'calibration_gaze',
+    title: 'Calibración Ocular',
+    description: 'Secuencia de puntos para calibrar el seguimiento.',
+    icon: Target,
+    color: 'text-pink-400',
+    bg: 'bg-pink-500/10',
+    border: 'border-pink-500/20'
+  },
+  {
     id: 'saccades',
     title: 'Sacadas',
-    description: 'Movimientos oculares rápidos entre puntos fijos.',
+    description: 'Aleatorias, fijas y anti-sacadas.',
     icon: MoveHorizontal,
     color: 'text-green-400',
     bg: 'bg-green-500/10',
@@ -31,7 +40,7 @@ const TESTS = [
   {
     id: 'pursuit',
     title: 'Seguimiento Pendular',
-    description: 'Seguimiento suave de un objetivo móvil.',
+    description: 'Sinusoidal, suma de senos y step-ramp.',
     icon: Activity,
     color: 'text-purple-400',
     bg: 'bg-purple-500/10',
@@ -40,7 +49,7 @@ const TESTS = [
   {
     id: 'positional',
     title: 'Pruebas Posicionales',
-    description: 'Dix-Hallpike y cambios posturales.',
+    description: 'Dix-Hallpike y cambios posturales (Mirada).',
     icon: RotateCcw,
     color: 'text-orange-400',
     bg: 'bg-orange-500/10',
@@ -57,8 +66,8 @@ const TESTS = [
   },
   {
     id: 'optokinetic',
-    title: 'Optocinético',
-    description: 'Respuesta a estímulos visuales en movimiento.',
+    title: 'Optocinético / Full Field',
+    description: 'Barras, damero y movimiento visual completo.',
     icon: PlayCircle,
     color: 'text-cyan-400',
     bg: 'bg-cyan-500/10',

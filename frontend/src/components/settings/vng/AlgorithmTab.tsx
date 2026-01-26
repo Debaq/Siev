@@ -95,9 +95,9 @@ export const AlgorithmTab: React.FC<AlgorithmTabProps> = ({ config, updateConfig
                             send({ type: 'set_config', key: 'pupil_mode', value: val });
                         }}
                     >
-                        <option value="hybrid">Híbrido (Recomendado) - Fast + Fallback Legacy</option>
+                        <option value="legacy">Legacy (Default) - Threshold + CLAHE + Contornos</option>
+                        <option value="hybrid">Híbrido - Fast + Fallback Legacy</option>
                         <option value="fast">Fast - Ventana Local + Starburst</option>
-                        <option value="legacy">Legacy - Threshold + CLAHE + Contornos</option>
                     </select>
                 </SettingsField>
             </SettingsSection>

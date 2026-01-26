@@ -51,7 +51,7 @@ export interface VNGLegacyParams {
 }
 
 export interface VNGPupilDetectionConfig {
-    mode: 'hybrid' | 'fast' | 'legacy';
+    mode: 'legacy' | 'hybrid' | 'fast';
     search_window_multiplier: number;
     dark_threshold_percent: number;
     starburst_rays: number;
@@ -114,14 +114,49 @@ export interface VNGConfig {
 }
 
 export interface StimulusDisplayConfig {
-    screen_index: number;
-    resolution: string;
-    fullscreen: boolean;
+    monitor_name: string;
+    monitor_index: number; // For OS positioning
+    scale_factor: number;
+    resolution_width: number;
+    resolution_height: number;
+    physical_width_mm: number;
+    physical_height_mm: number;
+    distance_cm: number; // Distance from patient eyes to screen
+    is_calibrated: boolean;
+    pixel_density: number; // PPI
+}
+
+export interface StimulusDefaultParams {
+    calibration: {
+        type: 'points_5' | 'points_7' | 'points_9';
+        duration: number;
+    };
+    saccades: {
+        min_amplitude: number;
+        max_amplitude: number;
+        min_interval: number;
+        max_interval: number;
+    };
+    pursuit: {
+        frequency: number;
+        amplitudes: number[];
+    };
+    opk: {
+        velocity: number;
+        stripe_width_deg: number;
+        direction: 'left' | 'right' | 'up' | 'down';
+        fixation_enabled: boolean;
+    };
+    target: {
+        size_deg: number;
+        color: string;
+        shape: string;
+    }
 }
 
 export interface StimulusScreenConfig {
     display: StimulusDisplayConfig;
-    // Add more as needed
+    defaults?: StimulusDefaultParams;
 }
 
 export interface AppConfig {
