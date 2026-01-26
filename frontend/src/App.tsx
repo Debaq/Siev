@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { Video, Settings, GripHorizontal, User } from 'lucide-react'
 import VideoFeed from './components/VideoFeed'
 import ControlPanel from './components/ControlPanel'
@@ -31,6 +32,7 @@ function App() {
   // Navigation State
   const [activeView, setActiveView] = useState<'capture' | 'patients' | 'settings' | 'test_selection' | 'onboarding' | 'user_selection'>('user_selection')
   const [currentPatient, setCurrentPatient] = useState<Patient | null>(null)
+  const [currentSession, setCurrentSession] = useState<any | null>(null)
   const [currentTestType, setCurrentTestType] = useState<string | null>(null)
   const [activeSpecialist, setActiveSpecialist] = useState<Specialist | null>(null)
 
@@ -44,6 +46,9 @@ function App() {
   useEffect(() => {
     async function checkInit() {
       try {
+        // Sync storage from disk to DB
+        await invoke('sync_storage')
+        
         const initialized = await getSetting('app_initialized')
         if (initialized !== 'true') {
           setActiveView('onboarding')
@@ -225,6 +230,7 @@ function App() {
                 onCalibrate={() => send({ type: 'send_command', cmd: 'calibrate' })}
                 sessionConfig={sessionConfig}
                 appConfig={appConfig}
+                currentSession={currentSession}
               />
            </div>
         </div>
@@ -279,11 +285,12 @@ function App() {
                           }}
                           onSelectTest={async (testId) => { 
                               if (currentPatient) {
-                                await createSession(
+                                const session = await createSession(
                                     currentPatient.id, 
                                     activeSpecialist?.id || null, 
                                     `Evaluación: ${testId}`
                                 )
+                                setCurrentSession(session)
                               }
                               
                               setCurrentTestType(testId)

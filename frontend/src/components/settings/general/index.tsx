@@ -4,6 +4,7 @@ import { SettingsTabs, TabDefinition } from '../SettingsTabs';
 import { InstitutionTab } from './InstitutionTab';
 import { TeamTab } from './TeamTab';
 import { ModulesTab } from './ModulesTab';
+import { StorageTab } from './StorageTab';
 
 interface GeneralSettingsProps {
     config: any;
@@ -39,9 +40,7 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({ config, update
                     <ModulesTab config={config} updateConfig={updateConfig} />
                 )}
                 {activeTab === 'storage' && (
-                    <div className="p-10 text-center text-dark-500 italic">
-                        Configuración de almacenamiento próximamente...
-                    </div>
+                    <StorageTab config={config} updateConfig={updateConfig} />
                 )}
             </div>
         </div>

@@ -59,4 +59,8 @@ pub enum WsMessage {
     SendHardwareCommand {
         cmd: String,
     },
+    StartRecording {
+        session_id: i64,
+    },
+    StopRecording,
 }

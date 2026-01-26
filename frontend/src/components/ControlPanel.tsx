@@ -15,6 +15,7 @@ interface ControlPanelProps {
   onCalibrate: () => void
   sessionConfig: UseSessionConfigReturn
   appConfig: any
+  currentSession?: any
 }
 
 function ControlPanel({
@@ -24,6 +25,7 @@ function ControlPanel({
   onCalibrate,
   sessionConfig,
   appConfig,
+  currentSession
 }: ControlPanelProps) {
   const { send, hardwareStatus: _wsHardwareStatus } = useWebSocket()
   const [isRecording, setIsRecording] = useState(false)
@@ -104,12 +106,17 @@ function ControlPanel({
   }
 
   const handleStartRecording = () => {
-    send({ type: 'send_command', cmd: 'start_recording' })
+    if (currentSession) {
+      send({ type: 'start_recording', session_id: currentSession.id })
+    } else {
+      // Fallback for "free capture" if needed, but here we require a session
+      send({ type: 'send_command', cmd: 'start_recording' })
+    }
     setIsRecording(true)
   }
 
   const handleStopRecording = () => {
-    send({ type: 'send_command', cmd: 'stop_recording' })
+    send({ type: 'stop_recording' })
     setIsRecording(false)
   }
 

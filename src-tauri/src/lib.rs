@@ -7,6 +7,7 @@ pub mod database;
 pub mod hardware;
 pub mod math;
 pub mod websocket;
+pub mod storage;
 
 use bridge::PythonBridge;
 use database::models::{CreatePatientDto, Patient, Session, Specialist, UpdatePatientDto};
@@ -16,6 +17,9 @@ use math::processor::{EyeProcessor, ProcessedEyeData, RawEyeData};
 use websocket::{WebSocketServer, WsMessage};
 use bridge::python_bridge::BridgeEvent;
 use tauri_plugin_shell::ShellExt;
+use crate::storage::bundle::{SievBundle, SessionManifest};
+use crate::storage::recorder::SessionRecorder;
+use std::path::PathBuf;
 
 // Application State
 pub struct AppState {
@@ -25,6 +29,7 @@ pub struct AppState {
     pub python_bridge: Arc<PythonBridge>,
     pub ws_server: Arc<WebSocketServer>,
     pub python_child: Arc<Mutex<Option<CommandChild>>>,
+    pub active_recorder: Arc<Mutex<Option<SessionRecorder>>>,
 }
 
 // --- Math & Processing Commands ---
@@ -124,14 +129,74 @@ async fn get_sessions(
     state.db.get_sessions(patient_id).await
 }
 
+async fn get_effective_storage_path(app: &tauri::AppHandle, db: &DatabaseService) -> PathBuf {
+    // 1. Try to get from app_config JSON
+    if let Ok(Some(config_json)) = db.get_setting("app_config").await {
+        if let Ok(config) = serde_json::from_str::<serde_json::Value>(&config_json) {
+            if let Some(path_str) = config["general"]["storage"]["data_path"].as_str() {
+                if !path_str.is_empty() {
+                    return PathBuf::from(path_str);
+                }
+            }
+        }
+    }
+
+    // 2. Try legacy storage_path key
+    if let Ok(Some(path_str)) = db.get_setting("storage_path").await {
+        if !path_str.is_empty() {
+            return PathBuf::from(path_str);
+        }
+    }
+
+    // 3. Fallback to default
+    app.path().document_dir()
+       .map(|p| p.join("SIEV_Media"))
+       .unwrap_or_else(|_| PathBuf::from("siev_data"))
+}
+
 #[tauri::command]
 async fn create_session(
     patient_id: i64,
     specialist_id: Option<i64>,
     description: Option<String>,
+    app: tauri::AppHandle,
     state: State<'_, AppState>
 ) -> Result<Session, String> {
-    state.db.create_session(patient_id, specialist_id, description).await
+    // 1. Get patient data
+    let patient = state.db.get_patient_by_id(patient_id).await?;
+
+    // 2. Create session record in DB
+    let mut session = state.db.create_session(patient_id, specialist_id, description.clone()).await?;
+
+    // 3. Determine storage path
+    let root_path = get_effective_storage_path(&app, &state.db).await;
+
+    // 4. Initialize SievBundle
+    let test_type = "VNG"; // Default for now
+    let bundle = SievBundle::new(&root_path, &patient, test_type, session.id);
+    
+    let manifest = SessionManifest {
+        version: "1.0".to_string(),
+        created_at: chrono::Local::now().to_rfc3339(),
+        patient: (&patient).into(),
+        test_type: test_type.to_string(),
+        description: description,
+        specialist_id,
+    };
+
+    bundle.init(&manifest).map_err(|e| format!("Failed to initialize storage: {}", e))?;
+
+    // 5. Update session with paths
+    let video_path = bundle.get_video_path().to_string_lossy().to_string();
+    let data_path = bundle.get_data_path().to_string_lossy().to_string();
+    
+    state.db.update_session_paths(session.id, Some(video_path.clone()), Some(data_path.clone())).await?;
+    
+    // Update local session object to return
+    session.video_path = Some(video_path);
+    session.data_path = Some(data_path);
+
+    Ok(session)
 }
 
 #[tauri::command]
@@ -173,6 +238,12 @@ fn get_default_storage_path(app: tauri::AppHandle) -> String {
     app.path().document_dir()
        .map(|p| p.join("SIEV_Media").to_string_lossy().to_string())
        .unwrap_or_else(|_| "siev_data".to_string())
+}
+
+#[tauri::command]
+async fn sync_storage(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let root_path = get_effective_storage_path(&app, &state.db).await;
+    state.db.sync_storage(&root_path).await
 }
 
 // --- Python Bridge Commands ---
@@ -263,6 +334,11 @@ pub fn run() {
             })
             .expect("Failed to initialize database");
 
+            let db_for_ws = Arc::new(db_service);
+            let db_for_state = Arc::clone(&db_for_ws);
+            let active_recorder: Arc<Mutex<Option<SessionRecorder>>> = Arc::new(Mutex::new(None));
+            let recorder_for_ws = Arc::clone(&active_recorder);
+
             let hardware_manager = Arc::new(Mutex::new(HardwareManager::new()));
 
             // Initialize WebSocket Server
@@ -283,6 +359,8 @@ pub fn run() {
             // Forward WebSocket commands to their handlers
             let bridge_cmds = Arc::clone(&python_bridge);
             let hw_cmds = Arc::clone(&hardware_manager);
+            let db_for_ws_loop = Arc::clone(&db_for_ws);
+            let recorder_for_ws_loop = Arc::clone(&recorder_for_ws);
 
             tauri::async_runtime::spawn(async move {
                 while let Some(msg) = ws_commands.recv().await {
@@ -313,6 +391,22 @@ pub fn run() {
                         WsMessage::SendHardwareCommand { cmd } => {
                             let hw = hw_cmds.lock().unwrap();
                             let _ = hw.send_command(&cmd);
+                        }
+                        WsMessage::StartRecording { session_id } => {
+                            if let Ok(Some(session)) = db_for_ws_loop.get_session_by_id(session_id).await {
+                                if let Some(path) = session.data_path {
+                                    let recorder = SessionRecorder::start(PathBuf::from(path));
+                                    *recorder_for_ws_loop.lock().unwrap() = Some(recorder);
+                                    println!("Started recording for session {}", session_id);
+                                }
+                            }
+                        }
+                        WsMessage::StopRecording => {
+                            let recorder = recorder_for_ws_loop.lock().unwrap().take();
+                            if let Some(r) = recorder {
+                                r.stop().await;
+                                println!("Stopped recording");
+                            }
                         }
                         _ => {}
                     }
@@ -371,6 +465,7 @@ pub fn run() {
             let mut bridge_events = python_bridge.subscribe();
             let eye_processor = Arc::new(Mutex::new(EyeProcessor::new()));
             let eye_processor_clone = Arc::clone(&eye_processor);
+            let recorder_for_events = Arc::clone(&active_recorder);
 
             let bridge_for_events = Arc::clone(&python_bridge);
 
@@ -397,6 +492,13 @@ pub fn run() {
                                 let mut processor = eye_processor_clone.lock().unwrap();
                                 processor.process(raw_data)
                             };
+
+                            // Persistence: Record data if active
+                            if let Ok(recorder_guard) = recorder_for_events.lock() {
+                                if let Some(recorder) = recorder_guard.as_ref() {
+                                    recorder.record(processed.clone());
+                                }
+                            }
 
                             ws_broadcast.broadcast(&WsMessage::EyeData(processed));
                         }
@@ -444,13 +546,25 @@ pub fn run() {
             });
 
             // Manage State
+            let db_for_setup = Arc::clone(&db_for_state);
+            let app_handle_for_setup = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let root_path = get_effective_storage_path(&app_handle_for_setup, &db_for_setup).await;
+                
+                println!("Syncing storage from {:?}", root_path);
+                if let Err(e) = db_for_setup.sync_storage(&root_path).await {
+                    eprintln!("Failed to sync storage: {}", e);
+                }
+            });
+
             app.manage(AppState {
                 eye_processor,
                 hardware_manager,
-                db: Arc::new(db_service),
+                db: db_for_state,
                 python_bridge,
                 ws_server,
                 python_child,
+                active_recorder,
             });
 
             Ok(())
@@ -509,7 +623,8 @@ pub fn run() {
             get_setting,
             set_setting,
             get_default_storage_path,
-            set_filtering_enabled
+            set_filtering_enabled,
+            sync_storage
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

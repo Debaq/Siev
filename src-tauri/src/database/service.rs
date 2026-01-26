@@ -3,6 +3,8 @@ use std::fs;
 use tauri::AppHandle;
 use tauri::Manager;
 use chrono::NaiveDateTime;
+use std::path::Path;
+use crate::storage::bundle::SievBundle;
 use super::models::{Patient, Session, CreatePatientDto, UpdatePatientDto, Specialist};
 
 pub struct DatabaseService {
@@ -281,5 +283,147 @@ impl DatabaseService {
             .fetch_all(&self.pool)
             .await
             .map_err(|e| e.to_string())
+    }
+
+    pub async fn get_session_by_id(&self, id: i64) -> Result<Option<Session>, String> {
+        sqlx::query_as::<_, Session>("SELECT * FROM sessions WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn update_session_paths(&self, id: i64, video_path: Option<String>, data_path: Option<String>) -> Result<(), String> {
+        sqlx::query(
+            "UPDATE sessions SET video_path = ?, data_path = ? WHERE id = ?"
+        )
+        .bind(video_path)
+        .bind(data_path)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub async fn get_patient_by_id(&self, id: i64) -> Result<Patient, String> {
+        sqlx::query_as::<_, Patient>("SELECT * FROM patients WHERE id = ?")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn sync_storage(&self, root_path: &Path) -> Result<(), String> {
+        if !root_path.exists() {
+            return Ok(());
+        }
+
+        // Walk through patient folders
+        let entries = fs::read_dir(root_path).map_err(|e| e.to_string())?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let _ = self.sync_patient_folder(&path).await;
+            }
+        }
+        Ok(())
+    }
+
+    async fn sync_patient_folder(&self, patient_path: &Path) -> Result<(), String> {
+        let entries = fs::read_dir(patient_path).map_err(|e| e.to_string())?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() && path.extension().and_then(|s| s.to_str()) == Some("siev") {
+                if let Ok(manifest) = SievBundle::load_manifest(&path) {
+                    let _ = self.sync_session_bundle(&path, manifest).await;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn sync_session_bundle(&self, bundle_path: &Path, manifest: crate::storage::bundle::SessionManifest) -> Result<(), String> {
+        // 1. Find or create patient
+        let patient_id = if let Some(dni) = &manifest.patient.dni {
+            // Try to find by DNI
+            let p: Option<(i64,)> = sqlx::query_as("SELECT id FROM patients WHERE dni = ?")
+                .bind(dni)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| e.to_string())?;
+            
+            if let Some((id,)) = p {
+                id
+            } else {
+                self.create_patient_from_snapshot(&manifest.patient).await?
+            }
+        } else {
+            // Try to find by name
+            let p: Option<(i64,)> = sqlx::query_as("SELECT id FROM patients WHERE first_name = ? AND last_name = ?")
+                .bind(&manifest.patient.first_name)
+                .bind(&manifest.patient.last_name)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| e.to_string())?;
+
+            if let Some((id,)) = p {
+                id
+            } else {
+                self.create_patient_from_snapshot(&manifest.patient).await?
+            }
+        };
+
+        // 2. Check if session exists (by data_path)
+        let data_path = bundle_path.join("data.bin").to_string_lossy().to_string();
+        let session_exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM sessions WHERE data_path = ?")
+            .bind(&data_path)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if session_exists.is_none() {
+            // Create session
+            let video_path = bundle_path.join("video").join("raw_capture.mp4").to_string_lossy().to_string();
+            let date = chrono::DateTime::parse_from_rfc3339(&manifest.created_at)
+                .map(|dt| dt.naive_local())
+                .unwrap_or_else(|_| chrono::Utc::now().naive_utc());
+
+            sqlx::query(
+                "INSERT INTO sessions (patient_id, specialist_id, description, date, video_path, data_path) VALUES (?, ?, ?, ?, ?, ?)"
+            )
+            .bind(patient_id)
+            .bind(manifest.specialist_id)
+            .bind(&manifest.description)
+            .bind(date)
+            .bind(video_path)
+            .bind(data_path)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+
+        Ok(())
+    }
+
+    async fn create_patient_from_snapshot(&self, p: &crate::storage::bundle::PatientSnapshot) -> Result<i64, String> {
+        let birth_date = p.birth_date.as_ref().and_then(|d| {
+            NaiveDateTime::parse_from_str(&format!("{} 00:00:00", d), "%Y-%m-%d %H:%M:%S").ok()
+        });
+
+        let id = sqlx::query(
+            "INSERT INTO patients (first_name, last_name, dni, birth_date, gender, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))"
+        )
+        .bind(&p.first_name)
+        .bind(&p.last_name)
+        .bind(&p.dni)
+        .bind(birth_date)
+        .bind(&p.gender)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .last_insert_rowid();
+
+        Ok(id)
     }
 }
