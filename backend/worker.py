@@ -182,17 +182,33 @@ class SievWorker:
                         
                     elif key == "camera_setup" and isinstance(value, dict):
                         # Re-initialization parameters
-                        # Only initialize if safe (e.g. not capturing)
-                        if not self.video_manager.is_capturing:
-                            valid_init_args = [
-                                'camera_id', 'width', 'height', 'fps', 
-                                'brightness', 'contrast', 'threshold', 'erode',
-                                'nose_width', 'eye_height', 'use_yolo', 'storage_path'
-                            ]
-                            filtered_init = {k: v for k, v in value.items() if k in valid_init_args}
+                        valid_init_args = [
+                            'camera_id', 'width', 'height', 'fps',
+                            'brightness', 'contrast', 'threshold', 'erode',
+                            'nose_width', 'eye_height', 'use_yolo', 'storage_path'
+                        ]
+                        filtered_init = {k: v for k, v in value.items() if k in valid_init_args}
+
+                        if self.video_manager.is_capturing:
+                            # Stop capture, reinitialize with new config, restart
+                            logger.info("Stopping capture to apply new camera configuration...")
+                            self.video_manager.stop_capture()
+                            if self._data_transmitter_task:
+                                self._data_transmitter_task.cancel()
+                                self._data_transmitter_task = None
+
+                            # Reinitialize with new config
                             self.video_manager.initialize(**filtered_init)
+
+                            # Restart capture
+                            if self.video_manager.start_capture():
+                                if not self._data_transmitter_task or self._data_transmitter_task.done():
+                                    self._data_transmitter_task = asyncio.create_task(self._data_transmitter_loop())
+                                logger.info("Capture restarted with new configuration")
+                            else:
+                                logger.error("Failed to restart capture after config change")
                         else:
-                            logger.warning("Received camera_setup while capturing. Ignoring to prevent interruption.")
+                            self.video_manager.initialize(**filtered_init)
                         success = True
                         
                     else:
@@ -230,6 +246,14 @@ class SievWorker:
             elif cmd.cmd == "list_cameras":
                 cameras = self.video_manager.get_available_cameras()
                 data = {"cameras": cameras}
+                success = True
+
+            elif cmd.cmd == "list_resolutions":
+                camera_id = cmd.params.get("camera_id", 0)
+                logger.info(f"Listing resolutions for camera_id: {camera_id}")
+                resolutions = self.video_manager.get_available_resolutions(camera_id)
+                logger.info(f"Found {len(resolutions)} resolutions: {resolutions[:5]}...")
+                data = {"resolutions": resolutions, "camera_id": camera_id}
                 success = True
 
             elif cmd.cmd == "send_command":

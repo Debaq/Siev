@@ -68,12 +68,15 @@ function App() {
     }
   }, [isWsConnected, send])
 
-  // Sync selected camera if it's not in the list
+  // Sync selected camera with config or camera list
   useEffect(() => {
-    if (wsCameras.length > 0 && !wsCameras.find(c => c.id === selectedCamera)) {
-        setSelectedCamera(wsCameras[0].id)
+    // First, try to use the camera from config
+    if (appConfig?.vng?.camera?.camera_id !== undefined) {
+      setSelectedCamera(appConfig.vng.camera.camera_id);
+    } else if (wsCameras.length > 0 && !wsCameras.find(c => c.id === selectedCamera)) {
+      setSelectedCamera(wsCameras[0].id);
     }
-  }, [wsCameras, selectedCamera])
+  }, [wsCameras, appConfig?.vng?.camera?.camera_id])
 
   // Resizing Logic
   useEffect(() => {
@@ -95,11 +98,18 @@ function App() {
   // Actions
   const handleStartCapture = async () => {
     try {
+      // Use config values from appConfig or defaults
+      const cameraId = appConfig?.vng?.camera?.camera_id ?? selectedCamera;
+      const width = appConfig?.vng?.camera?.resolution_width ?? 960;
+      const height = appConfig?.vng?.camera?.resolution_height ?? 540;
+      const fps = appConfig?.vng?.camera?.fps ?? 120;
+
       send({
         type: 'start_capture',
-        camera_id: selectedCamera,
-        width: 960,
-        height: 540
+        camera_id: cameraId,
+        width: width,
+        height: height,
+        fps: fps
       })
       setIsCapturing(true)
 

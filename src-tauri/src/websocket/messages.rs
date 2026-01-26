@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use crate::math::processor::ProcessedEyeData;
 
+fn default_fps() -> u32 {
+    120
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WsMessage {
@@ -25,13 +29,22 @@ pub enum WsMessage {
     CamerasList {
         cameras: serde_json::Value,
     },
+    ResolutionsList {
+        resolutions: Vec<String>,
+        camera_id: i32,
+    },
 
     // Frontend -> Rust: Commands
     ListCameras,
+    ListResolutions {
+        camera_id: i32,
+    },
     StartCapture {
         camera_id: i32,
         width: u32,
         height: u32,
+        #[serde(default = "default_fps")]
+        fps: u32,
     },
     StopCapture,
     SetConfig {

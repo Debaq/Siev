@@ -62,7 +62,14 @@ class CameraResolutionDetector:
                         if formato not in resoluciones_fps:
                             resoluciones_fps.append(formato)
             
-            return sorted(resoluciones_fps)
+            # Sort by resolution (descending) then by fps (descending)
+            def sort_key(res_str):
+                match = re.match(r'(\d+)x(\d+)@(\d+)', res_str)
+                if match:
+                    width, height, fps = int(match.group(1)), int(match.group(2)), int(match.group(3))
+                    return (-width * height, -fps)  # Negative for descending
+                return (0, 0)
+            return sorted(resoluciones_fps, key=sort_key)
             
         except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
             logger.error(f"Error with V4L2: {e}, using OpenCV as fallback")

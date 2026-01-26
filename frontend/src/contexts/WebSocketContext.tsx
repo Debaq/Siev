@@ -6,6 +6,8 @@ interface WebSocketContextType {
     pythonStatus: boolean;
     hardwareStatus: boolean;
     cameras: any[];
+    resolutions: string[];
+    resolutionsCameraId: number;
     send: (msg: any) => void;
     addListener: (type: string, callback: (data: any) => void) => void;
     removeListener: (type: string, callback: (data: any) => void) => void;

@@ -21,8 +21,10 @@ export type WsMessage =
     | { type: 'status'; python_connected: boolean; hardware_connected: boolean }
     | { type: 'error'; source: string; message: string }
     | { type: 'cameras_list'; cameras: any[] }
+    | { type: 'resolutions_list'; resolutions: string[]; camera_id: number }
     | { type: 'list_cameras' }
-    | { type: 'start_capture'; camera_id: number; width: number; height: number }
+    | { type: 'list_resolutions'; camera_id: number }
+    | { type: 'start_capture'; camera_id: number; width: number; height: number; fps?: number }
     | { type: 'stop_capture' }
     | { type: 'set_config'; key: string; value: any }
     | { type: 'connect_hardware'; port: string; baud_rate: number }
@@ -36,6 +38,8 @@ export function useWebSocket() {
     const [pythonStatus, setPythonStatus] = useState(false);
     const [hardwareStatus, setHardwareStatus] = useState(false);
     const [cameras, setCameras] = useState<any[]>([]);
+    const [resolutions, setResolutions] = useState<string[]>([]);
+    const [resolutionsCameraId, setResolutionsCameraId] = useState<number>(-1);
     
     const ws = useRef<WebSocket | null>(null);
     const reconnectTimeout = useRef<number | null>(null);
@@ -114,6 +118,11 @@ export function useWebSocket() {
                         case 'cameras_list':
                             setCameras(msg.cameras);
                             break;
+                        case 'resolutions_list':
+                            console.log('[WS] Received resolutions_list:', msg);
+                            setResolutions(msg.resolutions);
+                            setResolutionsCameraId(msg.camera_id);
+                            break;
                         case 'error':
                             console.error(`Error from ${msg.source}: ${msg.message}`);
                             break;
@@ -151,6 +160,7 @@ export function useWebSocket() {
 
     const send = useCallback((msg: any) => {
         if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+            console.log('[WS] Sending:', msg);
             ws.current.send(JSON.stringify(msg));
         } else {
             console.warn('Cannot send: WebSocket not connected');
@@ -162,6 +172,8 @@ export function useWebSocket() {
         pythonStatus,
         hardwareStatus,
         cameras,
+        resolutions,
+        resolutionsCameraId,
         send,
         addListener,
         removeListener

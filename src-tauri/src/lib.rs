@@ -187,11 +187,12 @@ async fn python_start_capture(
     camera_id: i32,
     width: u32,
     height: u32,
+    fps: Option<u32>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state
         .python_bridge
-        .start_capture(camera_id, width, height)
+        .start_capture(camera_id, width, height, fps.unwrap_or(120))
         .await
         .map_err(|e| e.to_string())
 }
@@ -289,8 +290,11 @@ pub fn run() {
                         WsMessage::ListCameras => {
                             let _ = bridge_cmds.list_cameras().await;
                         }
-                        WsMessage::StartCapture { camera_id, width, height } => {
-                            let _ = bridge_cmds.start_capture(camera_id, width, height).await;
+                        WsMessage::ListResolutions { camera_id } => {
+                            let _ = bridge_cmds.list_resolutions(camera_id).await;
+                        }
+                        WsMessage::StartCapture { camera_id, width, height, fps } => {
+                            let _ = bridge_cmds.start_capture(camera_id, width, height, fps).await;
                         }
                         WsMessage::StopCapture => {
                             let _ = bridge_cmds.stop_capture().await;
@@ -415,8 +419,22 @@ pub fn run() {
                         BridgeEvent::CmdAck(ack) => {
                             if ack.success {
                                 if let Some(cameras) = ack.data.get("cameras") {
-                                    ws_broadcast.broadcast(&WsMessage::CamerasList { 
-                                        cameras: cameras.clone() 
+                                    ws_broadcast.broadcast(&WsMessage::CamerasList {
+                                        cameras: cameras.clone()
+                                    });
+                                }
+                                if let Some(resolutions) = ack.data.get("resolutions") {
+                                    let camera_id = ack.data.get("camera_id")
+                                        .and_then(|v| v.as_i64())
+                                        .unwrap_or(0) as i32;
+                                    let res_list: Vec<String> = resolutions.as_array()
+                                        .map(|arr| arr.iter()
+                                            .filter_map(|v| v.as_str().map(String::from))
+                                            .collect())
+                                        .unwrap_or_default();
+                                    ws_broadcast.broadcast(&WsMessage::ResolutionsList {
+                                        resolutions: res_list,
+                                        camera_id,
                                     });
                                 }
                             }

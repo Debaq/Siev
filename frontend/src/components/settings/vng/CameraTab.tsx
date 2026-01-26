@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { SettingsSection } from '../shared/SettingsSection';
 import { SettingsField } from '../shared/SettingsField';
@@ -11,11 +11,30 @@ interface CameraTabProps {
 }
 
 export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig }) => {
-    const { cameras, send } = useWebSocket();
+    const { cameras, resolutions, resolutionsCameraId, send, pythonStatus } = useWebSocket();
     const [applyingResolution, setApplyingResolution] = useState(false);
+
+    // Debug log
+    console.log('[CameraTab] Render - resolutions:', resolutions, 'pythonStatus:', pythonStatus);
+
+    // Fetch resolutions when camera changes or on initial load (only when Python is connected)
+    useEffect(() => {
+        const cameraId = config.vng?.camera?.camera_id;
+        console.log('[CameraTab] useEffect - cameraId:', cameraId, 'pythonStatus:', pythonStatus, 'resolutionsCameraId:', resolutionsCameraId);
+        if (pythonStatus && cameraId !== undefined && cameraId !== resolutionsCameraId) {
+            console.log('[CameraTab] Requesting resolutions for camera:', cameraId);
+            send({ type: 'list_resolutions', camera_id: cameraId });
+        }
+    }, [config.vng?.camera?.camera_id, resolutionsCameraId, pythonStatus, send]);
 
     const handleRefreshCameras = () => {
         send({ type: 'list_cameras' });
+    };
+
+    const handleCameraChange = (newCameraId: number) => {
+        updateConfig('vng.camera.camera_id', newCameraId);
+        // Request resolutions for the new camera
+        send({ type: 'list_resolutions', camera_id: newCameraId });
     };
 
     const handleResolutionSelect = async (resolutionStr: string) => {
@@ -24,20 +43,20 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig }) =>
             const width = parseInt(match[1]);
             const height = parseInt(match[2]);
             const fps = parseInt(match[3]);
+            const camera_id = config.vng.camera.camera_id;
 
             updateConfig('vng.camera.resolution_width', width);
             updateConfig('vng.camera.resolution_height', height);
             updateConfig('vng.camera.fps', fps);
 
             setApplyingResolution(true);
-            // Send config via WebSocket
+            // Send config via WebSocket with camera_id
             send({
                 type: 'set_config',
                 key: 'camera_setup',
-                value: { width, height, fps }
+                value: { camera_id, width, height, fps }
             });
-            
-            // Simular breve delay de aplicación
+
             setTimeout(() => setApplyingResolution(false), 500);
         }
     };
@@ -55,15 +74,15 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig }) =>
                         <select
                             className="select flex-1 h-9 py-1 text-sm"
                             value={config.vng.camera.camera_id}
-                            onChange={e => updateConfig('vng.camera.camera_id', Number(e.target.value))}
+                            onChange={e => handleCameraChange(Number(e.target.value))}
                         >
                             {cameras.map((c: any) => (
                                 <option key={c.id} value={c.id}>{c.name} ({c.path})</option>
                             ))}
                             {cameras.length === 0 && <option value={config.vng.camera.camera_id}>Cámara {config.vng.camera.camera_id}</option>}
                         </select>
-                        <button 
-                            className="btn btn-secondary p-2 h-9" 
+                        <button
+                            className="btn btn-secondary p-2 h-9"
                             onClick={handleRefreshCameras}
                             title="Refrescar lista de cámaras"
                         >
@@ -72,22 +91,33 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig }) =>
                     </div>
                 </SettingsField>
 
-                <SettingsField 
+                <SettingsField
                     label="Resolución y Velocidad"
                     description={applyingResolution ? "Aplicando cambios..." : `Resolución actual: ${currentRes}`}
                 >
-                    <select
-                        className="select h-9 py-1 text-sm"
-                        value={currentRes}
-                        onChange={e => handleResolutionSelect(e.target.value)}
-                        disabled={applyingResolution}
-                    >
-                        {/* Note: In a fully dynamic version, we'd fetch resolutions per camera via WS too */}
-                        <option value={currentRes}>{currentRes}</option>
-                        <option value="640x480@120">640x480@120 FPS</option>
-                        <option value="960x540@120">960x540@120 FPS</option>
-                        <option value="1280x720@60">1280x720@60 FPS</option>
-                    </select>
+                    <div className="flex gap-2">
+                        <select
+                            className="select flex-1 h-9 py-1 text-sm"
+                            value={currentRes}
+                            onChange={e => handleResolutionSelect(e.target.value)}
+                            disabled={applyingResolution}
+                        >
+                            {resolutions.length > 0 ? (
+                                resolutions.map((res: string) => (
+                                    <option key={res} value={res}>{res}</option>
+                                ))
+                            ) : (
+                                <option value={currentRes}>{currentRes}</option>
+                            )}
+                        </select>
+                        <button
+                            className="btn btn-secondary p-2 h-9"
+                            onClick={() => send({ type: 'list_resolutions', camera_id: config.vng.camera.camera_id })}
+                            title="Refrescar resoluciones"
+                        >
+                            <RefreshCw className="w-4 h-4" />
+                        </button>
+                    </div>
                 </SettingsField>
 
                 <div className="grid grid-cols-2 gap-4">

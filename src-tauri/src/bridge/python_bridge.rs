@@ -175,11 +175,13 @@ impl PythonBridge {
         camera_id: i32,
         width: u32,
         height: u32,
+        fps: u32,
     ) -> io::Result<()> {
         let params = serde_json::json!({
             "camera_id": camera_id,
             "width": width,
-            "height": height
+            "height": height,
+            "fps": fps
         });
         self.send_command_with_params("start_capture", params).await
     }
@@ -192,6 +194,14 @@ impl PythonBridge {
     /// List available cameras
     pub async fn list_cameras(&self) -> io::Result<()> {
         self.send_command("list_cameras").await
+    }
+
+    /// List available resolutions for a camera
+    pub async fn list_resolutions(&self, camera_id: i32) -> io::Result<()> {
+        let params = serde_json::json!({
+            "camera_id": camera_id
+        });
+        self.send_command_with_params("list_resolutions", params).await
     }
 
     /// Set generic configuration
