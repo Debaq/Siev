@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { FileText, Users, LayoutGrid, Database } from 'lucide-react';
+import { FileText, Users, LayoutGrid, Database, ShieldAlert } from 'lucide-react';
 import { SettingsTabs, TabDefinition } from '../SettingsTabs';
 import { InstitutionTab } from './InstitutionTab';
 import { TeamTab } from './TeamTab';
 import { ModulesTab } from './ModulesTab';
 import { StorageTab } from './StorageTab';
+import { MaintenanceTab } from './MaintenanceTab';
 
 interface GeneralSettingsProps {
     config: any;
@@ -16,6 +17,7 @@ const GENERAL_TABS: TabDefinition[] = [
     { id: 'team', label: 'Equipo', icon: Users },
     { id: 'modules', label: 'Módulos', icon: LayoutGrid },
     { id: 'storage', label: 'Almacenamiento', icon: Database },
+    { id: 'maintenance', label: 'Mantenimiento', icon: ShieldAlert },
 ];
 
 export const GeneralSettings: React.FC<GeneralSettingsProps> = ({ config, updateConfig }) => {
@@ -41,6 +43,9 @@ export const GeneralSettings: React.FC<GeneralSettingsProps> = ({ config, update
                 )}
                 {activeTab === 'storage' && (
                     <StorageTab config={config} updateConfig={updateConfig} />
+                )}
+                {activeTab === 'maintenance' && (
+                    <MaintenanceTab />
                 )}
             </div>
         </div>

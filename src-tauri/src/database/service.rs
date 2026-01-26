@@ -78,12 +78,85 @@ impl DatabaseService {
                 name TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
+
+            -- VNG Test Results
+            CREATE TABLE IF NOT EXISTS vng_test_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                test_type TEXT NOT NULL,
+                results_json TEXT,
+                clinical_notes TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
+
+            -- VNG Reference Values
+            CREATE TABLE IF NOT EXISTS vng_reference_values (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                test_type TEXT NOT NULL,
+                metric_name TEXT NOT NULL,
+                min_normal REAL,
+                max_normal REAL,
+                unit TEXT,
+                age_group TEXT,
+                UNIQUE(test_type, metric_name, age_group)
+            );
+
+            -- VNG Reports
+            CREATE TABLE IF NOT EXISTS vng_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                pdf_path TEXT,
+                config_json TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+            );
             "#
         )
         .execute(&self.pool)
         .await
         .map_err(|e| e.to_string())?;
 
+        Ok(())
+    }
+
+    pub async fn reset_database(&self) -> Result<(), String> {
+        sqlx::query("DROP TABLE IF EXISTS sessions")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        
+        sqlx::query("DROP TABLE IF EXISTS patients")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+            
+        sqlx::query("DROP TABLE IF EXISTS settings")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query("DROP TABLE IF EXISTS specialists")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query("DROP TABLE IF EXISTS vng_test_results")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query("DROP TABLE IF EXISTS vng_reference_values")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query("DROP TABLE IF EXISTS vng_reports")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        self.init_schema().await?;
         Ok(())
     }
 
@@ -425,5 +498,125 @@ impl DatabaseService {
         .last_insert_rowid();
 
         Ok(id)
+    }
+
+    // --- VNG Test Results ---
+
+    pub async fn save_vng_test_result(
+        &self,
+        session_id: i64,
+        test_type: &str,
+        results_json: &str,
+        clinical_notes: Option<&str>,
+    ) -> Result<i64, String> {
+        let id = sqlx::query(
+            "INSERT INTO vng_test_results (session_id, test_type, results_json, clinical_notes) VALUES (?, ?, ?, ?)"
+        )
+        .bind(session_id)
+        .bind(test_type)
+        .bind(results_json)
+        .bind(clinical_notes)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .last_insert_rowid();
+
+        Ok(id)
+    }
+
+    pub async fn get_vng_test_results(
+        &self,
+        session_id: i64,
+        test_type: Option<&str>,
+    ) -> Result<Vec<(i64, String, String, Option<String>)>, String> {
+        let results: Vec<(i64, String, String, Option<String>)> = if let Some(tt) = test_type {
+            sqlx::query_as(
+                "SELECT id, test_type, results_json, clinical_notes FROM vng_test_results WHERE session_id = ? AND test_type = ? ORDER BY created_at DESC"
+            )
+            .bind(session_id)
+            .bind(tt)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?
+        } else {
+            sqlx::query_as(
+                "SELECT id, test_type, results_json, clinical_notes FROM vng_test_results WHERE session_id = ? ORDER BY created_at DESC"
+            )
+            .bind(session_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?
+        };
+
+        Ok(results)
+    }
+
+    pub async fn get_vng_reference_values(
+        &self,
+        test_type: Option<&str>,
+        age_group: Option<&str>,
+    ) -> Result<Vec<(String, String, f64, f64, Option<String>)>, String> {
+        let results: Vec<(String, String, f64, f64, Option<String>)> = match (test_type, age_group) {
+            (Some(tt), Some(ag)) => {
+                sqlx::query_as(
+                    "SELECT test_type, metric_name, min_normal, max_normal, unit FROM vng_reference_values WHERE test_type = ? AND (age_group = ? OR age_group IS NULL)"
+                )
+                .bind(tt)
+                .bind(ag)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| e.to_string())?
+            }
+            (Some(tt), None) => {
+                sqlx::query_as(
+                    "SELECT test_type, metric_name, min_normal, max_normal, unit FROM vng_reference_values WHERE test_type = ?"
+                )
+                .bind(tt)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| e.to_string())?
+            }
+            _ => {
+                sqlx::query_as(
+                    "SELECT test_type, metric_name, min_normal, max_normal, unit FROM vng_reference_values"
+                )
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| e.to_string())?
+            }
+        };
+
+        Ok(results)
+    }
+
+    pub async fn save_vng_report(
+        &self,
+        session_id: i64,
+        pdf_path: Option<&str>,
+        config_json: &str,
+    ) -> Result<i64, String> {
+        let id = sqlx::query(
+            "INSERT INTO vng_reports (session_id, pdf_path, config_json) VALUES (?, ?, ?)"
+        )
+        .bind(session_id)
+        .bind(pdf_path)
+        .bind(config_json)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .last_insert_rowid();
+
+        Ok(id)
+    }
+
+    pub async fn get_previous_session(&self, patient_id: i64, before_session_id: i64) -> Result<Option<Session>, String> {
+        sqlx::query_as::<_, Session>(
+            "SELECT * FROM sessions WHERE patient_id = ? AND id < ? ORDER BY date DESC LIMIT 1"
+        )
+        .bind(patient_id)
+        .bind(before_session_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| e.to_string())
     }
 }

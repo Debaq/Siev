@@ -79,10 +79,23 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
         },
         report: {
             template: 'standard',
-            include_sections: ['patient', 'summary', 'graphs'],
+            sections: [
+                { id: 'header', label: 'Encabezado', enabled: true, order: 0 },
+                { id: 'patient', label: 'Datos del Paciente', enabled: true, order: 1 },
+                { id: 'saccades', label: 'Sacadas', enabled: true, order: 2 },
+                { id: 'pursuit', label: 'Rastreo', enabled: true, order: 3 },
+                { id: 'okn', label: 'OKN', enabled: false, order: 4 },
+                { id: 'positional', label: 'Posicional', enabled: true, order: 5 },
+                { id: 'caloric', label: 'Calóricas', enabled: true, order: 6 },
+                { id: 'summary', label: 'Resumen Clínico', enabled: true, order: 7 },
+                { id: 'signature', label: 'Firma', enabled: true, order: 8 },
+            ],
             export_format: 'pdf',
             include_logo: true,
-            include_raw_data: false
+            include_raw_data: false,
+            include_graphs: true,
+            compare_with_previous: false,
+            diagram_style: 'claussen'
         }
     },
     stimulus_screen: {

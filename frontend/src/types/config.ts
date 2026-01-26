@@ -86,12 +86,22 @@ export interface VNGCalibrationConfig {
     patient_distance_cm: number;
 }
 
+export interface ReportSection {
+    id: string;
+    label: string;
+    enabled: boolean;
+    order: number;
+}
+
 export interface VNGReportConfig {
-    template: 'standard' | 'detailed' | 'minimal';
-    include_sections: string[];
+    template: 'standard' | 'detailed' | 'minimal' | 'custom';
+    sections: ReportSection[];
     export_format: 'pdf' | 'docx';
     include_logo: boolean;
     include_raw_data: boolean;
+    include_graphs: boolean;
+    compare_with_previous: boolean;
+    diagram_style: 'claussen' | 'freyss' | 'butterfly';
 }
 
 export interface VNGConfig {

@@ -5,6 +5,7 @@ import { CameraTab } from './CameraTab';
 import { AlgorithmTab } from './AlgorithmTab';
 import { HardwareTab } from './HardwareTab';
 import { CalibrationTab } from './CalibrationTab';
+import { ReportTab } from './ReportTab';
 
 interface VNGSettingsProps {
     config: any;
@@ -44,9 +45,7 @@ export const VNGSettings: React.FC<VNGSettingsProps> = ({ config, updateConfig }
                     <CalibrationTab config={config} updateConfig={updateConfig} />
                 )}
                 {activeTab === 'report' && (
-                    <div className="p-10 text-center text-dark-500 italic">
-                        Configuración de reportes próximamente...
-                    </div>
+                    <ReportTab config={config} updateConfig={updateConfig} />
                 )}
             </div>
         </div>

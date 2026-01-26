@@ -6,6 +6,7 @@ pub mod bridge;
 pub mod database;
 pub mod hardware;
 pub mod math;
+pub mod vng;
 pub mod websocket;
 pub mod storage;
 
@@ -19,6 +20,7 @@ use bridge::python_bridge::BridgeEvent;
 use tauri_plugin_shell::ShellExt;
 use crate::storage::bundle::{SievBundle, SessionManifest};
 use crate::storage::recorder::SessionRecorder;
+use crate::vng::report::{VNGReportData, PatientReportData, SessionReportData};
 use std::path::PathBuf;
 
 // Application State
@@ -307,6 +309,11 @@ fn get_websocket_port(state: State<AppState>) -> u16 {
 // --- System Commands ---
 
 #[tauri::command]
+async fn reset_application(state: State<'_, AppState>) -> Result<(), String> {
+    state.db.reset_database().await
+}
+
+#[tauri::command]
 fn get_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
@@ -315,6 +322,259 @@ fn get_version() -> String {
 fn set_filtering_enabled(enabled: bool, state: State<AppState>) {
     let mut processor = state.eye_processor.lock().unwrap();
     processor.filtering_enabled = enabled;
+}
+
+// --- VNG Report Commands ---
+
+#[tauri::command]
+async fn get_vng_report_data(
+    session_id: i64,
+    include_historical: bool,
+    state: State<'_, AppState>
+) -> Result<VNGReportData, String> {
+    // Get session
+    let session = state.db.get_session_by_id(session_id).await?
+        .ok_or("Session not found")?;
+
+    // Get patient
+    let patient = state.db.get_patient_by_id(session.patient_id).await?;
+
+    // Calculate age if birth_date exists
+    let age = patient.birth_date.map(|bd| {
+        let now = chrono::Local::now().naive_local();
+        let years = now.signed_duration_since(bd).num_days() / 365;
+        years as i32
+    });
+
+    let patient_data = PatientReportData {
+        id: patient.id,
+        full_name: format!("{} {}", patient.first_name, patient.last_name),
+        dni: patient.dni,
+        birth_date: patient.birth_date.map(|d| d.format("%Y-%m-%d").to_string()),
+        age,
+        gender: patient.gender,
+    };
+
+    // Get specialist name if exists
+    let specialist_name = if let Some(spec_id) = session.specialist_id {
+        let specialists = state.db.get_specialists().await?;
+        specialists.iter().find(|s| s.id == spec_id).map(|s| s.name.clone())
+    } else {
+        None
+    };
+
+    let session_data = SessionReportData {
+        id: session.id,
+        date: session.date.format("%Y-%m-%d %H:%M").to_string(),
+        specialist_name,
+        description: session.description,
+    };
+
+    let mut report_data = VNGReportData::new(patient_data, session_data);
+
+    // Load test results from database
+    let test_results = state.db.get_vng_test_results(session_id, None).await?;
+
+    for (_, test_type, results_json, _) in test_results {
+        match test_type.as_str() {
+            "saccade" => {
+                if let Ok(result) = serde_json::from_str(&results_json) {
+                    report_data.saccades = Some(result);
+                }
+            }
+            "pursuit" => {
+                if let Ok(result) = serde_json::from_str(&results_json) {
+                    report_data.pursuit = Some(result);
+                }
+            }
+            "okn" => {
+                if let Ok(result) = serde_json::from_str(&results_json) {
+                    report_data.okn = Some(result);
+                }
+            }
+            "positional" => {
+                if let Ok(result) = serde_json::from_str(&results_json) {
+                    report_data.positional = Some(result);
+                }
+            }
+            "caloric" => {
+                if let Ok(result) = serde_json::from_str(&results_json) {
+                    report_data.caloric = Some(result);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Load historical data if requested
+    if include_historical {
+        if let Ok(Some(prev_session)) = state.db.get_previous_session(patient.id, session_id).await {
+            let prev_results = state.db.get_vng_test_results(prev_session.id, Some("caloric")).await?;
+
+            if let Some((_, _, results_json, _)) = prev_results.first() {
+                if let Ok(caloric) = serde_json::from_str(results_json) {
+                    let prev_specialist = if let Some(spec_id) = prev_session.specialist_id {
+                        let specialists = state.db.get_specialists().await?;
+                        specialists.iter().find(|s| s.id == spec_id).map(|s| s.name.clone())
+                    } else {
+                        None
+                    };
+
+                    report_data.previous_session = Some(vng::report::PreviousSessionData {
+                        session: SessionReportData {
+                            id: prev_session.id,
+                            date: prev_session.date.format("%Y-%m-%d %H:%M").to_string(),
+                            specialist_name: prev_specialist,
+                            description: prev_session.description,
+                        },
+                        caloric: Some(caloric),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(report_data)
+}
+
+#[tauri::command]
+async fn save_vng_test_result(
+    session_id: i64,
+    test_type: String,
+    results_json: String,
+    clinical_notes: Option<String>,
+    state: State<'_, AppState>
+) -> Result<i64, String> {
+    state.db.save_vng_test_result(
+        session_id,
+        &test_type,
+        &results_json,
+        clinical_notes.as_deref()
+    ).await
+}
+
+#[tauri::command]
+async fn get_vng_test_results(
+    session_id: i64,
+    test_type: Option<String>,
+    state: State<'_, AppState>
+) -> Result<Vec<serde_json::Value>, String> {
+    let results = state.db.get_vng_test_results(session_id, test_type.as_deref()).await?;
+
+    let parsed: Vec<serde_json::Value> = results
+        .into_iter()
+        .filter_map(|(id, tt, json, notes)| {
+            serde_json::from_str::<serde_json::Value>(&json).ok().map(|mut v| {
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert("id".into(), serde_json::json!(id));
+                    obj.insert("test_type".into(), serde_json::json!(tt));
+                    obj.insert("clinical_notes".into(), serde_json::json!(notes));
+                }
+                v
+            })
+        })
+        .collect();
+
+    Ok(parsed)
+}
+
+#[tauri::command]
+async fn get_reference_values(
+    test_type: Option<String>,
+    age_group: Option<String>,
+    state: State<'_, AppState>
+) -> Result<Vec<serde_json::Value>, String> {
+    let results = state.db.get_vng_reference_values(
+        test_type.as_deref(),
+        age_group.as_deref()
+    ).await?;
+
+    let values: Vec<serde_json::Value> = results
+        .into_iter()
+        .map(|(tt, metric, min, max, unit)| {
+            serde_json::json!({
+                "test_type": tt,
+                "metric_name": metric,
+                "min_normal": min,
+                "max_normal": max,
+                "unit": unit
+            })
+        })
+        .collect();
+
+    // If empty, return defaults
+    if values.is_empty() {
+        let defaults = vng::metrics::get_default_reference_values();
+        return Ok(defaults
+            .into_iter()
+            .filter(|r| test_type.as_ref().map_or(true, |t| &r.test_type == t))
+            .map(|r| {
+                serde_json::json!({
+                    "test_type": r.test_type,
+                    "metric_name": r.metric_name,
+                    "min_normal": r.min_normal,
+                    "max_normal": r.max_normal,
+                    "unit": r.unit
+                })
+            })
+            .collect());
+    }
+
+    Ok(values)
+}
+
+#[tauri::command]
+async fn calculate_vng_metrics(
+    _data_path: String,
+    test_type: String,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    // This is a placeholder for actual metric calculation
+    // In a real implementation, this would:
+    // 1. Load eye tracking data from data_path
+    // 2. Apply the appropriate analysis algorithm based on test_type
+    // 3. Return calculated metrics
+
+    match test_type.as_str() {
+        "jongkees" => {
+            let rw = params["rw"].as_f64().unwrap_or(0.0);
+            let rc = params["rc"].as_f64().unwrap_or(0.0);
+            let lw = params["lw"].as_f64().unwrap_or(0.0);
+            let lc = params["lc"].as_f64().unwrap_or(0.0);
+
+            let (uw, dp) = vng::metrics::calculate_jongkees(rw, rc, lw, lc);
+
+            Ok(serde_json::json!({
+                "unilateral_weakness_percent": uw,
+                "directional_preponderance_percent": dp,
+                "uw_significant": uw.abs() > 22.0,
+                "dp_significant": dp.abs() > 28.0
+            }))
+        }
+        "fixation_index" => {
+            let spv_dark = params["spv_dark"].as_f64().unwrap_or(0.0);
+            let spv_fixation = params["spv_fixation"].as_f64().unwrap_or(0.0);
+
+            let fi = vng::metrics::calculate_fixation_index(spv_dark, spv_fixation);
+
+            Ok(serde_json::json!({
+                "fixation_index": fi,
+                "is_normal": fi > 60.0
+            }))
+        }
+        "pursuit_gain" => {
+            let eye_vel = params["eye_velocity"].as_f64().unwrap_or(0.0);
+            let target_vel = params["target_velocity"].as_f64().unwrap_or(0.0);
+
+            let gain = vng::metrics::calculate_pursuit_gain(eye_vel, target_vel);
+
+            Ok(serde_json::json!({
+                "gain": gain,
+                "is_normal": gain >= 0.8 && gain <= 1.0
+            }))
+        }
+        _ => Err(format!("Unknown test type: {}", test_type))
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -624,7 +884,14 @@ pub fn run() {
             set_setting,
             get_default_storage_path,
             set_filtering_enabled,
-            sync_storage
+            sync_storage,
+            reset_application,
+            // VNG Report Commands
+            get_vng_report_data,
+            save_vng_test_result,
+            get_vng_test_results,
+            get_reference_values,
+            calculate_vng_metrics
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
