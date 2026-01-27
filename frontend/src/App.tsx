@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
+import { emit } from '@tauri-apps/api/event'
 import { Settings, GripHorizontal } from 'lucide-react'
 import VideoFeed from './components/VideoFeed'
 import ControlPanel from './components/ControlPanel'
@@ -30,8 +31,8 @@ const MainApp = () => {
   const { getSetting, getSpecialists, createSession } = useTauriDb()
   
   // Initialize hooks with WebSocket send capability
-  const { config: appConfig } = useSettingsConfig(send)
-  const sessionConfig = useSessionConfig(send)
+  const { config: appConfig, updateConfig } = useSettingsConfig(send)
+  const sessionConfig = useSessionConfig(send, updateConfig)
   
   // UX State
   const [showSplash, setShowSplash] = useState(true)
@@ -80,15 +81,32 @@ const MainApp = () => {
     }
   }, [isWsConnected, send])
 
+  const hasInitializedSessionRef = useRef(false);
+
+  // Auto-start capture when entering capture view
+  useEffect(() => {
+    if (activeView === 'capture' && !isCapturing && isWsConnected) {
+      console.log("[App] Auto-starting capture for VNG...");
+      handleStartCapture();
+    }
+  }, [activeView, isWsConnected]);
+
   // Sync selected camera with config or camera list
   useEffect(() => {
     // First, try to use the camera from config
     if (appConfig?.vng?.camera?.camera_id !== undefined) {
       setSelectedCamera(appConfig.vng.camera.camera_id);
+      
+      // Initialize session config only once when appConfig is first loaded
+      if (!hasInitializedSessionRef.current) {
+        console.log("[App] Initializing sessionConfig with loaded appConfig");
+        sessionConfig.initFromPersistentConfig(appConfig);
+        hasInitializedSessionRef.current = true;
+      }
     } else if (wsCameras.length > 0 && !wsCameras.find(c => c.id === selectedCamera)) {
       setSelectedCamera(wsCameras[0].id);
     }
-  }, [wsCameras, appConfig?.vng?.camera?.camera_id])
+  }, [wsCameras, appConfig, sessionConfig])
 
   // Resizing Logic
   useEffect(() => {
@@ -110,12 +128,13 @@ const MainApp = () => {
   // Actions
   const handleStartCapture = async () => {
     try {
-      // Use config values from appConfig or defaults
       const cameraId = appConfig?.vng?.camera?.camera_id ?? selectedCamera;
       const width = appConfig?.vng?.camera?.resolution_width ?? 960;
       const height = appConfig?.vng?.camera?.resolution_height ?? 540;
       const fps = appConfig?.vng?.camera?.fps ?? 120;
 
+      console.log("[App] Starting capture with config:", { cameraId, width, height, fps });
+      
       send({
         type: 'start_capture',
         camera_id: cameraId,
@@ -127,29 +146,92 @@ const MainApp = () => {
 
       // Initial sync of settings to Python via WebSocket
       if (appConfig) {
-        sessionConfig.initFromPersistentConfig(appConfig)
-        // Sync current session values
+        // Ensure session config has the latest persistent values
+        sessionConfig.initFromPersistentConfig(appConfig);
+        
+        // Use the values directly from appConfig for the initial sync to avoid race conditions
+        const vng = appConfig.vng;
+        const algo = vng.algorithm || {};
+        const cam = vng.camera || {};
+
         send({
             type: 'set_config',
             key: 'session_update',
-            value: sessionConfig.values
+            value: {
+                brightness: cam.brightness ?? cam.exposure ?? -21,
+                contrast: cam.contrast ?? 50,
+                threshold: [algo.threshold_right ?? 40, algo.threshold_left ?? 40],
+                erode: [algo.erode_right ?? 0, algo.erode_left ?? 0],
+                nose_width: algo.nose_width ?? 0.25,
+                eye_height: algo.eye_height ?? 0.25,
+                use_yolo: algo.use_yolo ?? false,
+                show_debug: algo.show_debug ?? false,
+                smooth: algo.smooth ?? 2.5,
+                manual_roi_right: algo.manual_roi_right,
+                manual_roi_left: algo.manual_roi_left,
+            }
         });
-        // Sync pupil detection mode from persistent config
-        const pupilMode = appConfig?.vng?.pupil_detection?.mode ?? 'legacy';
+
         send({
             type: 'set_config',
             key: 'pupil_mode',
-            value: pupilMode
+            value: appConfig.vng.pupil_detection?.mode ?? 'legacy'
         });
       }
     } catch (e) { console.error(e) }
   }
 
-  const handleStopCapture = async () => {
-    try { 
-      send({ type: 'stop_capture' })
-      setIsCapturing(false) 
-    } catch (e) { console.error(e) }
+  const handleCalibrate = async () => {
+    try {
+        if (!appConfig) return;
+
+        // 1. Open external display window (patient screen)
+        const wasCreated = await invoke<boolean>('open_external_display');
+        
+        if (wasCreated) {
+            // Wait for window to load (React hydration)
+            await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+
+        // 2. Map VNG persistent calibration config to stimulus config
+        const cal = appConfig.vng.calibration;
+        const testConfig = {
+            test: 'calibration',
+            params: {
+                type: cal.pattern_type === '3_points' ? 'points_3' : 
+                      cal.pattern_type === '5_points' ? 'points_5' : 'points_9',
+                horizontal_fov: cal.horizontal_angle,
+                vertical_fov: cal.vertical_angle,
+                duration_per_point: cal.point_duration,
+                auto_advance: true
+            }
+        };
+
+        // 3. Screen config from persistence
+        const screenConfig = appConfig.stimulus_screen?.display;
+
+        // 4. Target config (can be default or from config if added later)
+        const targetConfig = {
+            size_degrees: 1.5,
+            color: 'red',
+            shape: 'circle',
+            brightness: 100
+        };
+
+        // 5. Emit stimulus event
+        await emit('start_stimulus', {
+            testConfig,
+            targetConfig,
+            screenConfig
+        });
+
+        // 6. Notify backend (Native Video) to start calibration mode
+        send({ type: 'send_command', cmd: 'calibrate' });
+        
+        console.log("[App] Ocular Calibration started with pattern:", cal.pattern_type);
+    } catch (e) {
+        console.error("Failed to start ocular calibration", e);
+    }
   }
 
   // Render Capture View
@@ -204,9 +286,7 @@ const MainApp = () => {
            <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
               <ControlPanel
                 isCapturing={isCapturing}
-                onStartCapture={handleStartCapture}
-                onStopCapture={handleStopCapture}
-                onCalibrate={() => send({ type: 'send_command', cmd: 'calibrate' })}
+                onCalibrate={handleCalibrate}
                 sessionConfig={sessionConfig}
                 appConfig={appConfig}
                 currentSession={currentSession}

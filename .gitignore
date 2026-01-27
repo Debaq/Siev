@@ -32,7 +32,6 @@ env/
 # PyInstaller
 *.manifest
 *.spec
-!sidecar.spec
 
 # Unit test / coverage
 htmlcov/

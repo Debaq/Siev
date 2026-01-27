@@ -102,11 +102,15 @@ export const ExternalDisplayPage: React.FC = () => {
     // Helper: Deg to Px (memoized to prevent animation restarts)
     const degToPx = useCallback((degrees: number) => {
         const { distance_cm, pixel_density } = stimulusState.screenConfig;
-        if (!pixel_density) return degrees * 10;
+        
+        // If not calibrated, use a sensible default (approx 96 PPI at 60cm)
+        const effectivePPI = pixel_density || 96;
+        const effectiveDist = distance_cm || 60;
+        
         const radians = degrees * (Math.PI / 180);
-        const size_cm = distance_cm * Math.tan(radians);
+        const size_cm = effectiveDist * Math.tan(radians);
         const size_inches = size_cm / 2.54;
-        return size_inches * pixel_density;
+        return size_inches * effectivePPI;
     }, [stimulusState.screenConfig.distance_cm, stimulusState.screenConfig.pixel_density]);
 
     // --- RENDERERS ---

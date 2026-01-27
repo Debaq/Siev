@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import {
-  Play, Square, Circle, Crosshair,
+  Circle, Crosshair,
   Cpu, Lightbulb, LightbulbOff,
   Sun, Activity, Eye, Settings, X, RotateCcw
 } from 'lucide-react'
@@ -11,8 +11,6 @@ import { StimulusController } from './StimulusController'
 
 interface ControlPanelProps {
   isCapturing: boolean
-  onStartCapture: () => void
-  onStopCapture: () => void
   onCalibrate: () => void
   sessionConfig: UseSessionConfigReturn
   appConfig: any
@@ -22,8 +20,6 @@ interface ControlPanelProps {
 
 function ControlPanel({
   isCapturing,
-  onStartCapture,
-  onStopCapture,
   onCalibrate,
   sessionConfig,
   appConfig,
@@ -444,26 +440,18 @@ function ControlPanel({
       {/* Main Actions */}
       <div className="grid grid-cols-2 gap-2 mb-2">
         <button
-          className={`btn ${isCapturing ? 'btn-danger' : 'btn-primary'} col-span-2`}
-          onClick={isCapturing ? onStopCapture : onStartCapture}
-        >
-          {isCapturing ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-          {isCapturing ? 'DETENER' : 'INICIAR CAPTURA'}
-        </button>
-
-        <button
-          className={`btn ${isRecording ? 'btn-danger' : 'btn-secondary'}`}
+          className={`btn ${isRecording ? 'btn-danger' : 'btn-primary'} col-span-2`}
           onClick={isRecording ? handleStopRecording : handleStartRecording}
           disabled={!isCapturing}
         >
           <Circle className={`w-3 h-3 ${isRecording ? 'fill-current animate-pulse' : ''}`} />
-          {isRecording ? 'STOP REC' : 'GRABAR'}
+          {isRecording ? 'DETENER PRUEBA' : 'INICIAR PRUEBA'}
         </button>
 
         <button
-          className="btn btn-secondary"
+          className="btn btn-secondary w-full col-span-2"
           onClick={onCalibrate}
-          disabled={!isCapturing}
+          disabled={!isCapturing || isRecording}
         >
           <Crosshair className="w-3 h-3" />
           CALIBRAR

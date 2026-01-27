@@ -1,14 +1,18 @@
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::io::Cursor;
-use nokhwa::pixel_format::RgbFormat;
-use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType, CameraFormat, FrameFormat, Resolution};
+use nokhwa::pixel_format::LumaFormat;
+use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType, CameraFormat, FrameFormat, Resolution, KnownCameraControl, ControlValueSetter};
 use nokhwa::Camera;
-use image::{GrayImage, ImageBuffer, Rgb, Luma, codecs::jpeg::JpegEncoder};
+use image::{GrayImage, ImageBuffer, Rgb, Luma, codecs::jpeg::JpegEncoder, DynamicImage};
+use imageproc::point::Point;
 use imageproc::filter::gaussian_blur_f32;
-use imageproc::morphology::{erode_mut, dilate_mut, close_mut};
+use imageproc::morphology::{erode_mut, close_mut};
 use imageproc::distance_transform::Norm;
 use imageproc::contours::find_contours;
+use zune_jpeg::JpegDecoder;
+use zune_core::options::DecoderOptions;
+use zune_core::colorspace::ColorSpace;
 use ort::session::Session;
 use ndarray::Array4;
 use serde::{Serialize, Deserialize};
@@ -214,7 +218,7 @@ impl NativeVideoManager {
             // Abrir cámara
             let index = CameraIndex::Index(camera_id);
             let format = CameraFormat::new(Resolution::new(width, height), FrameFormat::MJPEG, fps);
-            let requested = RequestedFormat::new::<RgbFormat>(RequestedFormatType::Exact(format));
+            let requested = RequestedFormat::new::<LumaFormat>(RequestedFormatType::Exact(format));
 
             let mut camera = match Camera::new(index, requested) {
                 Ok(c) => c,
@@ -228,6 +232,12 @@ impl NativeVideoManager {
                 eprintln!("[SIEV] Error iniciando stream de cámara");
                 return;
             }
+
+            // Forzar Auto-Exposición (3 = Auto en estándar V4L2)
+            let _ = camera.set_camera_control(KnownCameraControl::Other(10094849), ControlValueSetter::Integer(3));
+
+            // Pre-configuración de Zune-JPEG
+            let zune_options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
 
             // Cargar modelo YOLO
             println!("[SIEV] Intentando cargar modelo: {}", model_path);
@@ -251,7 +261,10 @@ impl NativeVideoManager {
 
             let mut session = session;
             let mut last_ui_time = std::time::Instant::now();
+            let mut last_fps_time = std::time::Instant::now();
             let mut frame_count: u64 = 0;
+            let mut fps_frame_count: u32 = 0;
+            let mut total_proc_time = std::time::Duration::from_secs(0);
 
             // Cajas de detección YOLO (coordenadas en la imagen combinada)
             // [x1, y1, x2, y2] para cada ojo en la imagen combinada
@@ -269,12 +282,21 @@ impl NativeVideoManager {
                         continue;
                     }
                 };
-                let img = match frame.decode_image::<RgbFormat>() {
-                    Ok(i) => i,
-                    Err(e) => {
-                        if frame_count == 0 { println!("[CAM] Error decodificando: {:?}", e); }
-                        continue;
-                    }
+                
+                let start_proc = std::time::Instant::now();
+
+                // DECODIFICACIÓN TURBO (Zune-JPEG)
+                let frame_buffer = frame.buffer();
+                let mut decoder = JpegDecoder::new_with_options(frame_buffer, zune_options);
+                
+                let pixels = match decoder.decode() {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+
+                let img = match ImageBuffer::<Luma<u8>, Vec<u8>>::from_vec(width, height, pixels) {
+                    Some(i) => i,
+                    None => continue,
                 };
 
                 if frame_count == 0 {
@@ -325,54 +347,54 @@ impl NativeVideoManager {
                 // ===== PASO 2: Crear imagen combinada =====
                 let combined_width = roi_right_w + roi_left_w;
                 let combined_height = roi_right_h.max(roi_left_h);
-                let mut combined = ImageBuffer::<Rgb<u8>, Vec<u8>>::new(combined_width, combined_height);
+                let mut combined = GrayImage::new(combined_width, combined_height);
+
+                // Optimización: Copia por bloques (memcpy) por cada fila
+                let img_stride = w as usize;
+                let combined_stride = combined_width as usize;
+                let img_raw = img.as_raw();
+                let combined_raw = combined.as_flat_samples_mut().samples;
 
                 // Copiar ROI derecho (lado izquierdo de combined)
                 for y in 0..roi_right_h {
-                    for x in 0..roi_right_w {
-                        if let Some(p) = img.get_pixel_checked(roi_r_x1 + x, roi_r_y1 + y) {
-                            combined.put_pixel(x, y, *p);
-                        }
+                    let src_start = ((roi_r_y1 + y) as usize * img_stride) + roi_r_x1 as usize;
+                    let src_end = src_start + roi_right_w as usize;
+                    let dst_start = y as usize * combined_stride;
+                    let dst_end = dst_start + roi_right_w as usize;
+                    
+                    if src_end <= img_raw.len() && dst_end <= combined_raw.len() {
+                        combined_raw[dst_start..dst_end].copy_from_slice(&img_raw[src_start..src_end]);
                     }
                 }
 
                 // Copiar ROI izquierdo (lado derecho de combined)
                 for y in 0..roi_left_h {
-                    for x in 0..roi_left_w {
-                        if let Some(p) = img.get_pixel_checked(roi_l_x1 + x, roi_l_y1 + y) {
-                            combined.put_pixel(roi_right_w + x, y, *p);
-                        }
+                    let src_start = ((roi_l_y1 + y) as usize * img_stride) + roi_l_x1 as usize;
+                    let src_end = src_start + roi_left_w as usize;
+                    let dst_start = (y as usize * combined_stride) + roi_right_w as usize;
+                    let dst_end = dst_start + roi_left_w as usize;
+                    
+                    if src_end <= img_raw.len() && dst_end <= combined_raw.len() {
+                        combined_raw[dst_start..dst_end].copy_from_slice(&img_raw[src_start..src_end]);
                     }
                 }
 
-                // ===== PASO 2.5: Aplicar brillo y contraste =====
-                Self::apply_brightness_contrast(&mut combined, brightness_val, contrast_val);
+                // ===== PASO 2.5: Aplicar brillo y contraste optimizado =====
+                Self::apply_brightness_contrast_luma(&mut combined, brightness_val, contrast_val);
 
                 // ===== PASO 3: Ejecutar YOLO cada N frames =====
                 let use_yolo = use_yolo_ref.load(Ordering::SeqCst);
                 if use_yolo {
                     if let Some(ref mut sess) = session {
                         if frame_count % yolo_freq as u64 == 0 {
-                            println!("[YOLO] Frame {}: ejecutando inferencia...", frame_count);
                             match Self::run_yolo_inference(sess, &combined) {
                                 Some((box_r, box_l)) => {
-                                    println!("[YOLO] ✓ Detectados! R:{:?} L:{:?}", box_r, box_l);
                                     yolo_box_right = Some(box_r);
                                     yolo_box_left = Some(box_l);
                                 }
-                                None => {
-                                    println!("[YOLO] ✗ No se detectaron 2 ojos");
-                                }
+                                None => {}
                             }
                         }
-                    } else {
-                        if frame_count == 0 {
-                            println!("[YOLO] Session es None - modelo no cargado");
-                        }
-                    }
-                } else {
-                    if frame_count == 0 {
-                        println!("[YOLO] use_yolo está desactivado");
                     }
                 }
 
@@ -383,11 +405,8 @@ impl NativeVideoManager {
 
                 // Calcular cajas de búsqueda
                 let search_box_right = if let Some(yolo_box) = yolo_box_right {
-                    // Si YOLO detectó, usar su caja
                     yolo_box
                 } else {
-                    // Usar ROI manual para ojo derecho (lado izquierdo de la imagen combinada)
-                    // Para el ojo derecho: temporal está a la izquierda, nasal a la derecha
                     let x1 = (roi_right_w as f32 * manual_right.temporal) as u32;
                     let x2 = (roi_right_w as f32 * manual_right.nasal) as u32;
                     let y1 = (combined_height as f32 * manual_right.top) as u32;
@@ -396,11 +415,8 @@ impl NativeVideoManager {
                 };
 
                 let search_box_left = if let Some(yolo_box) = yolo_box_left {
-                    // Si YOLO detectó, usar su caja
                     yolo_box
                 } else {
-                    // Usar ROI manual para ojo izquierdo (lado derecho de la imagen combinada)
-                    // Para el ojo izquierdo: nasal está a la izquierda, temporal a la derecha
                     let left_start = roi_right_w;
                     let left_width = roi_left_w;
                     let x1 = left_start + (left_width as f32 * manual_left.nasal) as u32;
@@ -411,15 +427,14 @@ impl NativeVideoManager {
                 };
 
                 // ===== PASO 5: Detectar pupilas en las cajas =====
-                let (pupil_right, mask_right) = Self::detect_pupil_legacy(&combined, search_box_right, thresholds[0], erodes[0], smooth_sigma);
-                let (pupil_left, mask_left) = Self::detect_pupil_legacy(&combined, search_box_left, thresholds[1], erodes[1], smooth_sigma);
+                let (pupil_right, mask_right) = Self::detect_pupil_optimized(&combined, search_box_right, thresholds[0], erodes[0], smooth_sigma);
+                let (pupil_left, mask_left) = Self::detect_pupil_optimized(&combined, search_box_left, thresholds[1], erodes[1], smooth_sigma);
 
                 // Convertir coordenadas a posiciones de pupila
                 let mut pupil_pos: [Option<[f64; 2]>; 2] = [None, None];
 
                 if let Some(ref pr) = pupil_right {
                     if pr.found {
-                        // Coordenadas en imagen combinada → coordenadas globales
                         pupil_pos[1] = Some([pr.center_x as f64, (pr.center_y as f64) * -1.0]);
                     }
                 }
@@ -447,15 +462,14 @@ impl NativeVideoManager {
                 // ===== PASO 7: Enviar imagen a UI (30 FPS) =====
                 let show_debug = show_debug_ref.load(Ordering::SeqCst);
                 if last_ui_time.elapsed().as_millis() > 33 {
-                    let mut display = combined.clone();
+                    // Convertir a RGB solo para visualización
+                    let mut display = DynamicImage::ImageLuma8(combined.clone()).to_rgb8();
 
                     // Si modo debug está activo, superponer máscaras de umbralización
                     if show_debug {
-                        // Superponer máscara del ojo derecho (color rojo semi-transparente)
                         if let Some(ref mask) = mask_right {
                             Self::overlay_mask(&mut display, mask, search_box_right, [255, 0, 0], 0.5);
                         }
-                        // Superponer máscara del ojo izquierdo (color cyan semi-transparente)
                         if let Some(ref mask) = mask_left {
                             Self::overlay_mask(&mut display, mask, search_box_left, [0, 191, 255], 0.5);
                         }
@@ -468,7 +482,7 @@ impl NativeVideoManager {
                     Self::draw_box(&mut display, search_box_right, box_color_r);
                     Self::draw_box(&mut display, search_box_left, box_color_l);
 
-                    // Etiquetas (RGB: Rojo para OD, Cyan para OI)
+                    // Etiquetas
                     Self::draw_label(&mut display, search_box_right[0] + 2, search_box_right[1] + 2, "OD", [255, 0, 0]);
                     Self::draw_label(&mut display, search_box_left[0] + 2, search_box_left[1] + 2, "OI", [0, 191, 255]);
 
@@ -496,7 +510,34 @@ impl NativeVideoManager {
                     last_ui_time = std::time::Instant::now();
                 }
 
+                // Mide cuánto tardó SOLO el procesamiento (CPU pura)
+                let processing_duration = start_proc.elapsed();
+                total_proc_time += processing_duration;
+                
                 frame_count += 1;
+                fps_frame_count += 1;
+
+                // Calcular métricas cada 1 segundo exacto (Tiempo de pared)
+                let elapsed_since_last_log = last_fps_time.elapsed();
+                
+                if elapsed_since_last_log.as_secs_f32() >= 1.0 {
+                    // 1. FPS Reales (Frames entregados / Tiempo real transcurrido)
+                    let wall_fps = fps_frame_count as f32 / elapsed_since_last_log.as_secs_f32();
+                    
+                    // 2. Latencia Promedio (Cuánto tarda la CPU en "pensar" por frame)
+                    let avg_proc_ms = (total_proc_time.as_micros() as f32 / fps_frame_count as f32) / 1000.0;
+                    
+                    // 3. Carga de CPU del Pipeline (Load)
+                    let cpu_load_percent = (total_proc_time.as_secs_f32() / elapsed_since_last_log.as_secs_f32()) * 100.0;
+
+                    println!("[PERF] FPS Reales: {:.1} | Latencia CPU: {:.3}ms | Carga Pipeline: {:.1}%", 
+                             wall_fps, avg_proc_ms, cpu_load_percent);
+
+                    // Reiniciar contadores
+                    last_fps_time = std::time::Instant::now();
+                    total_proc_time = std::time::Duration::from_secs(0);
+                    fps_frame_count = 0;
+                }
             }
 
             camera.stop_stream().ok();
@@ -506,7 +547,7 @@ impl NativeVideoManager {
     }
 
     /// Ejecuta inferencia YOLO y retorna las cajas de ambos ojos
-    fn run_yolo_inference(session: &mut Session, img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> Option<([u32; 4], [u32; 4])> {
+    fn run_yolo_inference(session: &mut Session, img: &GrayImage) -> Option<([u32; 4], [u32; 4])> {
         let (orig_w, orig_h) = (img.width() as f32, img.height() as f32);
 
         // Letterboxing: mantener proporción y añadir padding gris (114,114,114)
@@ -532,72 +573,53 @@ impl NativeVideoManager {
             }
         }
 
-        // Copiar imagen redimensionada al centro
+        // Copiar imagen redimensionada al centro, replicando el canal Luma en RGB
         for y in 0..new_h {
             for x in 0..new_w {
                 let p = resized.get_pixel(x, y);
+                let val = p.0[0] as f32 / 255.0;
                 let tx = (pad_x + x) as usize;
                 let ty = (pad_y + y) as usize;
-                input[[0, 0, ty, tx]] = p.0[0] as f32 / 255.0; // R
-                input[[0, 1, ty, tx]] = p.0[1] as f32 / 255.0; // G
-                input[[0, 2, ty, tx]] = p.0[2] as f32 / 255.0; // B
+                input[[0, 0, ty, tx]] = val; // R
+                input[[0, 1, ty, tx]] = val; // G
+                input[[0, 2, ty, tx]] = val; // B
             }
         }
 
         let input_tensor = match ort::value::Value::from_array(input) {
             Ok(t) => t,
-            Err(e) => { println!("[YOLO-ERR] from_array: {:?}", e); return None; }
+            Err(_) => return None
         };
-        println!("[YOLO-DBG] Input tensor creado");
 
         let outputs = match session.run(ort::inputs![input_tensor]) {
             Ok(o) => o,
-            Err(e) => { println!("[YOLO-ERR] session.run: {:?}", e); return None; }
+            Err(_) => return None
         };
-        println!("[YOLO-DBG] Inferencia completada, outputs: {}", outputs.len());
 
         let output = match outputs.get("output0") {
             Some(o) => match o.try_extract_array::<f32>() {
                 Ok(arr) => arr,
-                Err(e) => { println!("[YOLO-ERR] extract_array: {:?}", e); return None; }
+                Err(_) => return None
             },
-            None => {
-                println!("[YOLO-ERR] No se encontró 'output0'. Keys disponibles: {:?}", outputs.keys().collect::<Vec<_>>());
-                return None;
-            }
+            None => return None
         };
-        println!("[YOLO-DBG] Output extraído, shape: {:?}", output.shape());
 
         // Parsear detecciones
         let mut detections = Vec::new();
         let num_boxes = output.shape()[2];
 
-        // Debug: mostrar forma del output
-        println!("[YOLO] Output shape: {:?}, num_boxes: {}", output.shape(), num_boxes);
-
-        // Encontrar el score máximo para debug
-        let mut max_score = 0.0f32;
-        for i in 0..num_boxes {
-            let score = output[[0, 4, i]];
-            if score > max_score { max_score = score; }
-        }
-        println!("[YOLO] Max score encontrado: {:.4}", max_score);
-
-        // Calcular parámetros de letterbox para ajustar coordenadas
-        let scale = (640.0 / orig_w).min(640.0 / orig_h);
-        let pad_x = (640.0 - orig_w * scale) / 2.0;
-        let pad_y = (640.0 - orig_h * scale) / 2.0;
-
         for i in 0..num_boxes {
             let score = output[[0, 4, i]];
             if score > 0.25 {
-                // Coordenadas en espacio 640x640 con letterbox
                 let cx_lb = output[[0, 0, i]];
                 let cy_lb = output[[0, 1, i]];
                 let bw_lb = output[[0, 2, i]];
                 let bh_lb = output[[0, 3, i]];
 
-                // Convertir de letterbox a coordenadas originales
+                let scale = (640.0 / orig_w).min(640.0 / orig_h);
+                let pad_x = (640.0 - orig_w * scale) / 2.0;
+                let pad_y = (640.0 - orig_h * scale) / 2.0;
+
                 let cx = (cx_lb - pad_x) / scale;
                 let cy = (cy_lb - pad_y) / scale;
                 let bw = bw_lb / scale;
@@ -607,19 +629,10 @@ impl NativeVideoManager {
             }
         }
 
-        // Ordenar por confianza y tomar las 2 mejores
         detections.sort_by(|a, b| b.4.partial_cmp(&a.4).unwrap());
-
-        // Debug: mostrar detecciones
-        if !detections.is_empty() {
-            println!("[YOLO] {} detecciones encontradas. Mejores scores: {:?}",
-                detections.len(),
-                detections.iter().take(3).map(|d| d.4).collect::<Vec<_>>());
-        }
 
         if detections.len() >= 2 {
             let mut top2: Vec<_> = detections.into_iter().take(2).collect();
-            // Ordenar por X (izquierda a derecha)
             top2.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
             let padding_x = 20.0;
@@ -639,11 +652,11 @@ impl NativeVideoManager {
         None
     }
 
-    /// Detector de pupila estilo "legacy" con threshold + suavizado + contornos
-    /// Retorna (resultado_pupila, mascara_umbralizada) - la máscara es útil para modo debug
-    fn detect_pupil_legacy(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, roi: [u32; 4], threshold: u8, erode_iter: u8, smooth_sigma: f32) -> (Option<RustPupilResult>, Option<GrayImage>) {
+    /// Detector de pupila optimizado con Precisión Sub-píxel y Anti-Glint
+    fn detect_pupil_optimized(img: &GrayImage, roi: [u32; 4], threshold: u8, erode_iter: u8, smooth_sigma: f32) -> (Option<RustPupilResult>, Option<GrayImage>) {
         let (x1, y1, x2, y2) = (roi[0], roi[1], roi[2], roi[3]);
 
+        // Validación de seguridad
         if x2 <= x1 || y2 <= y1 || x2 > img.width() || y2 > img.height() {
             return (None, None);
         }
@@ -651,28 +664,45 @@ impl NativeVideoManager {
         let rw = x2 - x1;
         let rh = y2 - y1;
 
-        // Extraer región en escala de grises (usando canal rojo que suele dar mejor contraste para IR)
+        // 1. Extracción de ROI (Copia por bloques optimizada)
         let mut gray = GrayImage::new(rw, rh);
+        let src_stride = img.width() as usize;
+        let dst_stride = rw as usize;
+        let src_raw = img.as_raw();
+        let dst_raw = gray.as_flat_samples_mut().samples;
+
         for y in 0..rh {
-            for x in 0..rw {
-                if let Some(p) = img.get_pixel_checked(x1 + x, y1 + y) {
-                    // Usar canal rojo para mejor contraste con iluminación IR
-                    gray.put_pixel(x, y, Luma([p.0[0]]));
-                }
+            let src_start = ((y1 + y) as usize * src_stride) + x1 as usize;
+            let src_end = src_start + rw as usize;
+            let dst_start = y as usize * dst_stride;
+            let dst_end = dst_start + rw as usize;
+            
+            if src_end <= src_raw.len() && dst_end <= dst_raw.len() {
+                dst_raw[dst_start..dst_end].copy_from_slice(&src_raw[src_start..src_end]);
             }
         }
 
-        // 1. Blur gaussiano (suavizado configurable)
+        // 2. Suavizado (Reducción de ruido de alta frecuencia)
         let blurred = gaussian_blur_f32(&gray, smooth_sigma);
 
-        // 2. Umbralización
+        // 3. Umbralización Inteligente (Optimizado con Histograma)
         let mut thresh = GrayImage::new(rw, rh);
         let threshold_val = if threshold == 0 {
-            // Auto-threshold: usar percentil bajo
-            let mut pixels: Vec<u8> = blurred.pixels().map(|p| p.0[0]).collect();
-            pixels.sort();
-            let idx = (pixels.len() as f32 * 0.15) as usize;
-            pixels.get(idx).copied().unwrap_or(50)
+            let mut hist = [0u32; 256];
+            for p in blurred.pixels() {
+                hist[p.0[0] as usize] += 1;
+            }
+            let target = (rw * rh) as f32 * 0.15;
+            let mut acc = 0u32;
+            let mut val = 50u8;
+            for (i, &count) in hist.iter().enumerate() {
+                acc += count;
+                if acc as f32 >= target {
+                    val = i as u8;
+                    break;
+                }
+            }
+            val
         } else {
             threshold
         };
@@ -682,133 +712,117 @@ impl NativeVideoManager {
             thresh.put_pixel(x, y, Luma([val]));
         }
 
-        // 3. Operaciones morfológicas
-        // Erosión para eliminar ruido
+        // 4. Morfología Avanzada (Orden Crítico)
+        // A. CIERRE (Close): Tapa agujeros NEGROS dentro de lo blanco (Glints/Reflejos)
+        close_mut(&mut thresh, Norm::LInf, 2); 
+
+        // B. APERTURA (Open) / EROSIÓN: Elimina ruido BLANCO externo (Pestañas finas)
         for _ in 0..erode_iter {
             erode_mut(&mut thresh, Norm::LInf, 1);
         }
 
-        // Cierre para conectar regiones
-        close_mut(&mut thresh, Norm::LInf, 1);
-
-        // Dilatación ligera
-        dilate_mut(&mut thresh, Norm::LInf, 1);
-
-        // 4. Encontrar contornos
+        // 5. Contornos
         let contours = find_contours::<i32>(&thresh);
-
         if contours.is_empty() {
             return (Some(RustPupilResult {
-                center_x: 0.0,
-                center_y: 0.0,
-                radius: 0.0,
-                confidence: 0.0,
-                found: false,
+                center_x: 0.0, center_y: 0.0, radius: 0.0, confidence: 0.0, found: false
             }), Some(thresh));
         }
 
-        // 5. Filtrar contornos válidos
-        let max_area = (rw * rh) as f32 * 0.5;
-        let mut valid_contours: Vec<_> = contours
-            .iter()
-            .filter(|c| {
-                let area = c.points.len() as f32;
-                area > 20.0 && area < max_area
-            })
-            .collect();
+        // 6. Análisis de Candidatos
+        let max_area = (rw * rh) as f32 * 0.6;
+        let min_area = 50.0;
 
-        if valid_contours.is_empty() {
-            return (Some(RustPupilResult {
-                center_x: 0.0,
-                center_y: 0.0,
-                radius: 0.0,
-                confidence: 0.0,
-                found: false,
-            }), Some(thresh));
+        let mut best_pupil: Option<RustPupilResult> = None;
+        let mut max_score = 0.0;
+
+        for contour in contours.iter() {
+            // 1. Cálculo rápido de límites para momentos
+            let mut min_cx = rw as i32; let mut max_cx = 0;
+            let mut min_cy = rh as i32; let mut max_cy = 0;
+            
+            for p in &contour.points {
+                if p.x < min_cx { min_cx = p.x; }
+                if p.x > max_cx { max_cx = p.x; }
+                if p.y < min_cy { min_cy = p.y; }
+                if p.y > max_cy { max_cy = p.y; }
+            }
+
+            // 2. Cálculo de Momentos (Area y Centro de Masa)
+            let mut m00 = 0.0;
+            let mut m10 = 0.0;
+            let mut m01 = 0.0;
+
+            for y in min_cy.max(0)..=max_cy.min(rh as i32 - 1) {
+                for x in min_cx.max(0)..=max_cx.min(rw as i32 - 1) {
+                    if thresh.get_pixel(x as u32, y as u32).0[0] > 128 {
+                            m00 += 1.0;
+                            m10 += x as f32;
+                            m01 += y as f32;
+                    }
+                }
+            }
+
+            let area = m00;
+            if area < min_area || area > max_area { continue; }
+
+            // 3. Circularidad Real: 4 * pi * Area / Perimetro^2
+            let perimeter_val = perimeter(&contour.points);
+            if perimeter_val == 0.0 { continue; }
+            
+            let circularity = (4.0 * std::f32::consts::PI * area) / (perimeter_val.powi(2) as f32);
+
+            // Filtro de circularidad: 0.6 es un buen balance para pupilas reales
+            if circularity < 0.60 { continue; }
+
+            let score = area * circularity; 
+
+            if score > max_score {
+                let center_x = m10 / m00;
+                let center_y = m01 / m00;
+                let radius = (area / std::f32::consts::PI).sqrt();
+
+                max_score = score;
+                best_pupil = Some(RustPupilResult {
+                    center_x: x1 as f32 + center_x,
+                    center_y: y1 as f32 + center_y,
+                    radius,
+                    confidence: circularity.min(1.0),
+                    found: true,
+                });
+            }
         }
 
-        // Ordenar por área (mayor primero)
-        valid_contours.sort_by(|a, b| b.points.len().cmp(&a.points.len()));
-
-        let largest = &valid_contours[0];
-        let area = largest.points.len() as f32;
-
-        // 6. Calcular centro (centroide)
-        let mut sum_x = 0.0f32;
-        let mut sum_y = 0.0f32;
-        for p in &largest.points {
-            sum_x += p.x as f32;
-            sum_y += p.y as f32;
+        match best_pupil {
+            Some(p) => (Some(p), Some(thresh)),
+            None => (Some(RustPupilResult {
+                center_x: 0.0, center_y: 0.0, radius: 0.0, confidence: 0.0, found: false
+            }), Some(thresh))
         }
-        let center_x = sum_x / area;
-        let center_y = sum_y / area;
-
-        // 7. Calcular radio (mediana de distancias al centro)
-        let mut distances: Vec<f32> = largest
-            .points
-            .iter()
-            .map(|p| {
-                let dx = p.x as f32 - center_x;
-                let dy = p.y as f32 - center_y;
-                (dx * dx + dy * dy).sqrt()
-            })
-            .collect();
-        distances.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-        let radius = if !distances.is_empty() {
-            distances[distances.len() / 2]
-        } else {
-            10.0
-        };
-
-        // Limitar radio
-        let min_radius = 5.0;
-        let max_radius = rw.min(rh) as f32 / 3.0;
-        let radius = radius.max(min_radius).min(max_radius);
-
-        // Calcular confianza basada en circularidad aproximada
-        let perimeter = largest.points.len() as f32;
-        let circularity = if perimeter > 0.0 {
-            (4.0 * std::f32::consts::PI * area) / (perimeter * perimeter)
-        } else {
-            0.0
-        };
-        let confidence = circularity.min(1.0);
-
-        (Some(RustPupilResult {
-            center_x: x1 as f32 + center_x,
-            center_y: y1 as f32 + center_y,
-            radius,
-            confidence,
-            found: true,
-        }), Some(thresh))
     }
 
-    /// Dibuja un rectángulo
+    /// Dibuja un rectángulo en buffer RGB
     fn draw_box(img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>, roi: [u32; 4], color: [u8; 3]) {
         let (x1, y1, x2, y2) = (roi[0], roi[1], roi[2].saturating_sub(1), roi[3].saturating_sub(1));
         let (w, h) = (img.width(), img.height());
 
-        // Bordes horizontales
         for x in x1..=x2.min(w - 1) {
             if y1 < h { img.put_pixel(x, y1, Rgb(color)); }
             if y2 < h { img.put_pixel(x, y2, Rgb(color)); }
         }
-        // Bordes verticales
         for y in y1..=y2.min(h - 1) {
             if x1 < w { img.put_pixel(x1, y, Rgb(color)); }
             if x2 < w { img.put_pixel(x2, y, Rgb(color)); }
         }
     }
 
-    /// Dibuja una cruz y círculo en la posición de la pupila
+    /// Dibuja una cruz y círculo en buffer RGB
     fn draw_crosshair(img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>, cx: u32, cy: u32, radius: u32, color: [u8; 3]) {
         let (w, h) = (img.width() as i32, img.height() as i32);
         let cx = cx as i32;
         let cy = cy as i32;
         let r = radius as i32;
 
-        // Cruz
         let line_len = 5i32;
         for dx in -line_len..=line_len {
             let px = cx + dx;
@@ -823,7 +837,6 @@ impl NativeVideoManager {
             }
         }
 
-        // Círculo aproximado
         let steps = 32;
         for i in 0..steps {
             let angle = (i as f32 / steps as f32) * 2.0 * std::f32::consts::PI;
@@ -835,16 +848,14 @@ impl NativeVideoManager {
         }
     }
 
-    /// Dibuja una etiqueta simple (2 caracteres)
+    /// Dibuja una etiqueta simple en buffer RGB
     fn draw_label(img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>, x: u32, y: u32, _label: &str, color: [u8; 3]) {
-        // Dibujar un pequeño marcador cuadrado como indicador
         let (w, h) = (img.width(), img.height());
         for dy in 0..8 {
             for dx in 0..8 {
                 let px = x + dx;
                 let py = y + dy;
                 if px < w && py < h {
-                    // Solo el borde del cuadrado
                     if dx == 0 || dx == 7 || dy == 0 || dy == 7 {
                         img.put_pixel(px, py, Rgb(color));
                     }
@@ -853,8 +864,7 @@ impl NativeVideoManager {
         }
     }
 
-    /// Superpone una máscara de umbralización sobre la imagen en la posición del ROI
-    /// Los pixeles blancos de la máscara (valor 255) se muestran con el color dado y alpha blending
+    /// Superpone una máscara en buffer RGB
     fn overlay_mask(img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>, mask: &GrayImage, roi: [u32; 4], color: [u8; 3], alpha: f32) {
         let (x1, y1, _x2, _y2) = (roi[0], roi[1], roi[2], roi[3]);
         let (img_w, img_h) = (img.width(), img.height());
@@ -868,7 +878,6 @@ impl NativeVideoManager {
                     let py = y1 + my;
                     if px < img_w && py < img_h {
                         let orig = img.get_pixel(px, py);
-                        // Blend: resultado = original * (1-alpha) + color * alpha
                         let blend = |o: u8, c: u8| -> u8 {
                             ((o as f32 * (1.0 - alpha)) + (c as f32 * alpha)) as u8
                         };
@@ -887,19 +896,34 @@ impl NativeVideoManager {
         self.running.store(false, Ordering::SeqCst);
     }
 
-    /// Aplica brillo y contraste a una imagen RGB
-    fn apply_brightness_contrast(img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>, brightness: i32, contrast: f32) {
+    /// Aplica brillo y contraste optimizado para GrayImage usando LUT
+    fn apply_brightness_contrast_luma(img: &mut GrayImage, brightness: i32, contrast: f32) {
         if brightness == 0 && (contrast - 1.0).abs() < 0.01 {
-            return; // Sin cambios
+            return;
+        }
+
+        let mut lut = [0u8; 256];
+        for i in 0..256 {
+            let val = i as f32;
+            let adjusted = ((val - 128.0) * contrast + 128.0) + brightness as f32;
+            lut[i] = adjusted.clamp(0.0, 255.0) as u8;
         }
 
         for pixel in img.pixels_mut() {
-            for c in 0..3 {
-                let val = pixel.0[c] as f32;
-                // Aplicar contraste (centrado en 128) y luego brillo
-                let adjusted = ((val - 128.0) * contrast + 128.0) + brightness as f32;
-                pixel.0[c] = adjusted.clamp(0.0, 255.0) as u8;
-            }
+            pixel.0[0] = lut[pixel.0[0] as usize];
         }
     }
+}
+
+fn perimeter(points: &[Point<i32>]) -> f64 {
+    if points.len() < 2 { return 0.0; }
+    let mut p = 0.0;
+    for i in 0..points.len() {
+        let p1 = points[i];
+        let p2 = points[(i + 1) % points.len()];
+        let dx = (p1.x - p2.x) as f64;
+        let dy = (p1.y - p2.y) as f64;
+        p += (dx * dx + dy * dy).sqrt();
+    }
+    p
 }

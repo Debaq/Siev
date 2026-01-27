@@ -49,9 +49,7 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "python-worker"
-    ],
+    "externalBin": [],
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",

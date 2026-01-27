@@ -24,7 +24,9 @@ serde_json = "1"
 nalgebra = "0.33"
 ndarray = "0.17"
 image = "0.25"
-imageproc = "0.25"
+imageproc = "0.26"
+zune-jpeg = "0.4"
+zune-core = "0.4"
 rayon = "1.10"
 # AI/Inference
 ort = { version = "2.0.0-rc.11", features = ["ndarray"] }
@@ -49,8 +51,8 @@ default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 
 [profile.release]
-panic = "abort"
-codegen-units = 1
-lto = true
-opt-level = "s"
-strip = true
+lto = true        # Link Time Optimization: Optimiza entre todas las librerías a la vez
+codegen-units = 1 # Obliga al compilador a trabajar en un solo hilo para analizar todo el contexto junto
+panic = "abort"   # Si hay un error fatal, cierra la app inmediatamente
+opt-level = 3     # Máxima optimización de velocidad
+strip = true      # Elimina símbolos de depuración para reducir tamaño

@@ -22,9 +22,8 @@ NC='\033[0m' # No Color
 # Step 0: Cleanup
 # ---------------------------------------------------------
 echo -e "${YELLOW}Cleaning up existing SIEV processes...${NC}"
-# Kill any existing python backend, sidecars or tauri processes
+# Kill any existing python backend or tauri processes
 pkill -f "backend/main.py" || true
-pkill -f "python-worker" || true
 pkill -f "siev" || true
 
 # Check for busy cameras
@@ -298,9 +297,20 @@ else
     fi
 fi
 
+# ---------------------------------------------------------
+# Step 4: Final Launch
+# ---------------------------------------------------------
+ask_with_default "Launch in Release mode for maximum performance?" "N" RELEASE_MODE
+
 echo -e "\n${GREEN}═══════════════════════════════════════════════════════${NC}"
 echo -e "${GREEN}  Ready! Launching Tauri Dev Server...${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════════════${NC}\n"
 
-# Launch Tauri dev (using Cargo as fixed previously)
-cargo tauri dev
+# Launch Tauri dev
+if [[ "$RELEASE_MODE" =~ ^[Yy] ]]; then
+    echo -e "${YELLOW}Running in RELEASE mode (High Performance)...${NC}"
+    cargo tauri dev --release
+else
+    echo -e "${BLUE}Running in DEBUG mode...${NC}"
+    cargo tauri dev
+fi

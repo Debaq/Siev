@@ -32,8 +32,9 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
             resolution_width: 960,
             resolution_height: 540,
             fps: 60,
-            exposure: -5,
+            exposure: -21,
             contrast: 50,
+            brightness: -21,
             flip_horizontal: false,
             flip_vertical: false,
             video_quality: 80,
@@ -42,10 +43,21 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
         algorithm: {
             primary: 'yolo',
             threshold: 40,
+            threshold_left: 40,
+            threshold_right: 40,
+            erode_left: 0,
+            erode_right: 0,
             min_pupil_size: 10,
             roi_enabled: true,
             yolo_frequency: 4,
-            yolo_confidence: 0.5
+            yolo_confidence: 0.5,
+            nose_width: 0.25,
+            eye_height: 0.25,
+            smooth: 2.5,
+            use_yolo: false,
+            show_debug: false,
+            manual_roi_right: { top: 0.1, bottom: 0.9, nasal: 0.9, temporal: 0.1 },
+            manual_roi_left: { top: 0.1, bottom: 0.9, nasal: 0.1, temporal: 0.9 }
         },
         pupil_detection: {
             mode: 'legacy',
@@ -139,31 +151,42 @@ export function useSettingsConfig(sendToWs?: (msg: any) => void) {
 
     const loadConfig = async () => {
         setIsLoading(true);
+        console.log("[Config] Starting loadConfig...");
         try {
             const stored = await getSetting('app_config');
-            let baseConfig = DEFAULT_APP_CONFIG;
+            let finalConfig = JSON.parse(JSON.stringify(DEFAULT_APP_CONFIG));
 
             if (stored) {
-                const parsed = JSON.parse(stored);
-                baseConfig = deepMerge(DEFAULT_APP_CONFIG, parsed);
+                try {
+                    const parsed = JSON.parse(stored);
+                    console.log("[Config] raw stored string found, parsing...");
+                    // Use a more robust merge that prefers stored values
+                    finalConfig = deepMerge(finalConfig, parsed);
+                    console.log("[Config] Merged config:", finalConfig);
+                } catch (e) {
+                    console.error("[Config] Failed to parse stored config:", e);
+                }
+            } else {
+                console.log("[Config] No config in DB, using defaults");
             }
 
-            // Migration from Welcome Wizard
+            // Migration/Sync from legacy settings if they exist
             const wizardClinic = await getSetting('clinic_name');
             const wizardStorage = await getSetting('storage_path');
 
-            if (wizardClinic && (baseConfig.general.institution.name === DEFAULT_APP_CONFIG.general.institution.name || !baseConfig.general.institution.name)) {
-                baseConfig.general.institution.name = wizardClinic;
+            if (wizardClinic && finalConfig.general.institution.name === DEFAULT_APP_CONFIG.general.institution.name) {
+                finalConfig.general.institution.name = wizardClinic;
             }
-            if (wizardStorage && !baseConfig.general.storage.data_path) {
-                baseConfig.general.storage.data_path = wizardStorage;
+            if (wizardStorage && !finalConfig.general.storage.data_path) {
+                finalConfig.general.storage.data_path = wizardStorage;
             }
 
-            setConfig(baseConfig);
-            originalConfigRef.current = JSON.parse(JSON.stringify(baseConfig));
+            console.log("[Config] Final config state to be set:", finalConfig);
+            setConfig(finalConfig);
+            originalConfigRef.current = JSON.parse(JSON.stringify(finalConfig));
             setIsDirty(false);
         } catch (e) {
-            console.error("Failed to load config:", e);
+            console.error("[Config] Fatal error in loadConfig:", e);
             setConfig(DEFAULT_APP_CONFIG);
             originalConfigRef.current = JSON.parse(JSON.stringify(DEFAULT_APP_CONFIG));
         } finally {
@@ -175,19 +198,22 @@ export function useSettingsConfig(sendToWs?: (msg: any) => void) {
         if (!configToSave) return false;
         setIsSaving(true);
         try {
+            console.log("[Config] Saving to DB...");
             // 1. Save to Tauri DB (SQLite)
-            await setSetting('app_config', JSON.stringify(configToSave));
+            const configStr = JSON.stringify(configToSave);
+            await setSetting('app_config', configStr);
             
             // 2. Sync with Python Backend via WebSocket (if function provided)
             if (sendToWs) {
                 await syncWithWebSocket(configToSave, sendToWs);
             }
             
-            originalConfigRef.current = JSON.parse(JSON.stringify(configToSave));
+            originalConfigRef.current = JSON.parse(configStr);
             setIsDirty(false);
+            console.log("[Config] Saved successfully");
             return true;
         } catch (e) {
-            console.error("Failed to save config:", e);
+            console.error("[Config] Failed to save config:", e);
             return false;
         } finally {
             setIsSaving(false);
@@ -195,6 +221,7 @@ export function useSettingsConfig(sendToWs?: (msg: any) => void) {
     };
 
     const updateConfig = useCallback((path: string, value: any) => {
+        console.log(`[Config] Updating path: ${path} with value:`, value);
         setConfig(prev => {
             if (!prev) return null;
             
@@ -205,21 +232,35 @@ export function useSettingsConfig(sendToWs?: (msg: any) => void) {
                 if (current === undefined || current === null) break;
                 current = current[key];
             }
-            if (current === value) return prev;
+            if (JSON.stringify(current) === JSON.stringify(value)) {
+                console.log(`[Config] No change detected for ${path}`);
+                return prev;
+            }
 
-            const newConfig = { ...prev };
+            const newConfig = JSON.parse(JSON.stringify(prev));
             setDeepValue(newConfig, path, value);
-            
-            // Calculate dirty state
-            const dirty = JSON.stringify(newConfig) !== JSON.stringify(originalConfigRef.current);
-            setIsDirty(dirty);
-            
-            // Auto-save disabled to prevent focus loss. 
-            // Saving is now manual via the Save button in SettingsView.
-
+            console.log(`[Config] New state generated for ${path}`);
             return newConfig;
         });
-    }, [sendToWs]);
+    }, []);
+
+    // Effect for auto-saving and dirty state calculation
+    useEffect(() => {
+        if (!config || !originalConfigRef.current) return;
+
+        const configStr = JSON.stringify(config);
+        const originalStr = JSON.stringify(originalConfigRef.current);
+        const dirty = configStr !== originalStr;
+        
+        setIsDirty(dirty);
+
+        if (dirty) {
+            if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+            autoSaveTimerRef.current = setTimeout(() => {
+                saveConfig(config);
+            }, 1000); // 1 second debounce
+        }
+    }, [config]);
 
     return {
         config,

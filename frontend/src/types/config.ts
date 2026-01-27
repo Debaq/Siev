@@ -35,6 +35,7 @@ export interface VNGCameraConfig {
     fps: number;
     exposure: number;
     contrast: number;
+    brightness?: number; // Added to match session config
     flip_horizontal: boolean;
     flip_vertical: boolean;
     video_quality: number; // 1-100 (JPEG quality)
@@ -65,13 +66,31 @@ export interface VNGPupilDetectionConfig {
     legacy: VNGLegacyParams;
 }
 
+export interface ManualEyeRoi {
+    top: number;
+    bottom: number;
+    nasal: number;
+    temporal: number;
+}
+
 export interface VNGAlgorithmConfig {
     primary: 'yolo' | 'hough' | 'threshold';
     threshold: number;
+    threshold_left?: number; // Added for per-eye threshold
+    threshold_right?: number; // Added for per-eye threshold
+    erode_left?: number;
+    erode_right?: number;
     min_pupil_size: number;
     roi_enabled: boolean;
     yolo_frequency?: number;
     yolo_confidence?: number;
+    nose_width?: number; // Added from session config
+    eye_height?: number; // Added from session config
+    smooth?: number;     // Added from session config
+    use_yolo?: boolean;  // Added from session config
+    show_debug?: boolean; // Added from session config
+    manual_roi_right?: ManualEyeRoi; // Added from session config
+    manual_roi_left?: ManualEyeRoi;  // Added from session config
 }
 
 export interface VNGHardwareConfig {

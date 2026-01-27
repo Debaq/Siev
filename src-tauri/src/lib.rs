@@ -1,8 +1,6 @@
 use std::sync::{Mutex, Arc};
 use tauri::{State, Window, Manager};
-use tauri_plugin_shell::process::CommandChild;
 
-pub mod bridge;
 pub mod database;
 pub mod hardware;
 pub mod math;
@@ -10,7 +8,6 @@ pub mod vng;
 pub mod websocket;
 pub mod storage;
 
-use bridge::PythonBridge;
 use database::models::{CreatePatientDto, Patient, Session, Specialist, UpdatePatientDto};
 use database::service::DatabaseService;
 use hardware::manager::HardwareManager;
@@ -26,9 +23,7 @@ pub struct AppState {
     pub eye_processor: Arc<Mutex<EyeProcessor>>,
     pub hardware_manager: Arc<Mutex<HardwareManager>>,
     pub db: Arc<DatabaseService>,
-    pub python_bridge: Arc<PythonBridge>,
     pub ws_server: Arc<WebSocketServer>,
-    pub python_child: Arc<Mutex<Option<CommandChild>>>,
     pub active_recorder: Arc<Mutex<Option<SessionRecorder>>>,
     pub native_video: Arc<vng::NativeVideoManager>,
 }
@@ -508,10 +503,8 @@ pub fn run() {
 
             let eye_processor = Arc::new(Mutex::new(EyeProcessor::new()));
             let native_video = Arc::new(vng::NativeVideoManager::new(Arc::clone(&ws_server), Arc::clone(&eye_processor)));
-            let python_bridge = Arc::new(PythonBridge::new()); 
 
             let native_cmds = Arc::clone(&native_video);
-            let bridge_cmds = Arc::clone(&python_bridge);
             let app_handle_for_ws = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(msg) = ws_commands.recv().await {
@@ -574,15 +567,13 @@ pub fn run() {
                                 "contrast" => { if let Some(val) = value.as_f64() { native_cmds.set_contrast(val as f32); } }
                                 _ => {}
                             }
-                            let _ = bridge_cmds.set_config(&key, value).await;
                         }
                         _ => {}
                     }
                 }
             });
 
-            let python_child: Arc<Mutex<Option<CommandChild>>> = Arc::new(Mutex::new(None));
-            app.manage(AppState { eye_processor, hardware_manager, db: db_for_state, python_bridge, ws_server, python_child, active_recorder, native_video });
+            app.manage(AppState { eye_processor, hardware_manager, db: db_for_state, ws_server, active_recorder, native_video });
             Ok(())
         })
         .on_window_event(|window, event| {

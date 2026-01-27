@@ -21,27 +21,44 @@ export const CalibrationStimulus: React.FC<Props> = ({ config, targetConfig, deg
         const v = config.vertical_fov;
         
         const center = { x: 0, y: 0 };
-        const left = { x: -h, y: 0 };
-        const right = { x: h, y: 0 };
-        const up = { x: 0, y: -v };
-        const down = { x: 0, y: v };
-
-        let points = [center, left, center, right, center, up, center, down, center];
         
-        if (config.type === 'points_9') {
-            // Add corners
-            points = [
-                center, 
-                left, center, right, center, 
-                up, center, down, center,
-                { x: -h, y: -v }, center, // Top-Left
-                { x: h, y: -v }, center,  // Top-Right
-                { x: -h, y: v }, center,  // Bottom-Left
-                { x: h, y: v }, center    // Bottom-Right
+        if (config.type === 'points_3') {
+            return [
+                center,
+                { x: -h, y: 0 },
+                { x: h, y: 0 },
+                center
             ];
         }
         
-        return points;
+        if (config.type === 'points_5') {
+            return [
+                center,
+                { x: -h, y: 0 },
+                { x: h, y: 0 },
+                { x: 0, y: -v },
+                { x: 0, y: v },
+                center
+            ];
+        }
+        
+        if (config.type === 'points_9') {
+            return [
+                center,
+                { x: -h, y: -v }, { x: 0, y: -v }, { x: h, y: -v },
+                { x: -h, y: 0 }, { x: 0, y: 0 }, { x: h, y: 0 },
+                { x: -h, y: v }, { x: 0, y: v }, { x: h, y: v },
+                center
+            ];
+        }
+
+        // Fallback points_7 or other
+        return [
+            center,
+            { x: -h, y: 0 }, { x: h, y: 0 },
+            { x: 0, y: -v }, { x: 0, y: v },
+            center
+        ];
     };
 
     const points = generatePoints();

@@ -23,35 +23,21 @@ pub struct KalmanFilter {
     state: Vector6<f64>,
     // Covariance matrix
     p: Matrix6<f64>,
-    // Transition matrix
-    a: Matrix6<f64>,
     // Process noise covariance
     q: Matrix6<f64>,
     // Measurement noise covariance
     r: Matrix2<f64>,
     // Measurement matrix
     h: Matrix2x6<f64>,
+    // Stability factor for acceleration
+    sf: f64,
     
     initialized: bool,
 }
 
 impl KalmanFilter {
     pub fn new(config: KalmanConfig) -> Self {
-        let dt = 1.0;
         let sf = config.stability_factor;
-
-        // Transition Matrix (Physics model: pos + vel + acc)
-        // x = x + vx + 0.5*ax
-        // v = v + ax
-        // a = a * stability_factor
-        let a = Matrix6::new(
-            1.0, 0.0, dt,  0.0, 0.5*dt*dt, 0.0,
-            0.0, 1.0, 0.0, dt,  0.0,       0.5*dt*dt,
-            0.0, 0.0, 1.0, 0.0, dt,        0.0,
-            0.0, 0.0, 0.0, 1.0, 0.0,       dt,
-            0.0, 0.0, 0.0, 0.0, sf,        0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0,       sf,
-        );
 
         // Measurement Matrix (We measure x and y)
         let h = Matrix2x6::new(
@@ -73,10 +59,10 @@ impl KalmanFilter {
         Self {
             state: Vector6::zeros(),
             p: Matrix6::identity(),
-            a,
             q,
             r,
             h,
+            sf,
             initialized: false,
         }
     }
@@ -87,16 +73,29 @@ impl KalmanFilter {
         self.initialized = false;
     }
 
-    pub fn predict(&mut self) {
+    pub fn predict(&mut self, dt: f64) {
         if !self.initialized {
             return;
         }
+
+        // Dynamic Transition Matrix (Physics model: pos + vel + acc)
+        // x = x + vx*dt + 0.5*ax*dt^2
+        // v = v + ax*dt
+        // a = a * stability_factor
+        let a = Matrix6::new(
+            1.0, 0.0, dt,  0.0, 0.5*dt*dt, 0.0,
+            0.0, 1.0, 0.0, dt,  0.0,       0.5*dt*dt,
+            0.0, 0.0, 1.0, 0.0, dt,        0.0,
+            0.0, 0.0, 0.0, 1.0, 0.0,       dt,
+            0.0, 0.0, 0.0, 0.0, self.sf,   0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0,       self.sf,
+        );
         
         // x = A * x
-        self.state = self.a * self.state;
+        self.state = a * self.state;
         
         // P = A * P * A^T + Q
-        self.p = self.a * self.p * self.a.transpose() + self.q;
+        self.p = a * self.p * a.transpose() + self.q;
     }
 
     pub fn update(&mut self, measurement: Vector2<f64>) -> Vector2<f64> {

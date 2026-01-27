@@ -39,6 +39,7 @@ pub struct EyeProcessor {
 
     // Controls
     pub filtering_enabled: bool,
+    last_timestamp: Option<f64>,
 }
 
 impl EyeProcessor {
@@ -54,6 +55,7 @@ impl EyeProcessor {
             is_calibrated: false,
             calibration_target_samples: 30,
             filtering_enabled: true,
+            last_timestamp: None,
         }
     }
 
@@ -62,6 +64,14 @@ impl EyeProcessor {
     }
 
     fn process_internal(&mut self, data: RawEyeData) -> ProcessedEyeData {
+        // Calculate dynamic dt
+        let current_time = data.timestamp;
+        let dt = match self.last_timestamp {
+            Some(last) => (current_time - last).max(0.001), // Min 1ms to avoid infinity
+            None => 0.005, // Default for 200 FPS
+        };
+        self.last_timestamp = Some(current_time);
+
         if !self.filtering_enabled {
             // Return raw or Python-processed data directly
             let (l, r) = if let Some(p) = data.processed {
@@ -99,6 +109,8 @@ impl EyeProcessor {
         }
 
         // 2. Processing Left Eye
+        // Always predict to keep uncertainty growing and maintain inertia
+        self.kalman_left.predict(dt);
         let processed_left = if let Some(raw_left) = data.left_eye {
             let mut point = Vector2::new(raw_left[0], raw_left[1]);
             
@@ -107,18 +119,14 @@ impl EyeProcessor {
                 point -= center;
             }
             
-            // Apply Kalman
-            self.kalman_left.predict();
             let smoothed = self.kalman_left.update(point);
-            
             Some([smoothed.x, smoothed.y])
         } else {
-            // Predict even if no measurement to keep filter warm (optional)
-            // self.kalman_left.predict(); 
             None
         };
 
         // 3. Processing Right Eye
+        self.kalman_right.predict(dt);
         let processed_right = if let Some(raw_right) = data.right_eye {
             let mut point = Vector2::new(raw_right[0], raw_right[1]);
             
@@ -127,10 +135,7 @@ impl EyeProcessor {
                 point -= center;
             }
             
-            // Apply Kalman
-            self.kalman_right.predict();
             let smoothed = self.kalman_right.update(point);
-            
             Some([smoothed.x, smoothed.y])
         } else {
             None

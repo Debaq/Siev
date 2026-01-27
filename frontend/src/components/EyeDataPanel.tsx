@@ -94,6 +94,10 @@ function ChartSection({
 }: ChartSectionProps) {
   const chartRef = useRef<ReactECharts>(null)
 
+  // Memoize style and opts to avoid unnecessary re-renders of the ECharts component
+  const chartStyle = useMemo(() => ({ width: '100%', height: '100%' }), [])
+  const chartOpts = useMemo(() => ({ renderer: 'canvas' as const }), [])
+
   // Preparar datos para ECharts con downsampling para visualización
   const chartOption = useMemo<EChartsOption>(() => {
     const displayThreshold = 1000 // Máximo puntos a renderizar
@@ -243,10 +247,10 @@ function ChartSection({
         <ReactECharts
           ref={chartRef}
           option={chartOption}
-          style={{ width: '100%', height: '100%' }}
-          opts={{ renderer: 'canvas' }}
+          style={chartStyle}
+          opts={chartOpts}
           notMerge={true}
-          lazyUpdate={true}
+          lazyUpdate={false}
         />
       </div>
     </div>
@@ -257,11 +261,17 @@ function EyeDataPanel({ isCapturing }: EyeDataPanelProps) {
   const { addListener, removeListener } = useWebSocket()
   const [history, setHistory] = useState<EyeDataPoint[]>([])
   const [isCalibrated, setIsCalibrated] = useState(false)
+  const isCalibratedRef = useRef(false)
   const [useRustFilter, setUseRustFilter] = useState(true)
 
   const [splitRatio, setSplitRatio] = useState(0.5)
   const [isResizing, setIsResizing] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Keep ref in sync
+  useEffect(() => {
+    isCalibratedRef.current = isCalibrated
+  }, [isCalibrated])
 
   // Handle new eye data from WebSocket with batching
   useEffect(() => {
@@ -290,7 +300,7 @@ function EyeDataPanel({ isCapturing }: EyeDataPanelProps) {
         is_calibrated: boolean
       }
 
-      if (wsEyeData.is_calibrated !== isCalibrated) {
+      if (wsEyeData.is_calibrated !== isCalibratedRef.current) {
         setIsCalibrated(wsEyeData.is_calibrated)
       }
 
@@ -311,7 +321,7 @@ function EyeDataPanel({ isCapturing }: EyeDataPanelProps) {
       removeListener('eye_data', handleData)
       clearInterval(flushInterval)
     }
-  }, [isCapturing, addListener, removeListener, isCalibrated])
+  }, [isCapturing, addListener, removeListener])
 
   // Clear history when stopping
   useEffect(() => {

@@ -55,16 +55,16 @@ if ($LASTEXITCODE -eq 0) {
 Set-Location ..
 
 # ---------------------------------------------------------
-# Step 3: Python Backend
+# Step 3: Python Environment (Optional/Development)
 # ---------------------------------------------------------
-Write-Host "`n[3/3] Checking Python backend..." -ForegroundColor Cyan
+Write-Host "`n[3/3] Checking Python environment..." -ForegroundColor Cyan
 
 try {
     python -c "import cv2, numpy, torch; print('Dependencies OK')" | Out-Null
     Write-Host "✓ Python dependencies OK" -ForegroundColor Green
 } catch {
     Write-Host "⚠ Python dependencies missing or environment not active." -ForegroundColor Yellow
-    Write-Host "Please ensure your Conda/Micromamba environment is active."
+    Write-Host "Please ensure your Conda/Micromamba environment is active if you need Python tools."
     Write-Host "Try: micromamba activate siev"
     
     $conf = Read-Host "Attempt to install requirements via pip? (Y/n)"

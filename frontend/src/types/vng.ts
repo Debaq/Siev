@@ -13,7 +13,7 @@ export interface StimulusTargetConfig {
 }
 
 export interface CalibrationConfig {
-    type: 'points_5' | 'points_7' | 'points_9';
+    type: 'points_3' | 'points_5' | 'points_7' | 'points_9';
     horizontal_fov: number;       // e.g., 20 or 30 degrees
     vertical_fov: number;         // e.g., 10 or 20 degrees
     duration_per_point: number;   // seconds
