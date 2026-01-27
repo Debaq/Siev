@@ -47,7 +47,7 @@ class VideoManagerAPI:
         self.nose_width = 0.25
         self.eye_height = 0.25
         self.use_yolo = True
-        self.yolo_frequency = 10
+        self.yolo_frequency = 20
         self.yolo_confidence = 0.5
         self.storage_path: Optional[str] = None
         self.video_quality = 70
@@ -534,12 +534,6 @@ class VideoManagerAPI:
 
     def set_pupil_config(
         self,
-        # Fast detector params
-        search_window_multiplier: Optional[float] = None,
-        dark_threshold_percent: Optional[int] = None,
-        starburst_rays: Optional[int] = None,
-        starburst_min_gradient: Optional[int] = None,
-        fallback_threshold: Optional[int] = None,
         # Legacy detector params
         legacy_blur_enabled: Optional[bool] = None,
         legacy_blur_kernel: Optional[int] = None,
@@ -554,13 +548,6 @@ class VideoManagerAPI:
         Update pupil detection configuration.
 
         Args:
-            # Fast detector
-            search_window_multiplier: Window size = radius × N (default 3.0)
-            dark_threshold_percent: % above darkest point (default 20)
-            starburst_rays: Number of starburst rays (default 16)
-            starburst_min_gradient: Min gradient for edge detection (default 30)
-            fallback_threshold: Frames without detection before fallback (default 5)
-
             # Legacy detector
             legacy_blur_enabled: Enable GaussianBlur (default True)
             legacy_blur_kernel: Blur kernel size (default 5)
@@ -573,18 +560,6 @@ class VideoManagerAPI:
         """
         if self.video_processes:
             kwargs = {}
-            # Fast detector params
-            if search_window_multiplier is not None:
-                kwargs['search_window_multiplier'] = search_window_multiplier
-            if dark_threshold_percent is not None:
-                kwargs['dark_threshold_percent'] = dark_threshold_percent
-            if starburst_rays is not None:
-                kwargs['starburst_rays'] = starburst_rays
-            if starburst_min_gradient is not None:
-                kwargs['starburst_min_gradient'] = starburst_min_gradient
-            if fallback_threshold is not None:
-                kwargs['fallback_threshold'] = fallback_threshold
-
             # Legacy detector params
             if legacy_blur_enabled is not None:
                 kwargs['legacy_blur_enabled'] = legacy_blur_enabled

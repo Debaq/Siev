@@ -54,7 +54,7 @@ class VideoProcesses:
         
         # Variables para toggle YOLO/ROI fija
         self.use_yolo = Value(ctypes.c_bool, True)
-        self.yolo_frequency = Value(ctypes.c_int, 10)  # Default 10 (12 FPS at 120 FPS cam)
+        self.yolo_frequency = Value(ctypes.c_int, 20)  # Cada 20 frames (aprox 10 fps a 200 fps cam)
         self.yolo_confidence = Value(ctypes.c_float, 0.5)
         self.fixed_roi_updated = Value(ctypes.c_bool, False)
 
@@ -76,9 +76,6 @@ class VideoProcesses:
         # Parámetros Legacy detector - Toggles de etapas
         self.legacy_blur_enabled = Value(ctypes.c_bool, True)
         self.legacy_blur_kernel = Value(ctypes.c_int, 5)
-        self.legacy_clahe_enabled = Value(ctypes.c_bool, True)
-        self.legacy_clahe_clip_limit = Value(ctypes.c_float, 2.0)
-        self.legacy_clahe_grid_size = Value(ctypes.c_int, 8)
         self.legacy_morph_enabled = Value(ctypes.c_bool, True)
         self.legacy_morph_close_iterations = Value(ctypes.c_int, 1)
         self.legacy_morph_dilate_iterations = Value(ctypes.c_int, 1)  
@@ -275,9 +272,14 @@ class VideoProcesses:
                     capture_frame_count = 0
                     capture_last_second = capture_now
                 
-                # Poner el frame en la cola solo si no está llena - sin bloqueos
-                if not self.frame_queue.full():
-                    self.frame_queue.put((frame, fps_avg))
+                # Poner el frame en la cola con lógica de "Drop if full"
+                if self.frame_queue.full():
+                    try:
+                        self.frame_queue.get_nowait() # Descartar frame viejo
+                    except:
+                        pass
+                
+                self.frame_queue.put((frame, fps_avg))
         except Exception as e:
             logger.error(f"Error in capture process: {e}")
         finally:
@@ -381,10 +383,6 @@ class VideoProcesses:
             x_offset = (w - new_width) // 2
             final_frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width] = resized_combined
 
-
-            # Convertir a gris para detección
-            gray = cv2.cvtColor(final_frame, cv2.COLOR_BGR2GRAY)
-            
             # Solo detectar cada N frames
             if self.use_yolo.value:
                 if detection_counter % self.yolo_frequency.value == 0:
@@ -469,8 +467,13 @@ class VideoProcesses:
                 'h': new_h
             }
             
-            if not self.result_queue.full():
-                self.result_queue.put(detection_data)
+            if self.result_queue.full():
+                try:
+                    self.result_queue.get_nowait()
+                except:
+                    pass
+            
+            self.result_queue.put(detection_data)
         
         logger.info("Detection process finished")
     
@@ -496,30 +499,37 @@ class VideoProcesses:
         ui_interval = 1.0 / 60.0 # Target 60 FPS for preview
 
         while self.running.value:
-            if self.result_queue.empty():
-                time.sleep(0.001)
+            try:
+                # 1. Espera con timeout para no saturar la CPU
+                if self.result_queue.empty():
+                    time.sleep(0.005) # 5ms de descanso si no hay nada
+                    continue
+
+                # 2. Obtener datos (bloqueante pero con ritmo)
+                data = self.result_queue.get(timeout=0.1)
+                
+                # Verificar si el modo cambió
+                if self.pupil_mode.value != current_mode_value:
+                    current_mode_value = self.pupil_mode.value
+                    current_mode = mode_map.get(current_mode_value, "legacy")
+                    detector_right = create_pupil_detector(current_mode)
+                    detector_left = create_pupil_detector(current_mode)
+                    logger.info(f"Pupil detectors changed to mode: {current_mode}")
+
+                final_frame = data['frame']
+                # gray = data['gray']  # Ya no lo pasamos para ahorrar IPC
+                boxes = data['boxes']
+                y_offset = data['y_offset']
+                scale_factor = data['scale_factor']
+                fps = data['fps']
+                w = data['w']
+                h = data['h']
+            except Exception as e:
+                if self.running.value:
+                    logger.error(f"Error getting from result_queue: {e}")
                 continue
-
-            # Verificar si el modo cambió
-            if self.pupil_mode.value != current_mode_value:
-                current_mode_value = self.pupil_mode.value
-                current_mode = mode_map.get(current_mode_value, "legacy")
-                detector_right = create_pupil_detector(current_mode)
-                detector_left = create_pupil_detector(current_mode)
-                logger.info(f"Pupil detectors changed to mode: {current_mode}")
-
-            data = self.result_queue.get()
-            final_frame = data['frame']
-            # gray = data['gray']  # Ya no lo pasamos para ahorrar IPC
-            boxes = data['boxes']
-            y_offset = data['y_offset']
-            scale_factor = data['scale_factor']
-            fps = data['fps']
-            w = data['w']
-            h = data['h']
             
-            # Convertir a gris localmente (es más rápido que pasarlo por Queue)
-            gray = cv2.cvtColor(final_frame, cv2.COLOR_BGR2GRAY)
+            # --- Resto del procesamiento (Fuera del try/catch de la cola) ---
             
             # Obtener timestamp para cálculo de velocidad
             timestamp = cv2.getTickCount() / cv2.getTickFrequency()
@@ -551,29 +561,18 @@ class VideoProcesses:
                     
                     # Verificar límites
                     if ey >= 0 and ey+eh <= h and ex >= 0 and ex+ew <= w and eh > 0 and ew > 0:
-                        eye_gray = gray[ey:ey+eh, ex:ex+ew]
-                        eye_regions.append((eye_gray, ex, ey, ew, eh, is_right_eye))
+                        # PASAR BGR DIRECTAMENTE (Rust se encarga de convertir a gris internamente)
+                        eye_bgr = final_frame[ey:ey+eh, ex:ex+ew]
+                        eye_regions.append((eye_bgr, ex, ey, ew, eh, is_right_eye))
             
             # Lista para guardar posiciones de pupilas
             pupil_positions = [None, None]
 
             # Crear configuración para los detectores
             detector_config = DetectorConfig(
-                # Fast detector params
-                search_window_multiplier=self.search_window_multiplier.value,
-                dark_threshold_percent=self.dark_threshold_percent.value,
-                starburst_rays=self.starburst_rays.value,
-                starburst_min_gradient=self.starburst_min_gradient.value,
-                fallback_threshold=self.fallback_threshold.value,
-                # Hybrid params
-                min_confidence_for_lock=self.min_confidence_for_lock.value,
-                revalidation_interval=self.revalidation_interval.value,
-                # Legacy detector params
+                debug_mode=self.slider_th_pressed.value,
                 legacy_blur_enabled=self.legacy_blur_enabled.value,
                 legacy_blur_kernel=self.legacy_blur_kernel.value,
-                legacy_clahe_enabled=self.legacy_clahe_enabled.value,
-                legacy_clahe_clip_limit=self.legacy_clahe_clip_limit.value,
-                legacy_clahe_grid_size=self.legacy_clahe_grid_size.value,
                 legacy_morph_enabled=self.legacy_morph_enabled.value,
                 legacy_morph_close_iterations=self.legacy_morph_close_iterations.value,
                 legacy_morph_dilate_iterations=self.legacy_morph_dilate_iterations.value
@@ -581,17 +580,18 @@ class VideoProcesses:
 
             # Procesar cada región
             for data_region in eye_regions:
-                eye_gray, ex, ey, ew, eh, is_right_eye = data_region
+                eye_bgr, ex, ey, ew, eh, is_right_eye = data_region
 
                 # Configurar threshold y erode por ojo
                 detector_config.threshold_value = self.threslhold[0] if is_right_eye else self.threslhold[1]
                 detector_config.erode_value = self.erode[0] if is_right_eye else self.erode[1]
+                detector_config.debug_mode = self.slider_th_pressed.value
 
                 # Seleccionar detector según ojo
                 detector = detector_right if is_right_eye else detector_left
 
-                # Detectar pupila
-                result = detector.detect(eye_gray, detector_config)
+                # Detectar pupila (ahora recibe BGR)
+                result = detector.detect(eye_bgr, detector_config)
 
                 if result:
                     # Guardar posición SOLO si se encontró
@@ -870,70 +870,20 @@ class VideoProcesses:
 
     def set_pupil_mode(self, mode: str):
         """
-        Cambia el modo de detección de pupila.
-
-        Args:
-            mode: "legacy", "fast", o "hybrid"
+        Cambia el modo de detección de pupila (Simplificado: solo legacy).
         """
-        mode_map = {"legacy": 0, "fast": 1, "hybrid": 2}
-        if mode in mode_map:
-            self.pupil_mode.value = mode_map[mode]
-            logger.info(f"Pupil detection mode changed to: {mode}")
-        else:
-            logger.warning(f"Unknown mode: {mode}. Using 'legacy' as default.")
-            self.pupil_mode.value = 0
+        self.pupil_mode.value = 0
+        logger.info(f"Pupil detection mode set to legacy")
 
     def set_pupil_config(self, **kwargs):
         """
-        Configura los parámetros del detector de pupila.
-
-        Args:
-            # Fast detector
-            search_window_multiplier: Multiplicador de ventana de búsqueda (default 3.0)
-            dark_threshold_percent: Porcentaje sobre punto más oscuro (default 20)
-            starburst_rays: Número de rayos del starburst (default 16)
-            starburst_min_gradient: Gradiente mínimo para detectar borde (default 30)
-            fallback_threshold: Frames sin detección para activar fallback (default 5)
-
-            # Legacy detector
-            legacy_blur_enabled: Activar GaussianBlur (default True)
-            legacy_blur_kernel: Tamaño del kernel de blur (default 5)
-            legacy_clahe_enabled: Activar CLAHE (default True)
-            legacy_clahe_clip_limit: Límite de clip de CLAHE (default 2.0)
-            legacy_clahe_grid_size: Tamaño de grid de CLAHE (default 8)
-            legacy_morph_enabled: Activar operaciones morfológicas (default True)
-            legacy_morph_close_iterations: Iteraciones de cierre (default 1)
-            legacy_morph_dilate_iterations: Iteraciones de dilatación (default 1)
+        Configura los parámetros del detector de pupila Legacy.
         """
-        # Fast detector params
-        if 'search_window_multiplier' in kwargs:
-            self.search_window_multiplier.value = float(kwargs['search_window_multiplier'])
-        if 'dark_threshold_percent' in kwargs:
-            self.dark_threshold_percent.value = int(kwargs['dark_threshold_percent'])
-        if 'starburst_rays' in kwargs:
-            self.starburst_rays.value = int(kwargs['starburst_rays'])
-        if 'starburst_min_gradient' in kwargs:
-            self.starburst_min_gradient.value = int(kwargs['starburst_min_gradient'])
-        if 'fallback_threshold' in kwargs:
-            self.fallback_threshold.value = int(kwargs['fallback_threshold'])
-
-        # Hybrid params
-        if 'min_confidence_for_lock' in kwargs:
-            self.min_confidence_for_lock.value = float(kwargs['min_confidence_for_lock'])
-        if 'revalidation_interval' in kwargs:
-            self.revalidation_interval.value = int(kwargs['revalidation_interval'])
-
         # Legacy detector params
         if 'legacy_blur_enabled' in kwargs:
             self.legacy_blur_enabled.value = bool(kwargs['legacy_blur_enabled'])
         if 'legacy_blur_kernel' in kwargs:
             self.legacy_blur_kernel.value = int(kwargs['legacy_blur_kernel'])
-        if 'legacy_clahe_enabled' in kwargs:
-            self.legacy_clahe_enabled.value = bool(kwargs['legacy_clahe_enabled'])
-        if 'legacy_clahe_clip_limit' in kwargs:
-            self.legacy_clahe_clip_limit.value = float(kwargs['legacy_clahe_clip_limit'])
-        if 'legacy_clahe_grid_size' in kwargs:
-            self.legacy_clahe_grid_size.value = int(kwargs['legacy_clahe_grid_size'])
         if 'legacy_morph_enabled' in kwargs:
             self.legacy_morph_enabled.value = bool(kwargs['legacy_morph_enabled'])
         if 'legacy_morph_close_iterations' in kwargs:
