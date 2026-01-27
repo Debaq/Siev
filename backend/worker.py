@@ -161,6 +161,14 @@ class SievWorker:
             elif cmd.cmd == "set_config":
                 params = cmd.params
                 
+                # Define valid args for runtime updates
+                valid_runtime_args = [
+                    'brightness', 'contrast', 'threshold', 'erode', 
+                    'nose_width', 'eye_height', 'use_yolo', 'show_debug',
+                    'yolo_frequency', 'yolo_confidence',
+                    'video_quality', 'video_scale'
+                ]
+                
                 # Handle structured key/value pair from WsMessage::SetConfig
                 if "key" in params and "value" in params:
                     key = params["key"]
@@ -168,14 +176,14 @@ class SievWorker:
                     
                     if key == "session_update" and isinstance(value, dict):
                         # Bulk update of multiple config parameters
-                        # Filter to only pass valid arguments to update_config
-                        valid_args = [
-                            'brightness', 'contrast', 'threshold', 'erode', 
-                            'nose_width', 'eye_height', 'use_yolo', 'show_debug'
-                        ]
-                        filtered_args = {k: v for k, v in value.items() if k in valid_args}
+                        filtered_args = {k: v for k, v in value.items() if k in valid_runtime_args}
                         if filtered_args:
                             self.video_manager.update_config(**filtered_args)
+                        success = True
+                        
+                    elif key in valid_runtime_args:
+                        # Direct update of a single parameter
+                        self.video_manager.update_config(**{key: value})
                         success = True
                         
                     elif key == "pupil_mode":
@@ -188,7 +196,9 @@ class SievWorker:
                         valid_init_args = [
                             'camera_id', 'width', 'height', 'fps',
                             'brightness', 'contrast', 'threshold', 'erode',
-                            'nose_width', 'eye_height', 'use_yolo', 'storage_path'
+                            'nose_width', 'eye_height', 'use_yolo', 'storage_path',
+                            'yolo_frequency', 'yolo_confidence',
+                            'video_quality', 'video_scale'
                         ]
                         filtered_init = {k: v for k, v in value.items() if k in valid_init_args}
 
@@ -232,7 +242,8 @@ class SievWorker:
                     config_to_update = params
                     valid_config_args = [
                         'brightness', 'contrast', 'threshold', 'erode', 
-                        'nose_width', 'eye_height', 'use_yolo', 'show_debug'
+                        'nose_width', 'eye_height', 'use_yolo', 'show_debug',
+                        'video_quality', 'video_scale'
                     ]
                     # Filter keys
                     filtered_config = {k: v for k, v in config_to_update.items() if k in valid_config_args}
@@ -279,9 +290,20 @@ class SievWorker:
 
     def _encode_frame_sync(self, frame):
         """Encode frame to JPEG synchronously (runs in thread pool)"""
-        # Fase 3.3: Reducir resolución para preview (50% = 4x menos datos)
-        small_frame = cv2.resize(frame, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
-        _, jpeg = cv2.imencode('.jpg', small_frame, [cv2.IMWRITE_JPEG_QUALITY, 40])
+        # Fase 3.3: Reducir resolución para preview (configurable)
+        scale = getattr(self.video_manager, 'video_scale', 0.5)
+        quality = getattr(self.video_manager, 'video_quality', 40)
+        
+        # Ensure values are within safe bounds
+        scale = max(0.1, min(1.0, scale))
+        quality = int(max(10, min(100, quality)))
+
+        if scale < 1.0:
+            small_frame = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        else:
+            small_frame = frame
+            
+        _, jpeg = cv2.imencode('.jpg', small_frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
         return jpeg.tobytes()
 
     async def _encode_frame(self, frame):
@@ -298,6 +320,10 @@ class SievWorker:
         frame_interval = 1.0 / target_fps
         last_frame_sent = 0
         pending_encode: Optional[asyncio.Task] = None
+
+        # Fase 5: Diagnóstico de frames
+        frames_sent = 0
+        last_diag_time = time.time()
 
         logger.info(f"Target transmission rate: {target_fps} FPS")
 
@@ -340,12 +366,20 @@ class SievWorker:
                         jpeg_bytes = pending_encode.result()
                         await self.client.send_frame(jpeg_bytes)
                         last_frame_sent = time.time()
+                        frames_sent += 1
                     except Exception as e:
                         logger.error(f"Error encoding/sending frame: {e}")
                     finally:
                         pending_encode = None
 
-                await asyncio.sleep(0.001)
+                # Fase 5: Diagnóstico - log cada segundo
+                now_diag = time.time()
+                if now_diag - last_diag_time >= 1.0:
+                    logger.info(f"[DIAG-PY] Frames enviados: {frames_sent}/s")
+                    frames_sent = 0
+                    last_diag_time = now_diag
+
+                await asyncio.sleep(0.005)
 
         except asyncio.CancelledError:
             logger.info("Data transmitter loop cancelled")

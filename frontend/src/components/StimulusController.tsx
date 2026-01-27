@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Square, Settings } from 'lucide-react';
+import { Play, Square, Settings, RefreshCw } from 'lucide-react';
 import { emit } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { 
@@ -220,13 +220,35 @@ export const StimulusController: React.FC<Props> = ({ testType, appConfig }) => 
                  </div>
              )}
 
-             <button
-                className={`btn w-full ${isPlaying ? 'btn-danger' : 'btn-success'} h-8`}
-                onClick={isPlaying ? handleStop : handleStart}
-            >
-                {isPlaying ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
-                <span className="ml-1">{isPlaying ? 'DETENER ESTÍMULO' : 'INICIAR ESTÍMULO'}</span>
-            </button>
+             <div className="flex gap-2">
+                {isPlaying ? (
+                    <>
+                        <button
+                            className="btn btn-primary flex-1 h-8 text-[10px]"
+                            onClick={handleStart}
+                            title="Actualizar parámetros sin detener"
+                        >
+                            <RefreshCw className="w-3 h-3 mr-1" />
+                            ACTUALIZAR
+                        </button>
+                        <button
+                            className="btn btn-danger flex-1 h-8 text-[10px]"
+                            onClick={handleStop}
+                        >
+                            <Square className="w-3 h-3 mr-1" />
+                            DETENER
+                        </button>
+                    </>
+                ) : (
+                    <button
+                        className="btn btn-success w-full h-8"
+                        onClick={handleStart}
+                    >
+                        <Play className="w-3 h-3 mr-1" />
+                        INICIAR ESTÍMULO
+                    </button>
+                )}
+             </div>
         </div>
     );
 };

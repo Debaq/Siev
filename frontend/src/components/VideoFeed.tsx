@@ -8,10 +8,11 @@ interface VideoFeedProps {
 
 function VideoFeed({ isCapturing }: VideoFeedProps) {
   const { addListener, removeListener } = useWebSocket()
+  const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [hasSignal, setHasSignal] = useState(false)
   const [fps, setFps] = useState(0)
-  
+
   // Refs for the rendering loop logic
   const latestFrameRef = useRef<Blob | string | null>(null);
   const isRenderingRef = useRef(false);
@@ -37,7 +38,8 @@ function VideoFeed({ isCapturing }: VideoFeedProps) {
     // 1. WebSocket Listener: Just update the latest frame reference (Zero overhead)
     const handleFrame = (data: Blob | string) => {
         latestFrameRef.current = data;
-        setHasSignal(true);
+        // Solo actualizar estado si cambió (evita re-renders innecesarios)
+        if (!hasSignal) setHasSignal(true);
     };
 
     // 2. Render Loop: Decoupled from network rate, synced to monitor refresh rate
@@ -64,18 +66,40 @@ function VideoFeed({ isCapturing }: VideoFeedProps) {
             if (data instanceof Blob) {
                 // Fast path: Binary
                 const bitmap = await createImageBitmap(data);
-                
+
                 // Check if component is still mounted and canvas exists
-                if (canvasRef.current) {
-                    if (canvasRef.current.width !== bitmap.width || canvasRef.current.height !== bitmap.height) {
-                        canvasRef.current.width = bitmap.width;
-                        canvasRef.current.height = bitmap.height;
+                if (canvasRef.current && containerRef.current) {
+                    // Obtener tamaño actual del contenedor
+                    const containerW = containerRef.current.clientWidth;
+                    const containerH = containerRef.current.clientHeight;
+
+                    if (containerW === 0 || containerH === 0) {
+                        bitmap.close();
+                        isRenderingRef.current = false;
+                        animationFrameRef.current = requestAnimationFrame(renderLoop);
+                        return;
                     }
-                    
+
+                    // Ajustar canvas al tamaño del contenedor (solo si cambió)
+                    if (canvasRef.current.width !== containerW || canvasRef.current.height !== containerH) {
+                        canvasRef.current.width = containerW;
+                        canvasRef.current.height = containerH;
+                    }
+
                     const ctx = canvasRef.current.getContext('2d', { alpha: false, desynchronized: true });
                     if (ctx) {
-                        ctx.drawImage(bitmap, 0, 0);
-                        frameCountRef.current += 1; // Count rendered frame
+                        // Calcular escala manteniendo aspect ratio (contain)
+                        const scale = Math.min(containerW / bitmap.width, containerH / bitmap.height);
+                        const drawW = bitmap.width * scale;
+                        const drawH = bitmap.height * scale;
+                        const offsetX = (containerW - drawW) / 2;
+                        const offsetY = (containerH - drawH) / 2;
+
+                        // Limpiar y dibujar centrado
+                        ctx.fillStyle = '#000';
+                        ctx.fillRect(0, 0, containerW, containerH);
+                        ctx.drawImage(bitmap, offsetX, offsetY, drawW, drawH);
+                        frameCountRef.current += 1;
                     }
                 }
                 bitmap.close();
@@ -84,15 +108,32 @@ function VideoFeed({ isCapturing }: VideoFeedProps) {
                 await new Promise<void>((resolve) => {
                     const img = new Image();
                     img.onload = () => {
-                        if (canvasRef.current) {
-                             if (canvasRef.current.width !== img.width || canvasRef.current.height !== img.height) {
-                                canvasRef.current.width = img.width;
-                                canvasRef.current.height = img.height;
+                        if (canvasRef.current && containerRef.current) {
+                            const containerW = containerRef.current.clientWidth;
+                            const containerH = containerRef.current.clientHeight;
+
+                            if (containerW === 0 || containerH === 0) {
+                                resolve();
+                                return;
                             }
+
+                            if (canvasRef.current.width !== containerW || canvasRef.current.height !== containerH) {
+                                canvasRef.current.width = containerW;
+                                canvasRef.current.height = containerH;
+                            }
+
                             const ctx = canvasRef.current.getContext('2d', { alpha: false });
                             if (ctx) {
-                                ctx.drawImage(img, 0, 0);
-                                frameCountRef.current += 1; // Count rendered frame
+                                const scale = Math.min(containerW / img.width, containerH / img.height);
+                                const drawW = img.width * scale;
+                                const drawH = img.height * scale;
+                                const offsetX = (containerW - drawW) / 2;
+                                const offsetY = (containerH - drawH) / 2;
+
+                                ctx.fillStyle = '#000';
+                                ctx.fillRect(0, 0, containerW, containerH);
+                                ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+                                frameCountRef.current += 1;
                             }
                         }
                         resolve();
@@ -130,10 +171,10 @@ function VideoFeed({ isCapturing }: VideoFeedProps) {
   }
 
   return (
-    <div className="w-full h-full relative flex items-center justify-center bg-black">
-      <canvas 
+    <div ref={containerRef} className="w-full h-full relative bg-black overflow-hidden">
+      <canvas
         ref={canvasRef}
-        className={`max-w-full max-h-full object-contain ${hasSignal ? 'block' : 'hidden'}`}
+        className={`absolute inset-0 ${hasSignal ? 'block' : 'hidden'}`}
       />
       
       {!hasSignal && (

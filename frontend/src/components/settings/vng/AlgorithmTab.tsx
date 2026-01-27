@@ -45,6 +45,33 @@ export const AlgorithmTab: React.FC<AlgorithmTabProps> = ({ config, updateConfig
                     </select>
                 </SettingsField>
 
+                {config.vng.algorithm.primary === 'yolo' && (
+                    <div className="grid grid-cols-2 gap-4 p-4 bg-dark-800/30 rounded-lg border border-dark-700/50">
+                        <SettingsField label="Frecuencia YOLO (Frames)">
+                            <div className="flex flex-col gap-1">
+                                <input
+                                    type="number" className="input"
+                                    min="1" max="60"
+                                    value={config.vng.algorithm.yolo_frequency || 4}
+                                    onChange={e => handleConfigChange('vng.algorithm.yolo_frequency', Number(e.target.value), 'yolo_frequency')}
+                                />
+                                <span className="text-[10px] text-dark-500">Ej: 4 = Inferencia cada 4 frames</span>
+                            </div>
+                        </SettingsField>
+                        <SettingsField label="Confianza Mínima">
+                            <div className="flex flex-col gap-1">
+                                <input
+                                    type="number" className="input"
+                                    min="0.1" max="1.0" step="0.05"
+                                    value={config.vng.algorithm.yolo_confidence || 0.5}
+                                    onChange={e => handleConfigChange('vng.algorithm.yolo_confidence', Number(e.target.value), 'yolo_confidence')}
+                                />
+                                <span className="text-[10px] text-dark-500">Valor entre 0.1 y 1.0 (Def: 0.5)</span>
+                            </div>
+                        </SettingsField>
+                    </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                     <SettingsField label="Umbral de Binarización">
                         <input

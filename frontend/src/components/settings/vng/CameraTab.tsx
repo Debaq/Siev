@@ -146,6 +146,44 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig }) =>
                 </div>
             </SettingsSection>
 
+            <SettingsSection title="Optimización de Transmisión">
+                <div className="grid grid-cols-2 gap-4">
+                    <SettingsField 
+                        label="Calidad de Video (JPEG)" 
+                        description={`Calidad: ${config.vng.camera.video_quality || 80}% - Menor calidad = Más rápido.`}
+                    >
+                        <input
+                            type="range" 
+                            min="10" max="100" step="5"
+                            className="range range-xs range-primary"
+                            value={config.vng.camera.video_quality || 80}
+                            onChange={e => {
+                                const val = Number(e.target.value);
+                                updateConfig('vng.camera.video_quality', val);
+                                // Send immediately for live preview effect
+                                send({ type: 'set_config', key: 'video_quality', value: val });
+                            }}
+                        />
+                    </SettingsField>
+                    <SettingsField 
+                        label="Escala de Video" 
+                        description={`Escala: ${((config.vng.camera.video_scale || 0.75) * 100).toFixed(0)}% - Tamaño de imagen.`}
+                    >
+                        <input
+                            type="range" 
+                            min="0.1" max="1.0" step="0.05"
+                            className="range range-xs range-secondary"
+                            value={config.vng.camera.video_scale || 0.75}
+                            onChange={e => {
+                                const val = Number(e.target.value);
+                                updateConfig('vng.camera.video_scale', val);
+                                send({ type: 'set_config', key: 'video_scale', value: val });
+                            }}
+                        />
+                    </SettingsField>
+                </div>
+            </SettingsSection>
+
             <SettingsSection title="Orientación y Transformación">
                 <div className="grid grid-cols-2 gap-3">
                     <SettingsField label="Espejo Horizontal" inline>

@@ -54,6 +54,8 @@ class VideoProcesses:
         
         # Variables para toggle YOLO/ROI fija
         self.use_yolo = Value(ctypes.c_bool, True)
+        self.yolo_frequency = Value(ctypes.c_int, 10)  # Default 10 (12 FPS at 120 FPS cam)
+        self.yolo_confidence = Value(ctypes.c_float, 0.5)
         self.fixed_roi_updated = Value(ctypes.c_bool, False)
 
         # Configuración del detector de pupila
@@ -263,9 +265,7 @@ class VideoProcesses:
 
                 # Reset contador de fallos al leer exitosamente
                 consecutive_failures = 0
-                
-                last_time = current_time
-                
+
                 # Calcular FPS de entrada (frames capturados por segundo)
                 capture_frame_count += 1
                 capture_now = time.time()
@@ -314,7 +314,6 @@ class VideoProcesses:
         
         # Variables para controlar frecuencia de detección
         detection_counter = 0
-        detection_frequency = 4
         last_boxes = []
         scale_factor = 0.5
         
@@ -388,9 +387,12 @@ class VideoProcesses:
             
             # Solo detectar cada N frames
             if self.use_yolo.value:
-                if detection_counter % detection_frequency == 0:
+                if detection_counter % self.yolo_frequency.value == 0:
                     roi_frame = final_frame[y_offset:y_offset+new_height, x_offset:x_offset+new_width]
                     small_roi = cv2.resize(roi_frame, None, fx=scale_factor, fy=scale_factor)
+                    
+                    # Actualizar confianza
+                    detect_params['conf'] = self.yolo_confidence.value
                     
                     with torch.no_grad():
                         results = model(small_roi, **detect_params)
@@ -458,7 +460,7 @@ class VideoProcesses:
             # Pasar datos al proceso de procesamiento
             detection_data = {
                 'frame': final_frame,
-                'gray': gray,
+                # 'gray': gray,  # REMOVED: calculating gray in processing_worker is cheaper than IPC
                 'boxes': boxes,
                 'y_offset': y_offset,
                 'scale_factor': scale_factor,
@@ -488,6 +490,10 @@ class VideoProcesses:
         pipeline_frame_count = 0
         pipeline_last_second = time.time()
         pipeline_fps = 0.0
+        
+        # Rate limiting para la UI (60 FPS es suficiente para el preview)
+        ui_last_sent_time = 0
+        ui_interval = 1.0 / 60.0 # Target 60 FPS for preview
 
         while self.running.value:
             if self.result_queue.empty():
@@ -504,13 +510,17 @@ class VideoProcesses:
 
             data = self.result_queue.get()
             final_frame = data['frame']
-            gray = data['gray']
+            # gray = data['gray']  # Ya no lo pasamos para ahorrar IPC
             boxes = data['boxes']
             y_offset = data['y_offset']
             scale_factor = data['scale_factor']
             fps = data['fps']
             w = data['w']
             h = data['h']
+            
+            # Convertir a gris localmente (es más rápido que pasarlo por Queue)
+            gray = cv2.cvtColor(final_frame, cv2.COLOR_BGR2GRAY)
+            
             # Obtener timestamp para cálculo de velocidad
             timestamp = cv2.getTickCount() / cv2.getTickFrequency()
             
@@ -570,8 +580,8 @@ class VideoProcesses:
             )
 
             # Procesar cada región
-            for data in eye_regions:
-                eye_gray, ex, ey, ew, eh, is_right_eye = data
+            for data_region in eye_regions:
+                eye_gray, ex, ey, ew, eh, is_right_eye = data_region
 
                 # Configurar threshold y erode por ojo
                 detector_config.threshold_value = self.threslhold[0] if is_right_eye else self.threslhold[1]
@@ -584,71 +594,60 @@ class VideoProcesses:
                 result = detector.detect(eye_gray, detector_config)
 
                 if result:
-                    mask = result.mask
-
-                    # Determinar color por ojo
-                    if is_right_eye:
-                        color = (0, 0, 255)  # Rojo para ojo derecho (BGR)
-                        label = "OD"
-                    else:
-                        color = (255, 191, 0)  # Azul claro para ojo izquierdo (BGR)
-                        label = "OI"
-
-                    # Siempre mostrar rectángulo ROI
-                    cv2.rectangle(final_frame, (ex, ey), (ex+ew, ey+eh), color, 1)
-
-                    # Etiqueta del ojo
-                    cv2.putText(final_frame, label, (ex + 2, ey + 12),
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
-
-                    # Modo debug: mostrar máscara de umbralización
-                    # Se muestra incluso si no se encontró pupila, para diagnosticar fallos
-                    if self.slider_th_pressed.value:
-                        roi = final_frame[ey:ey+eh, ex:ex+ew]
-                        # Superponer máscara con transparencia
-                        if mask is not None:
-                            cv2.addWeighted(roi, 0.7, mask, 0.3, 0, roi)
-
-                        # Mostrar valor de threshold y modo
-                        th_val = self.threslhold[0] if is_right_eye else self.threslhold[1]
-                        er_val = self.erode[0] if is_right_eye else self.erode[1]
-                        mode_label = ["L", "F", "H"][self.pupil_mode.value]
-                        th_text = f"TH:{th_val} ER:{er_val} M:{mode_label}"
-                        cv2.putText(final_frame, th_text, (ex + 2, ey + eh - 5),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 255, 255), 1, cv2.LINE_AA)
-
-                    # Dibujar círculo y guardar posición SOLO si se encontró
+                    # Guardar posición SOLO si se encontró
                     if result.found:
                         cx, cy, radius = result.center_x, result.center_y, result.radius
-
-                        # Dibujar círculo de la pupila
-                        cv2.circle(final_frame[ey:ey+eh, ex:ex+ew], (cx, cy), radius, color, 1)
-
-                        # Calcular coordenadas absolutas
                         abs_x = ex + cx
                         abs_y = ey + cy
-
-                        # Dibujar cruces en centro de pupila
-                        longitud_cruz = 5
-                        cv2.line(final_frame, (abs_x - longitud_cruz, abs_y), (abs_x + longitud_cruz, abs_y), color, 1)
-                        cv2.line(final_frame, (abs_x, abs_y - longitud_cruz), (abs_x, abs_y + longitud_cruz), color, 1)
-
-                        # Guardar posición
                         abs_y_neg = abs_y * -1
                         if is_right_eye:
                             pupil_positions[0] = [abs_x, abs_y_neg]
                         else:
                             pupil_positions[1] = [abs_x, abs_y_neg]
 
-            # Dibujar indicador de modo debug
-            if self.slider_th_pressed.value:
-                cv2.putText(final_frame, "DEBUG MODE", (10, 20),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
-                # Línea central para visualizar separación de ojos
-                center_x = w // 2
-                cv2.line(final_frame, (center_x, 0), (center_x, h), (0, 255, 255), 1)
-            
-            # Calcular FPS del pipeline (frames procesados por segundo)
+                    # Solo realizar dibujo si vamos a enviar a la UI
+                    now = time.time()
+                    if now - ui_last_sent_time >= ui_interval:
+                        mask = result.mask
+
+                        # Determinar color por ojo
+                        if is_right_eye:
+                            color = (0, 0, 255)  # Rojo para ojo derecho (BGR)
+                            label = "OD"
+                        else:
+                            color = (255, 191, 0)  # Azul claro para ojo izquierdo (BGR)
+                            label = "OI"
+
+                        # Siempre mostrar rectángulo ROI
+                        cv2.rectangle(final_frame, (ex, ey), (ex+ew, ey+eh), color, 1)
+
+                        # Etiqueta del ojo
+                        cv2.putText(final_frame, label, (ex + 2, ey + 12),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+
+                        # Modo debug: mostrar máscara de umbralización
+                        if self.slider_th_pressed.value:
+                            roi = final_frame[ey:ey+eh, ex:ex+ew]
+                            if mask is not None:
+                                cv2.addWeighted(roi, 0.7, mask, 0.3, 0, roi)
+
+                            th_val = self.threslhold[0] if is_right_eye else self.threslhold[1]
+                            er_val = self.erode[0] if is_right_eye else self.erode[1]
+                            mode_label = ["L", "F", "H"][self.pupil_mode.value]
+                            th_text = f"TH:{th_val} ER:{er_val} M:{mode_label}"
+                            cv2.putText(final_frame, th_text, (ex + 2, ey + eh - 5),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 255, 255), 1, cv2.LINE_AA)
+
+                        if result.found:
+                            cx, cy, radius = result.center_x, result.center_y, result.radius
+                            cv2.circle(final_frame[ey:ey+eh, ex:ex+ew], (cx, cy), radius, color, 1)
+                            abs_x = ex + cx
+                            abs_y = ey + cy
+                            longitud_cruz = 5
+                            cv2.line(final_frame, (abs_x - longitud_cruz, abs_y), (abs_x + longitud_cruz, abs_y), color, 1)
+                            cv2.line(final_frame, (abs_x, abs_y - longitud_cruz), (abs_x, abs_y + longitud_cruz), color, 1)
+
+            # Calcular FPS del pipeline
             pipeline_frame_count += 1
             pipeline_now = time.time()
             elapsed = pipeline_now - pipeline_last_second
@@ -657,20 +656,54 @@ class VideoProcesses:
                 pipeline_frame_count = 0
                 pipeline_last_second = pipeline_now
 
-            # Convertir a RGB para la UI
-            final_frame = cv2.cvtColor(final_frame, cv2.COLOR_BGR2RGB)
-            fps_text = f"{fps:.0f}/{pipeline_fps:.0f}"
-            lbl_fps_position = (w - 85, 15)
-            cv2.putText(final_frame, fps_text, lbl_fps_position,
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (248, 243, 43), 1, cv2.LINE_AA)
-            # Publicar resultado final para la UI
-            output = {
-                'frame': final_frame,
-                'pupil_positions': pupil_positions,
-                'gray' : gray
-            }
-            
-            self.ui_queue.put(output)
+            # Enviar a la UI con rate limiting
+            now = time.time()
+            if now - ui_last_sent_time >= ui_interval:
+                # Dibujar indicador de modo debug si aplica
+                if self.slider_th_pressed.value:
+                    cv2.putText(final_frame, "DEBUG MODE", (10, 20),
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1, cv2.LINE_AA)
+                    center_x = w // 2
+                    cv2.line(final_frame, (center_x, 0), (center_x, h), (0, 255, 255), 1)
+
+                # Convertir a RGB SOLO para la UI y SOLO cuando vamos a enviar
+                final_frame_rgb = cv2.cvtColor(final_frame, cv2.COLOR_BGR2RGB)
+                fps_text = f"{fps:.0f}/{pipeline_fps:.0f}"
+                lbl_fps_position = (w - 85, 15)
+                cv2.putText(final_frame_rgb, fps_text, lbl_fps_position,
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (248, 243, 43), 1, cv2.LINE_AA)
+                
+                output = {
+                    'frame': final_frame_rgb,
+                    'pupil_positions': pupil_positions,
+                }
+                
+                # Usar put_nowait para no bloquear el procesamiento si la UI está lenta
+                try:
+                    self.ui_queue.put_nowait(output)
+                    ui_last_sent_time = now
+                except:
+                    pass
+            else:
+                # Si no enviamos a la UI, solo enviamos los datos (opcionalmente podríamos tener una cola solo para datos)
+                # pero VideoManagerAPI espera un 'output' de la ui_queue. 
+                # Para máxima eficiencia, los datos deberían ir por otra vía, 
+                # pero por ahora simplemente no ponemos nada en ui_queue si no es tiempo de frame.
+                # NOTA: Esto significa que la tasa de datos de pupilas en la UI será de 60 FPS también.
+                # SI el sistema de control (Rust) necesita 120 FPS de DATOS, necesitamos enviarlos SIEMPRE.
+                
+                # REVISIÓN: Los datos de pupilas deben enviarse a la máxima tasa posible.
+                # Creamos un mensaje sin frame para la cola si es necesario, o enviamos frame None.
+                output_data_only = {
+                    'frame': None,
+                    'pupil_positions': pupil_positions,
+                }
+                try:
+                    self.ui_queue.put_nowait(output_data_only)
+                except:
+                    pass
+        
+        logger.info("Processing process finished")
         
         logger.info("Processing process finished")
     

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { VNGTestConfig, StimulusTargetConfig } from '../types/vng';
 import { CalibrationStimulus } from '../components/stimulus/CalibrationStimulus';
@@ -68,15 +68,15 @@ export const StimulusPlayerPage: React.FC = () => {
         setup();
     }, []);
 
-    // Helper to convert visual degrees to pixels
-    const degToPx = (degrees: number) => {
+    // Helper to convert visual degrees to pixels (memoized to prevent animation restarts)
+    const degToPx = useCallback((degrees: number) => {
         const { distance_cm, pixel_density } = state.screenConfig;
         // size_cm = distance_cm * tan(radians)
         const radians = degrees * (Math.PI / 180);
         const size_cm = distance_cm * Math.tan(radians);
         const size_inches = size_cm / 2.54;
         return size_inches * pixel_density;
-    };
+    }, [state.screenConfig.distance_cm, state.screenConfig.pixel_density]);
 
     if (!state.isPlaying || !state.config) {
         return (

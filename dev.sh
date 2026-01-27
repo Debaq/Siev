@@ -27,6 +27,47 @@ pkill -f "backend/main.py" || true
 pkill -f "python-worker" || true
 pkill -f "siev" || true
 
+# Check for busy cameras
+echo -e "${YELLOW}Checking for busy video devices...${NC}"
+if command -v lsof >/dev/null 2>&1; then
+    OS_NAME=$(uname -s)
+    BUSY_CAMS=""
+    
+    if [ "$OS_NAME" = "Darwin" ]; then
+        # macOS detection
+        BUSY_CAMS=$(lsof | grep -E "AppleCamera|VDCAssistant" | grep -v "grep" || true)
+    else
+        # Linux detection
+        BUSY_CAMS=$(lsof /dev/video* 2>/dev/null || true)
+    fi
+
+    if [ -n "$BUSY_CAMS" ]; then
+        echo -e "${RED}Warning: The following processes are using video devices:${NC}"
+        echo "$BUSY_CAMS"
+        
+        # Extract unique PIDs (different parsing for Mac vs Linux usually, but awk prints column 2 for both)
+        BUSY_PIDS=$(echo "$BUSY_CAMS" | awk '{print $2}' | sort -u)
+        
+        if [ -n "$BUSY_PIDS" ]; then
+            echo -ne "${RED}Do you want to force kill these processes to free the cameras? (Y/n): ${NC}"
+            read -r KILL_CAMS
+            KILL_CAMS=${KILL_CAMS:-Y}
+            
+            if [[ "$KILL_CAMS" =~ ^[Yy] ]]; then
+                echo "Killing processes: $BUSY_PIDS"
+                echo "$BUSY_PIDS" | xargs kill -9 2>/dev/null || true
+                echo -e "${GREEN}Cameras should be free now.${NC}"
+            else
+                echo -e "${YELLOW}Skipping camera cleanup. App might fail to access camera.${NC}"
+            fi
+        fi
+    else
+        echo -e "${GREEN}✓ No busy video devices found.${NC}"
+    fi
+else
+    echo -e "${YELLOW}lsof not found, skipping camera check.${NC}"
+fi
+
 # Clean up Python cache to ensure fresh execution
 echo -e "${YELLOW}Cleaning up Python cache...${NC}"
 find backend -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { Maximize2, X, Move, Monitor, AlertTriangle, Minimize2 } from 'lucide-react';
@@ -99,15 +99,15 @@ export const ExternalDisplayPage: React.FC = () => {
         await getCurrentWindow().close();
     };
 
-    // Helper: Deg to Px
-    const degToPx = (degrees: number) => {
+    // Helper: Deg to Px (memoized to prevent animation restarts)
+    const degToPx = useCallback((degrees: number) => {
         const { distance_cm, pixel_density } = stimulusState.screenConfig;
-        if (!pixel_density) return degrees * 10; 
+        if (!pixel_density) return degrees * 10;
         const radians = degrees * (Math.PI / 180);
         const size_cm = distance_cm * Math.tan(radians);
         const size_inches = size_cm / 2.54;
         return size_inches * pixel_density;
-    };
+    }, [stimulusState.screenConfig.distance_cm, stimulusState.screenConfig.pixel_density]);
 
     // --- RENDERERS ---
 

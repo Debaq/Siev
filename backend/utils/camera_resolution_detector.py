@@ -43,7 +43,8 @@ class CameraResolutionDetector:
                 logger.error(f"Error running v4l2-ctl: {result.stderr}")
                 return self._listar_opencv(device_id)
             
-            resoluciones_fps = []
+            # Requisito: Mayor a 60 FPS y solo el máximo por resolución
+            resolutions_map = {} # (width, height) -> max_fps
             lines = result.stdout.split('\n')
             
             current_resolution = None
@@ -58,9 +59,12 @@ class CameraResolutionDetector:
                     fps_match = re.search(r'(\d+\.?\d*) fps', line)
                     if fps_match:
                         fps = int(float(fps_match.group(1)))
-                        formato = f"{current_resolution[0]}x{current_resolution[1]}@{fps}"
-                        if formato not in resoluciones_fps:
-                            resoluciones_fps.append(formato)
+                        # Filtro: FPS estrictamente mayor a 60
+                        if fps > 60:
+                            if current_resolution not in resolutions_map or fps > resolutions_map[current_resolution]:
+                                resolutions_map[current_resolution] = fps
+            
+            resoluciones_fps = [f"{w}x{h}@{fps}" for (w, h), fps in resolutions_map.items()]
             
             # Sort by resolution (descending) then by fps (descending)
             def sort_key(res_str):
@@ -111,10 +115,10 @@ class CameraResolutionDetector:
             (1280, 720), (1280, 960), (1920, 1080), (2560, 1440)
         ]
         
-        # FPS comunes a probar
-        fps_prueba = [15, 30, 60, 120]
+        # FPS comunes a probar (enfocado en alta velocidad > 60)
+        fps_prueba = [75, 90, 100, 120, 144, 200]
         
-        resoluciones_fps = []
+        resolutions_map = {} # (width, height) -> max_fps
         
         for ancho, alto in resoluciones_prueba:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, ancho)
@@ -125,7 +129,7 @@ class CameraResolutionDetector:
             
             # Si la resolución se configuró correctamente
             if ancho_real > 0 and alto_real > 0:
-                max_fps = 30  # FPS por defecto
+                current_max = 0
                 
                 # Probar diferentes FPS para encontrar el máximo
                 for fps in fps_prueba:
@@ -133,14 +137,28 @@ class CameraResolutionDetector:
                     fps_real = cap.get(cv2.CAP_PROP_FPS)
                     
                     if fps_real >= fps * 0.9:  # Tolerancia del 10%
-                        max_fps = fps
+                        current_max = int(fps_real)
                 
-                formato = f"{ancho_real}x{alto_real}@{max_fps}"
-                if formato not in resoluciones_fps:
-                    resoluciones_fps.append(formato)
+                # Solo considerar si es estrictamente mayor a 60
+                if current_max > 60:
+                    res_key = (ancho_real, alto_real)
+                    if res_key not in resolutions_map or current_max > resolutions_map[res_key]:
+                        resolutions_map[res_key] = current_max
         
         cap.release()
-        return resoluciones_fps
+        
+        # Convertir a lista de strings
+        resoluciones_fps = [f"{w}x{h}@{fps}" for (w, h), fps in resolutions_map.items()]
+        
+        # Sort by resolution (descending) then by fps (descending)
+        def sort_key(res_str):
+            match = re.match(r'(\d+)x(\d+)@(\d+)', res_str)
+            if match:
+                width, height, fps = int(match.group(1)), int(match.group(2)), int(match.group(3))
+                return (-width * height, -fps)  # Negative for descending
+            return (0, 0)
+            
+        return sorted(resoluciones_fps, key=sort_key)
     
     def obtener_info_sistema(self):
         """Retorna información del sistema detectado"""

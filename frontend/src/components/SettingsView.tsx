@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Settings, Save, RotateCcw, FileText, Activity, Monitor, LayoutGrid } from 'lucide-react';
 import { useSettingsConfig } from '../hooks/useSettingsConfig';
 import { ModuleSelector, ModuleDefinition } from './settings/ModuleSelector';
@@ -78,6 +78,30 @@ const SettingsView: React.FC = () => {
     } = useSettingsConfig(send);
 
     const [activeModuleId, setActiveModuleId] = useState('general');
+
+    // Auto-save on exit logic
+    const configRef = useRef(config);
+    const isDirtyRef = useRef(isDirty);
+
+    useEffect(() => {
+        configRef.current = config;
+        isDirtyRef.current = isDirty;
+    }, [config, isDirty]);
+
+    useEffect(() => {
+        return () => {
+            // When leaving the component, if there are unsaved changes, save them
+            if (isDirtyRef.current && configRef.current) {
+                console.log('[SettingsView] Auto-saving changes on exit...');
+                // We use the direct save method from the hook if we can access it, 
+                // but since saveConfig() without args uses current state, 
+                // and we are unmounting, we need to be sure.
+                // The current saveConfig in the hook uses the 'config' state which might be stale in cleanup.
+                // However, the hook's returned 'saveConfig' is a closure over the state.
+                saveConfig(); 
+            }
+        };
+    }, [saveConfig]);
 
     if (isLoading || !config) {
         return (

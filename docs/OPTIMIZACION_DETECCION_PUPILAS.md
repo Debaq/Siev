@@ -26,6 +26,9 @@
 | 3.1 | Frame skipping en Rust | `lib.rs` | ✅ Aplicado |
 | 3.3 | Reducir resolución 50% | `worker.py` | ✅ Aplicado |
 | 4.1 | Starburst vectorizado | `pupil_detectors.py` | ✅ Aplicado |
+| 5.1 | Diagnóstico de drops | `worker.py`, `lib.rs`, `useWebSocket.ts` | ✅ Aplicado |
+| 5.2 | Throttle gráficos 10fps | `EyeDataPanel.tsx` | ✅ Aplicado |
+| 5.3 | Reducir puntos 500→150 | `EyeDataPanel.tsx` | ✅ Aplicado |
 
 ### Resultado
 
@@ -430,5 +433,5 @@ impl SharedFrameBuffer {
 ---
 
 *Documento actualizado: 2025-01-26*
-*Estado: Fases 1-4 implementadas, sin mejora significativa en frontend*
-*Próximo paso: Implementar Fase 5 (diagnóstico) para identificar dónde se pierden frames*
+*Estado: Fases 1-5 implementadas*
+*Próximo paso: Ejecutar la aplicación y analizar los logs de diagnóstico para identificar dónde se pierden frames*

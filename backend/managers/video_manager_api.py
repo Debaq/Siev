@@ -47,7 +47,11 @@ class VideoManagerAPI:
         self.nose_width = 0.25
         self.eye_height = 0.25
         self.use_yolo = True
+        self.yolo_frequency = 10
+        self.yolo_confidence = 0.5
         self.storage_path: Optional[str] = None
+        self.video_quality = 70
+        self.video_scale = 0.5
 
         # State
         self.is_capturing = False
@@ -99,7 +103,11 @@ class VideoManagerAPI:
         nose_width: float = 0.25,
         eye_height: float = 0.25,
         use_yolo: bool = True,
-        storage_path: Optional[str] = None
+        yolo_frequency: int = 4,
+        yolo_confidence: float = 0.5,
+        storage_path: Optional[str] = None,
+        video_quality: int = 80,
+        video_scale: float = 0.75
     ) -> bool:
         """
         Initialize the video capture system.
@@ -116,7 +124,11 @@ class VideoManagerAPI:
             nose_width: Width of nose ROI separation
             eye_height: Height of eye ROI
             use_yolo: Whether to use YOLO detection
+            yolo_frequency: Frequency of YOLO inference (every N frames)
+            yolo_confidence: Confidence threshold for YOLO
             storage_path: Base path for storing recorded videos
+            video_quality: JPEG quality (1-100)
+            video_scale: Frame resize factor (0.1-1.0)
 
         Returns:
             bool: True if initialization was successful
@@ -133,7 +145,11 @@ class VideoManagerAPI:
             self.nose_width = nose_width
             self.eye_height = eye_height
             self.use_yolo = use_yolo
+            self.yolo_frequency = yolo_frequency
+            self.yolo_confidence = yolo_confidence
             self.storage_path = storage_path
+            self.video_quality = video_quality
+            self.video_scale = video_scale
 
             # Stop existing processes if they exist to release resources (camera)
             if self.video_processes:
@@ -165,6 +181,8 @@ class VideoManagerAPI:
             self.video_processes.nose_width.value = nose_width
             self.video_processes.eye_height.value = eye_height
             self.video_processes.use_yolo.value = use_yolo
+            self.video_processes.yolo_frequency.value = yolo_frequency
+            self.video_processes.yolo_confidence.value = yolo_confidence
 
             self.is_initialized = True
             logger.info(f"VideoManagerAPI initialized: {width}x{height}@{fps}fps")
@@ -226,34 +244,36 @@ class VideoManagerAPI:
         while self.reader_running:
             try:
                 if self.video_processes and hasattr(self.video_processes, 'ui_queue'):
-                    if not self.video_processes.ui_queue.empty():
+                    # Bloqueo con timeout es más eficiente que poll + sleep
+                    try:
                         output = self.video_processes.ui_queue.get(timeout=0.1)
+                    except Empty:
+                        continue
 
-                        frame = output['frame']
-                        pupil_positions = output['pupil_positions']
-                        timestamp = time.time()
+                    frame = output.get('frame')
+                    pupil_positions = output['pupil_positions']
+                    timestamp = time.time()
 
-                        # Update FPS
-                        current_time = time.time()
-                        if self.last_frame_time > 0:
-                            fps = 1.0 / max(current_time - self.last_frame_time, 0.001)
-                            self.fps_values.append(fps)
-                            if len(self.fps_values) >= 10:
-                                self.current_fps = sum(self.fps_values) / len(self.fps_values)
-                        self.last_frame_time = current_time
+                    # Update FPS
+                    current_time = time.time()
+                    if self.last_frame_time > 0:
+                        fps = 1.0 / max(current_time - self.last_frame_time, 0.001)
+                        self.fps_values.append(fps)
+                        if len(self.fps_values) >= 10:
+                            self.current_fps = sum(self.fps_values) / len(self.fps_values)
+                    self.last_frame_time = current_time
 
-                        # Update frame buffer
+                    # Update frame buffer only if frame is not None
+                    if frame is not None:
                         with self.frame_lock:
                             self.latest_frame = frame.copy()
 
-                        # Process eye positions
-                        self._process_eye_positions(pupil_positions, timestamp)
+                    # Process eye positions (always do this for data accuracy)
+                    self._process_eye_positions(pupil_positions, timestamp)
 
-                        # Handle recording
-                        if self.is_recording:
-                            self.recording_frames.append(frame.copy())
-                    else:
-                        time.sleep(0.001)
+                    # Handle recording only if frame is available
+                    if self.is_recording and frame is not None:
+                        self.recording_frames.append(frame.copy())
                 else:
                     time.sleep(0.01)
 
@@ -421,7 +441,11 @@ class VideoManagerAPI:
         nose_width: Optional[float] = None,
         eye_height: Optional[float] = None,
         use_yolo: Optional[bool] = None,
-        show_debug: Optional[bool] = None
+        yolo_frequency: Optional[int] = None,
+        yolo_confidence: Optional[float] = None,
+        show_debug: Optional[bool] = None,
+        video_quality: Optional[int] = None,
+        video_scale: Optional[float] = None
     ):
         """
         Update video configuration dynamically during runtime.
@@ -434,8 +458,18 @@ class VideoManagerAPI:
             nose_width: Width of the nose region as a fraction of total width.
             eye_height: Height of the eye region as a fraction of total height.
             use_yolo: Enable or disable YOLO-based detection.
+            yolo_frequency: Frequency of YOLO inference.
+            yolo_confidence: Confidence threshold for YOLO.
             show_debug: Enable or disable debug overlay on the video feed.
+            video_quality: JPEG quality (1-100).
+            video_scale: Frame resize factor (0.1-1.0).
         """
+        if video_quality is not None:
+            self.video_quality = video_quality
+            
+        if video_scale is not None:
+            self.video_scale = video_scale
+
         if self.video_processes:
             if brightness is not None:
                 self.video_processes.brightness.value = brightness
@@ -470,6 +504,14 @@ class VideoManagerAPI:
             if use_yolo is not None:
                 self.video_processes.use_yolo.value = use_yolo
                 self.use_yolo = use_yolo
+
+            if yolo_frequency is not None:
+                self.video_processes.yolo_frequency.value = yolo_frequency
+                self.yolo_frequency = yolo_frequency
+
+            if yolo_confidence is not None:
+                self.video_processes.yolo_confidence.value = yolo_confidence
+                self.yolo_confidence = yolo_confidence
 
             if show_debug is not None:
                 self.video_processes.slider_th_pressed.value = show_debug
@@ -581,13 +623,18 @@ class VideoManagerAPI:
             cameras = V4L2Camera.get_connected_cameras()
             result = []
             import re
+            detector = CameraResolutionDetector()
             for name, path in cameras:
                 # Extract ID from /dev/videoX
                 try:
                     match = re.search(r'video(\d+)', path)
                     if match:
                         cam_id = int(match.group(1))
-                        result.append({"name": name, "path": path, "id": cam_id})
+                        # Solo listar cámaras que tengan al menos una resolución compatible (> 60 FPS)
+                        # Nota: La lógica de filtrado de FPS ya reside dentro de listar_resoluciones
+                        resolutions = detector.listar_resoluciones(cam_id)
+                        if resolutions:
+                            result.append({"name": name, "path": path, "id": cam_id})
                 except:
                     continue
             return result

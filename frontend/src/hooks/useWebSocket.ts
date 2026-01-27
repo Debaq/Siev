@@ -62,14 +62,18 @@ export function useWebSocket() {
         }
     }, []);
 
+    // Fase 5: Diagnóstico de frames recibidos
+    const framesReceived = useRef(0);
+    const lastDiagTime = useRef(Date.now());
+
     const connect = useCallback(async () => {
         try {
             const port = await invoke<number>('get_websocket_port');
             console.log(`Connecting to WebSocket on port ${port}...`);
-            
+
             const socket = new WebSocket(`ws://127.0.0.1:${port}`);
             socket.binaryType = 'blob';
-            
+
             socket.onopen = () => {
                 console.log('WebSocket connected');
                 setConnected(true);
@@ -78,10 +82,20 @@ export function useWebSocket() {
                     reconnectTimeout.current = null;
                 }
             };
-            
+
             socket.onmessage = (event) => {
                 // Handle binary video frame
                 if (event.data instanceof Blob) {
+                    framesReceived.current++;
+
+                    // Diagnóstico cada segundo
+                    const now = Date.now();
+                    if (now - lastDiagTime.current >= 1000) {
+                        console.log(`[DIAG-FE] Frames recibidos: ${framesReceived.current}/s`);
+                        framesReceived.current = 0;
+                        lastDiagTime.current = now;
+                    }
+
                     listeners.current.video_frame.forEach(cb => cb(event.data));
                     return;
                 }

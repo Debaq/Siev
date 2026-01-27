@@ -769,6 +769,11 @@ pub fn run() {
                 let mut last_frame_time = std::time::Instant::now();
                 let min_frame_interval = std::time::Duration::from_millis(16); // ~60fps
 
+                // Fase 5: Diagnóstico de frames
+                let mut frames_received: u64 = 0;
+                let mut frames_forwarded: u64 = 0;
+                let mut last_diag_time = std::time::Instant::now();
+
                 while let Ok(event) = bridge_events.recv().await {
                     match event {
                         BridgeEvent::Connected => {
@@ -802,13 +807,26 @@ pub fn run() {
                             ws_broadcast.broadcast(&WsMessage::EyeData(processed));
                         }
                         BridgeEvent::VideoFrame(jpeg) => {
+                            frames_received += 1;
+
                             // Fase 3.1: Frame skipping - solo enviar si pasó suficiente tiempo
                             let now = std::time::Instant::now();
                             if now.duration_since(last_frame_time) >= min_frame_interval {
                                 ws_broadcast.broadcast_binary(jpeg);
                                 last_frame_time = now;
+                                frames_forwarded += 1;
                             }
                             // Si llegan frames muy rápido, se dropean silenciosamente
+
+                            // Fase 5: Diagnóstico - log cada segundo
+                            if now.duration_since(last_diag_time) >= std::time::Duration::from_secs(1) {
+                                let dropped = frames_received.saturating_sub(frames_forwarded);
+                                eprintln!("[DIAG-RUST] recv={}/s fwd={}/s dropped={}/s",
+                                    frames_received, frames_forwarded, dropped);
+                                frames_received = 0;
+                                frames_forwarded = 0;
+                                last_diag_time = now;
+                            }
                         }
                         BridgeEvent::Disconnected => {
                             ws_broadcast.broadcast(&WsMessage::Status {

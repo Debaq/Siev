@@ -18,18 +18,34 @@ Ubicación: `frontend/src/`
 
 La UI se comunica con el orquestador a través de comandos de Tauri e intercambia datos de tiempo real mediante WebSockets.
 
-*   **`App.tsx`**: Orquestador principal de la UI, gestiona la navegación entre vistas (Niveles de usuario, Pacientes, Pruebas).
+*   **`App.tsx`**: Orquestador principal de la UI, gestiona la navegación entre vistas principales.
+*   **`pages/`**:
+    *   `CalibrationPage.tsx`: Interfaz dedicada para la calibración geométrica del sistema.
+    *   `StimulusPlayerPage.tsx`: Reproductor de estímulos visuales (sacadas, seguimiento, OPK).
+    *   `ExternalDisplayPage.tsx`: Vista simplificada para proyectar estímulos en un segundo monitor.
 *   **`contexts/`**:
     *   `WebSocketContext.tsx`: Mantiene la conexión de datos de baja latencia para el streaming de video y datos de ojos.
     *   `SessionConfigContext.tsx`: Gestiona la configuración de la sesión de prueba actual.
 *   **`hooks/`**:
-    *   `useSettingsConfig.ts`: Hook para persistencia de ajustes globales en la base de datos.
+    *   `useSettingsConfig.ts`: Hook para persistencia de ajustes globales y sincronización con el backend.
     *   `useTauriHardware.ts`: Abstracción para interactuar con los comandos de hardware de Rust.
+    *   `useTauriDb.ts`: Interfaz para acceder a la base de datos SQLite desde el frontend.
 *   **`components/`**:
-    *   `VideoFeed.tsx`: Renderiza el stream de video (JPEG sobre WS) y superpone las detecciones.
-    *   `EyeDataPanel.tsx`: Visualización gráfica (nistagmus) utilizando los datos procesados.
-    *   `ControlPanel.tsx`: Ajustes de cámara, iluminación y algoritmos de detección.
-    *   `settings/`: Desglose modular de la configuración del sistema.
+    *   `VideoFeed.tsx`: Renderiza el stream de video (JPEG sobre WS) y superpone las detecciones. Incluye lógica de renderizado desacoplada del flujo de red para suavidad máxima.
+    *   `EyeDataPanel.tsx`: Visualización gráfica en tiempo real de los movimientos oculares.
+    *   `StimulusController.tsx`: Panel de control para lanzar y configurar pruebas visuales.
+    *   `settings/`: Configuración modular dividida en:
+        *   `general/`: Datos de la institución y almacenamiento.
+        *   `vng/`: Parámetros de cámara, algoritmos, hardware y reportes.
+        *   `stimulus/`: Configuración de monitor secundario y parámetros por defecto de estímulos.
+    *   `stimulus/`: Implementación de los diversos estímulos visuales:
+        *   `SaccadeStimulus.tsx`: Estímulos de sacadas (puntos aleatorios o fijos).
+        *   `PursuitStimulus.tsx`: Seguimiento lento (movimiento sinusoidal o circular).
+        *   `OPKStimulus.tsx`: Estímulo optocinético (barras en movimiento).
+        *   `GazeStimulus.tsx`: Pruebas de mirada fija en diferentes posiciones.
+        *   `CalibrationStimulus.tsx`: Puntos de referencia para la calibración del sistema.
+        *   `Target.tsx`: Componente base reutilizable para los objetivos visuales (puntos, cruces, etc.).
+    *   `reports/`: Generación y previsualización de informes clínicos.
 
 ---
 
@@ -41,61 +57,61 @@ Actúa como el cerebro del sistema, coordinando el ciclo de vida del proceso Pyt
 *   **`main.rs` & `lib.rs`**: Punto de entrada, definición del `AppState` y registro de comandos `invoke`.
 *   **`bridge/`**: Comunicación con el trabajador Python.
     *   `tcp_server.rs`: Servidor de alto rendimiento para recibir video y datos de ojos.
-    *   `python_bridge.rs`: Abstracción para enviar comandos (start/stop capture, set config) a Python.
+    *   `python_bridge.rs`: Orquestador del proceso sidecar y envío de comandos.
     *   `protocol.rs`: Definición del protocolo binario de mensajería (framing).
 *   **`database/`**: Capa de persistencia (SQLite + SQLx).
-    *   `service.rs`: Gestión de pacientes, especialistas, sesiones y configuración.
-    *   `models.rs`: Definiciones de esquemas y DTOs.
+    *   `service.rs`: Gestión CRUD de pacientes, especialistas, sesiones y configuración.
+*   **`vng/`**: Lógica de dominio específica para Video-Oculografía.
+    *   `metrics.rs`: Cálculo de parámetros clínicos (velocidad de fase lenta, latencia, etc.).
+    *   `report.rs`: Generación de estructuras de datos para informes.
 *   **`math/`**: Procesamiento de señales.
-    *   `processor.rs`: Convierte coordenadas de pupila en grados y detecta nistagmus.
-    *   `kalman.rs`: Filtros de suavizado para las señales oculares.
+    *   `processor.rs`: Transformación de coordenadas a grados y filtros de nistagmus.
+    *   `kalman.rs`: Filtros de suavizado de alta precisión.
 *   **`hardware/`**: Control de periféricos.
-    *   `manager.rs`: Comunicación serial con las gafas (LEDs, sensores IMU) mediante el firmware.
-*   **`storage/`**: Gestión de archivos de sesión.
-    *   `bundle.rs`: Crea y gestiona la estructura de carpetas `.siev` para cada sesión.
-    *   `recorder.rs`: Grabador asíncrono que persiste los datos procesados en archivos `.csv` o binarios.
-*   **`websocket/`**: Servidor interno para comunicación UI <-> Backend.
+    *   `manager.rs`: Comunicación serial con las gafas (LEDs, sensores IMU).
+*   **`storage/`**: Gestión de archivos de sesión y exportación.
+*   **`websocket/`**: Puente de comunicación en tiempo real UI <-> Backend.
 
 ---
 
 ## 3. 🐍 Trabajador de Visión (Python Sidecar)
 Ubicación: `backend/`
 
-Un proceso independiente que se ejecuta como un "sidecar" de Tauri para aprovechar las librerías de Computer Vision y Deep Learning.
+Un proceso independiente optimizado para procesamiento de imagen en tiempo real.
 
-*   **`worker.py`**: Bucle principal que gestiona la captura de cámara y la ejecución de detectores.
-*   **`tcp_client.py`**: Cliente que envía los resultados al orquestador Rust.
-*   **`protocol.py`**: Implementación Python del protocolo de mensajería (debe coincidir con `bridge/protocol.rs`).
+*   **`worker.py`**: Punto de entrada que gestiona el bucle de comandos y la transmisión asíncrona de datos.
+*   **`managers/video_manager_api.py`**: Capa de abstracción que controla los hilos de captura, grabación y actualización de parámetros en caliente.
+*   **`tcp_client.py`**: Cliente de baja latencia para envío de binarios JPEG y telemetría.
 *   **`utils/video/`**:
-    *   `pupil_detectors.py`: Implementa múltiples algoritmos:
-        *   `YoloDetector`: Inferencia con `siev_vng_r01.pt` para robustez ante párpados/pestañas.
-        *   `HybridDetector`: Algoritmo tradicional optimizado para baja latencia.
-    *   `video_processes.py`: Gestión de hilos de captura y pre-procesamiento de frames.
-*   **`models/`**: Contiene los pesos de las redes neuronales (`.pt`).
+    *   `pupil_detectors.py`: Algoritmos `YoloDetector` (IA), `FastPupilDetector` (Starburst) e `HybridDetector`.
+    *   `video_processes.py`: Gestión de procesos paralelos para captura de frames a alta velocidad (hasta 120 FPS).
+*   **`utils/`**:
+    *   `v4l2_camera.py`: Control de bajo nivel para parámetros de hardware de cámara en Linux.
+    *   `camera_resolution_detector.py`: Escaneo automático de capacidades del hardware.
+    *   `eye_data_processor.py`: Limpieza inicial de coordenadas antes del envío.
+*   **`models/`**: Pesos de redes neuronales en formato `.pt` y `.onnx`.
 
 ---
 
 ## 🔌 Firmware y Hardware
 Ubicación: `firmware/`
 
-Código que reside en el hardware físico de las gafas de evaluación.
-
-*   **`esp8266_siev/`**: Implementación principal en ESP8266.
-    *   `esp8266_siev_protocol.md`: Definición de comandos seriales (ej: `L1` encender LED IR izquierdo).
+*   **`esp8266_siev/`**: Firmware para el control de LEDs IR, LEDs de fijación y sensores inerciales.
+*   **`tes_tesis_arduino/`**: Prototipos y pruebas de sensores.
 
 ---
 
-## 🔄 Flujo de Datos Típico (Telemetría de Ojo)
-1.  **Python**: Captura frame -> Detecta pupila -> Empaqueta en frame TCP.
-2.  **Rust (Bridge)**: Recibe frame TCP -> Desempaqueta.
-3.  **Rust (Math)**: Pasa coordenadas por Filtro de Kalman -> Calcula grados.
-4.  **Rust (Recorder)**: Si se está grabando, guarda el dato en disco.
-5.  **Rust (WS)**: Envía datos procesados y frame JPEG a la UI.
-6.  **Frontend**: Actualiza gráficas y canvas de video.
+## 🔄 Flujo de Datos y Calidad
+1.  **Captura**: Python captura a la resolución nativa de la cámara (ej. 960x540@120fps).
+2.  **Transmisión de Video**: Los frames se comprimen en JPEG y se reescalan según los ajustes de **Optimización de Transmisión** configurados en la UI para balancear fluidez y nitidez.
+3.  **Procesamiento**: Las coordenadas detectadas viajan por TCP a Rust, donde se filtran y se convierten en datos clínicos.
+4.  **Visualización**: El frontend recibe el stream y lo dibuja en un `Canvas` optimizado, manteniendo un contador de FPS para diagnóstico.
 
 ---
 
-## 🛠️ Herramientas y Scripts
-*   **`dev.sh`**: Script para iniciar el entorno de desarrollo (frontend + tauri).
-*   **`scripts/build_sidecar.py`**: Compila el proceso Python en un ejecutable para distribución.
-*   **`sidecar.spec`**: Configuración de PyInstaller para el empaquetado del trabajador.
+## 🛠️ Herramientas y Documentación
+*   **`docs/`**:
+    *   `OPTIMIZACION_DETECCION_PUPILAS.md`: Guía de ajuste de algoritmos.
+    *   `PERFORMANCE_ANALYSIS.md`: Análisis de latencia y uso de CPU/GPU.
+*   **`scripts/`**: Automatización para compilación de sidecars y conversión de modelos.
+*   **`dev.sh`**: Entorno de desarrollo unificado.

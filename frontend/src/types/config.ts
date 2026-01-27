@@ -37,6 +37,8 @@ export interface VNGCameraConfig {
     contrast: number;
     flip_horizontal: boolean;
     flip_vertical: boolean;
+    video_quality: number; // 1-100 (JPEG quality)
+    video_scale: number;   // 0.1-1.0 (Resize factor)
 }
 
 export interface VNGLegacyParams {
@@ -68,6 +70,8 @@ export interface VNGAlgorithmConfig {
     threshold: number;
     min_pupil_size: number;
     roi_enabled: boolean;
+    yolo_frequency?: number;
+    yolo_confidence?: number;
 }
 
 export interface VNGHardwareConfig {

@@ -28,20 +28,24 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     },
     vng: {
         camera: {
-            camera_id: 2,
+            camera_id: 0,
             resolution_width: 960,
             resolution_height: 540,
-            fps: 120,
+            fps: 60,
             exposure: -5,
             contrast: 50,
             flip_horizontal: false,
-            flip_vertical: false
+            flip_vertical: false,
+            video_quality: 80,
+            video_scale: 0.75
         },
         algorithm: {
             primary: 'yolo',
             threshold: 40,
             min_pupil_size: 10,
-            roi_enabled: true
+            roi_enabled: true,
+            yolo_frequency: 4,
+            yolo_confidence: 0.5
         },
         pupil_detection: {
             mode: 'legacy',
@@ -116,15 +120,15 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
 
 export function useSettingsConfig(sendToWs?: (msg: any) => void) {
     const [config, setConfig] = useState<AppConfig | null>(null);
-    const [originalConfig, setOriginalConfig] = useState<AppConfig | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [isDirty, setIsDirty] = useState(false);
     const { getSetting, setSetting } = useTauriDb();
     
+    // Store original config in a ref to compare without triggering re-renders
+    const originalConfigRef = useRef<AppConfig | null>(null);
     // Use a ref to store the timeout for debounced auto-save
     const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-    const isDirty = JSON.stringify(config) !== JSON.stringify(originalConfig);
 
     useEffect(() => {
         loadConfig();
@@ -156,11 +160,12 @@ export function useSettingsConfig(sendToWs?: (msg: any) => void) {
             }
 
             setConfig(baseConfig);
-            setOriginalConfig(baseConfig);
+            originalConfigRef.current = JSON.parse(JSON.stringify(baseConfig));
+            setIsDirty(false);
         } catch (e) {
             console.error("Failed to load config:", e);
             setConfig(DEFAULT_APP_CONFIG);
-            setOriginalConfig(DEFAULT_APP_CONFIG);
+            originalConfigRef.current = JSON.parse(JSON.stringify(DEFAULT_APP_CONFIG));
         } finally {
             setIsLoading(false);
         }
@@ -178,7 +183,8 @@ export function useSettingsConfig(sendToWs?: (msg: any) => void) {
                 await syncWithWebSocket(configToSave, sendToWs);
             }
             
-            setOriginalConfig(configToSave);
+            originalConfigRef.current = JSON.parse(JSON.stringify(configToSave));
+            setIsDirty(false);
             return true;
         } catch (e) {
             console.error("Failed to save config:", e);
@@ -204,15 +210,16 @@ export function useSettingsConfig(sendToWs?: (msg: any) => void) {
             const newConfig = { ...prev };
             setDeepValue(newConfig, path, value);
             
-            // Debounced auto-save
-            if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-            autoSaveTimerRef.current = setTimeout(() => {
-                saveConfig(newConfig);
-            }, 1000);
+            // Calculate dirty state
+            const dirty = JSON.stringify(newConfig) !== JSON.stringify(originalConfigRef.current);
+            setIsDirty(dirty);
+            
+            // Auto-save disabled to prevent focus loss. 
+            // Saving is now manual via the Save button in SettingsView.
 
             return newConfig;
         });
-    }, []);
+    }, [sendToWs]);
 
     return {
         config,
@@ -221,7 +228,13 @@ export function useSettingsConfig(sendToWs?: (msg: any) => void) {
         isDirty,
         updateConfig,
         saveConfig: () => config && saveConfig(config),
-        resetConfig: () => setConfig(originalConfig),
+        resetConfig: () => {
+            if (originalConfigRef.current) {
+                const reset = JSON.parse(JSON.stringify(originalConfigRef.current));
+                setConfig(reset);
+                setIsDirty(false);
+            }
+        },
         refresh: loadConfig
     };
 }
@@ -239,7 +252,9 @@ export async function syncWithWebSocket(
             camera_id: config.vng.camera.camera_id,
             width: config.vng.camera.resolution_width,
             height: config.vng.camera.resolution_height,
-            fps: config.vng.camera.fps
+            fps: config.vng.camera.fps,
+            video_quality: config.vng.camera.video_quality,
+            video_scale: config.vng.camera.video_scale
         }
     });
 
