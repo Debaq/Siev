@@ -202,8 +202,9 @@ class EyeDataProcessor:
         }
         
         # Estado de procesamiento
+        # NOTA: Deshabilitado por defecto - Rust maneja calibración y filtrado
         self.is_calibrated = False
-        self.processing_enabled = True
+        self.processing_enabled = False
         
         # Historial para suavizado avanzado
         self.history_size = 5  # Número de muestras para filtro de media móvil
@@ -230,22 +231,24 @@ class EyeDataProcessor:
         self.prev_right = None
         
         # Parámetros de suavizado
-        self.smoothing_enabled = True
-        self.interpolation_enabled = True
+        # NOTA: Deshabilitados por defecto - Rust se encarga del filtrado Kalman
+        self.smoothing_enabled = False
+        self.interpolation_enabled = False
         self.interpolation_steps = 3  # Cuántos puntos interpolar entre cada muestra
-        
+
         # Contador de datos
         self.sample_count = 0
-        
-        # Filtros Kalman para cada ojo
+
+        # Filtros Kalman para cada ojo (deshabilitados - Rust los maneja)
         self.kalman_left = KalmanFilter(process_noise=0.001, measurement_noise=0.2, stability_factor=0.01)
         self.kalman_right = KalmanFilter(process_noise=0.001, measurement_noise=0.2, stability_factor=0.01)
-        
+
         # Parámetro para activar/desactivar filtro Kalman
-        self.kalman_enabled = True
-        
+        # NOTA: Deshabilitado - Rust aplica Kalman de forma más eficiente
+        self.kalman_enabled = False
+
         # Parámetros adicionales para suavizado
-        self.extra_smoothing = True   # Suavizado adicional post-kalman
+        self.extra_smoothing = False   # Deshabilitado - Rust maneja el filtrado
         self.spline_buffer_size = 5   # Tamaño del buffer para spline (más grande = más suave pero más lag)
         self.left_spline_buffer_x = deque(maxlen=self.spline_buffer_size)
         self.left_spline_buffer_y = deque(maxlen=self.spline_buffer_size)
