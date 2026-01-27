@@ -24,12 +24,39 @@ def get_models_path():
 def get_model_file_path(model_filename):
     """
     Obtener la ruta completa de un archivo de modelo
-    
+
     Args:
         model_filename: Nombre del archivo del modelo (ej: 'best_color.pt')
-    
+
     Returns:
         Ruta completa al archivo del modelo
     """
     models_path = get_models_path()
     return os.path.join(models_path, model_filename)
+
+
+def get_model_file_path_prefer_onnx(model_filename):
+    """
+    Obtener la ruta completa de un archivo de modelo, priorizando ONNX si existe.
+
+    Si el modelo solicitado es .pt, busca primero la versión .onnx.
+    Si existe el .onnx, lo retorna. Si no, retorna el .pt original.
+
+    Args:
+        model_filename: Nombre del archivo del modelo (ej: 'model.pt')
+
+    Returns:
+        tuple: (ruta_completa, formato) donde formato es 'onnx' o 'pt'
+    """
+    models_path = get_models_path()
+
+    # Si el archivo es .pt, buscar versión .onnx primero
+    if model_filename.endswith('.pt'):
+        onnx_filename = model_filename.replace('.pt', '.onnx')
+        onnx_path = os.path.join(models_path, onnx_filename)
+
+        if os.path.exists(onnx_path):
+            return onnx_path, 'onnx'
+
+    # Retornar el archivo original
+    return os.path.join(models_path, model_filename), 'pt'

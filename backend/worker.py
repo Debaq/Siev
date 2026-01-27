@@ -279,7 +279,10 @@ class SievWorker:
         logger.info("Starting data transmitter loop")
         
         last_frame_sent = 0
-        frame_interval = 1.0 / 30.0  # Limit video stream to 30 FPS via TCP
+        # Sync with camera FPS (default to 60 if not initialized)
+        target_fps = self.video_manager.cap_fps if self.video_manager.cap_fps > 0 else 60
+        frame_interval = 1.0 / target_fps
+        logger.info(f"Target transmission rate: {target_fps} FPS")
         
         try:
             while self.video_manager.is_capturing:
@@ -311,7 +314,8 @@ class SievWorker:
                     if frame is not None:
                         try:
                             bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                            _, jpeg = cv2.imencode('.jpg', bgr_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                            # Reduce Quality to 50 to improve FPS over network
+                            _, jpeg = cv2.imencode('.jpg', bgr_frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
                             await self.client.send_frame(jpeg.tobytes())
                             last_frame_sent = now
                         except Exception as e:

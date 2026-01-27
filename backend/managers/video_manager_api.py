@@ -338,8 +338,11 @@ class VideoManagerAPI:
                 except Exception as e:
                     logger.error(f"Error encoding frame: {e}")
 
-            # Control streaming rate (~30 FPS for streaming)
-            time.sleep(0.033)
+            # Control streaming rate based on capture FPS
+            if self.cap_fps > 0:
+                time.sleep(1.0 / self.cap_fps)
+            else:
+                time.sleep(0.016) # ~60 FPS fallback
 
     def get_latest_eye_data_batch(self) -> List[Dict]:
         """Get all pending eye data points from the buffer"""

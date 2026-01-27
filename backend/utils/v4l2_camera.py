@@ -129,3 +129,20 @@ class V4L2Camera:
 
     def set_white_balance_automatic(self, value: bool):
         self.set_control('white_balance_automatic', 1 if value else 0)
+
+    def set_exposure_auto(self, value: int = 3):
+        """
+        Sets exposure to automatic or manual.
+        Common values for V4L2:
+        1: Manual Mode
+        3: Aperture Priority Mode (Standard Auto for most webcams)
+        """
+        self.set_control('exposure_auto', value)
+
+    def set_exposure_auto_priority(self, value: bool):
+        """
+        Sets exposure auto priority. 
+        When enabled (1), the camera may reduce FPS to improve exposure in low light.
+        For VNG, we usually want this disabled (0) to maintain a constant frame rate.
+        """
+        self.set_control('exposure_auto_priority', 1 if value else 0)

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { Video, Settings, GripHorizontal, User } from 'lucide-react'
+import { Settings, GripHorizontal } from 'lucide-react'
 import VideoFeed from './components/VideoFeed'
 import ControlPanel from './components/ControlPanel'
 import StatusBar from './components/StatusBar'
@@ -173,41 +173,6 @@ const MainApp = () => {
           
           {/* Video Section */}
           <div className="relative flex-1 flex flex-col min-h-0">
-             {/* Toolbar Overlay */}
-             <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-3 py-2 bg-gradient-to-b from-black/80 to-transparent">
-                <div className="flex items-center gap-3">
-                   <div className="flex items-center gap-1.5 text-white/90 font-medium">
-                      <Video className="w-4 h-4 text-siev-400" />
-                      <span>LIVE FEED</span>
-                   </div>
-                   <select 
-                      className="bg-dark-800/80 border border-white/20 rounded text-dark-100 text-[10px] px-2 py-0.5 outline-none hover:bg-dark-700 focus:border-siev-500 transition-colors cursor-pointer"
-                      value={selectedCamera}
-                      onChange={(e) => setSelectedCamera(Number(e.target.value))}
-                      disabled={isCapturing}
-                   >
-                      {wsCameras.map(c => (
-                        <option key={c.id} value={c.id} className="bg-dark-800 text-dark-100">
-                          {c.name}
-                        </option>
-                      ))}
-                      {wsCameras.length === 0 && (
-                        <option value={2} className="bg-dark-800 text-dark-100">Cámara VNG</option>
-                      )}
-                   </select>
-                </div>
-                
-                <div className="flex items-center gap-2">
-                   {!currentPatient && (
-                     <button onClick={() => setActiveView('patients')} className="flex items-center gap-1 bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 px-2 py-0.5 rounded text-[10px] hover:bg-yellow-500/20">
-                       <User className="w-3 h-3" />
-                       Seleccionar Paciente
-                     </button>
-                   )}
-                   {isCapturing && <span className="text-green-400 text-[10px] font-bold bg-green-500/10 px-2 py-0.5 rounded border border-green-500/20">ONLINE</span>}
-                </div>
-             </div>
-
              <div className="flex-1 bg-black flex items-center justify-center overflow-hidden">
                 <VideoFeed isCapturing={isCapturing} />
              </div>

@@ -27,6 +27,11 @@ pkill -f "backend/main.py" || true
 pkill -f "python-worker" || true
 pkill -f "siev" || true
 
+# Clean up Python cache to ensure fresh execution
+echo -e "${YELLOW}Cleaning up Python cache...${NC}"
+find backend -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find backend -name "*.pyc" -delete 2>/dev/null || true
+
 # Helper: Prompt with Timeout
 ask_with_default() {
     # $1 = Prompt text, $2 = Default, $3 = Var Name
@@ -210,9 +215,9 @@ else
             
             ask_with_default "Create environment '$ENV_NAME'?" "Y" CREATE_ENV
             if [[ "$CREATE_ENV" =~ ^[Yy] ]]; then
-                echo "Creating '$ENV_NAME' (python 3.10)..."
+                echo "Creating '$ENV_NAME' (python 3.13)..."
                 # Use -y to confirm
-                $MGR create -n "$ENV_NAME" python=3.10 -y
+                $MGR create -n "$ENV_NAME" python=3.13 -y
                 
                 echo "Activating..."
                 $MGR activate "$ENV_NAME"

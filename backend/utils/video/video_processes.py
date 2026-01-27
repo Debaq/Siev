@@ -8,11 +8,12 @@ import time
 import ctypes
 import logging
 import sys
-from utils.path_utils import get_model_file_path
+from utils.path_utils import get_model_file_path, get_model_file_path_prefer_onnx
 from utils.video.simulated_box import SimulatedBox
 from utils.video.pupil_detectors import (
     create_pupil_detector, DetectorConfig, PupilResult
 )
+from utils.v4l2_camera import V4L2Camera
 
 # Use the root logger configured in worker.py
 logger = logging.getLogger(__name__)
@@ -129,6 +130,15 @@ class VideoProcesses:
         # Otras configuraciones de hardware
         cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        # Configuración robusta vía V4L2 (solo Linux)
+        try:
+            v4l2_cam = V4L2Camera(f"/dev/video{self.camera_id}")
+            v4l2_cam.set_exposure_auto(3)  # 3 = Aperture Priority (Auto Mode)
+            v4l2_cam.set_exposure_auto_priority(False)  # Mantener FPS constantes
+            print(f"V4L2: Auto-exposición forzada (Aperture Priority) y prioridad de FPS desactivada", flush=True)
+        except Exception as e:
+            logger.warning(f"No se pudo aplicar configuración V4L2: {e}")
         
         # Verificar configuración real aplicada por el driver
         w = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
@@ -211,9 +221,10 @@ class VideoProcesses:
         # Enviar info del frame al proceso de detección
         self.detection_queue.put(frame_info)
 
-        last_time = time.time()
-        fps_values = []
-        fps_avg = 0
+        # FPS de entrada (frames capturados por segundo)
+        capture_frame_count = 0
+        capture_last_second = time.time()
+        fps_avg = 0.0
         consecutive_failures = 0
         max_consecutive_failures = 30  # ~0.5 segundos a 60fps antes de intentar reconectar
 
@@ -253,15 +264,16 @@ class VideoProcesses:
                 # Reset contador de fallos al leer exitosamente
                 consecutive_failures = 0
                 
-                # Calcular FPS - código optimizado sin verificaciones adicionales
-                current_time = time.time()
-                instantaneous_fps = 1.0 / max(current_time - last_time, 0.001)  # Evita división por cero
                 last_time = current_time
                 
-                fps_values.append(instantaneous_fps)
-                if len(fps_values) >= 30:
-                    fps_avg = sum(fps_values) / len(fps_values)
-                    fps_values = []
+                # Calcular FPS de entrada (frames capturados por segundo)
+                capture_frame_count += 1
+                capture_now = time.time()
+                capture_elapsed = capture_now - capture_last_second
+                if capture_elapsed >= 1.0:
+                    fps_avg = capture_frame_count / capture_elapsed
+                    capture_frame_count = 0
+                    capture_last_second = capture_now
                 
                 # Poner el frame en la cola solo si no está llena - sin bloqueos
                 if not self.frame_queue.full():
@@ -276,11 +288,12 @@ class VideoProcesses:
     def detection_worker(self):
         """Proceso dedicado a detectar ojos con YOLO"""
         logger.info("Starting detection process")
-        
-        # Cargar modelo YOLO
-        model_path = get_model_file_path('siev_vng_r01.pt')
+
+        # Cargar modelo YOLO - prioriza ONNX si existe
+        model_path, model_format = get_model_file_path_prefer_onnx('siev_vng_r01.pt')
+        logger.info(f"Loading YOLO model: {model_path} (format: {model_format})")
         model = YOLO(model_path)
-        
+
         # Optimizaciones para CPU
         if not torch.cuda.is_available():
             torch.set_num_threads(1)
@@ -471,6 +484,11 @@ class VideoProcesses:
         detector_left = create_pupil_detector(current_mode)
         logger.info(f"Pupil detectors initialized in mode: {current_mode}")
 
+        # Variables para tracking de FPS del pipeline (contador por segundo)
+        pipeline_frame_count = 0
+        pipeline_last_second = time.time()
+        pipeline_fps = 0.0
+
         while self.running.value:
             if self.result_queue.empty():
                 time.sleep(0.001)
@@ -630,12 +648,21 @@ class VideoProcesses:
                 center_x = w // 2
                 cv2.line(final_frame, (center_x, 0), (center_x, h), (0, 255, 255), 1)
             
-            # Convertir y agregar texto FPS
+            # Calcular FPS del pipeline (frames procesados por segundo)
+            pipeline_frame_count += 1
+            pipeline_now = time.time()
+            elapsed = pipeline_now - pipeline_last_second
+            if elapsed >= 1.0:
+                pipeline_fps = pipeline_frame_count / elapsed
+                pipeline_frame_count = 0
+                pipeline_last_second = pipeline_now
+
+            # Convertir a RGB para la UI
             final_frame = cv2.cvtColor(final_frame, cv2.COLOR_BGR2RGB)
-            lbl_fps_position = (w - 45, 15)
-            cv2.putText(final_frame, f"{fps:.1f}", lbl_fps_position, 
+            fps_text = f"{fps:.0f}/{pipeline_fps:.0f}"
+            lbl_fps_position = (w - 85, 15)
+            cv2.putText(final_frame, fps_text, lbl_fps_position,
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (248, 243, 43), 1, cv2.LINE_AA)
-            
             # Publicar resultado final para la UI
             output = {
                 'frame': final_frame,

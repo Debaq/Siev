@@ -10,11 +10,23 @@ function VideoFeed({ isCapturing }: VideoFeedProps) {
   const { addListener, removeListener } = useWebSocket()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [hasSignal, setHasSignal] = useState(false)
+  const [fps, setFps] = useState(0)
   
   // Refs for the rendering loop logic
   const latestFrameRef = useRef<Blob | string | null>(null);
   const isRenderingRef = useRef(false);
   const animationFrameRef = useRef<number | null>(null);
+  const frameCountRef = useRef(0);
+
+  useEffect(() => {
+    // FPS Counter interval
+    const fpsInterval = setInterval(() => {
+        setFps(frameCountRef.current);
+        frameCountRef.current = 0;
+    }, 1000);
+
+    return () => clearInterval(fpsInterval);
+  }, []);
 
   useEffect(() => {
     if (!isCapturing) {
@@ -63,6 +75,7 @@ function VideoFeed({ isCapturing }: VideoFeedProps) {
                     const ctx = canvasRef.current.getContext('2d', { alpha: false, desynchronized: true });
                     if (ctx) {
                         ctx.drawImage(bitmap, 0, 0);
+                        frameCountRef.current += 1; // Count rendered frame
                     }
                 }
                 bitmap.close();
@@ -77,7 +90,10 @@ function VideoFeed({ isCapturing }: VideoFeedProps) {
                                 canvasRef.current.height = img.height;
                             }
                             const ctx = canvasRef.current.getContext('2d', { alpha: false });
-                            ctx?.drawImage(img, 0, 0);
+                            if (ctx) {
+                                ctx.drawImage(img, 0, 0);
+                                frameCountRef.current += 1; // Count rendered frame
+                            }
                         }
                         resolve();
                     };
@@ -132,6 +148,11 @@ function VideoFeed({ isCapturing }: VideoFeedProps) {
         <div className="glass px-2 py-1 rounded flex items-center gap-2">
           <Video className="w-4 h-4 text-green-400" />
           <span className="text-xs text-green-400">LIVE</span>
+        </div>
+        <div className="glass px-2 py-1 rounded flex items-center gap-2">
+          <span className={`text-xs font-mono font-bold ${fps < 25 ? 'text-red-400' : fps < 55 ? 'text-yellow-400' : 'text-green-400'}`}>
+            {fps} FPS
+          </span>
         </div>
       </div>
     </div>
