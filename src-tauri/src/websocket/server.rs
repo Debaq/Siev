@@ -25,7 +25,7 @@ pub struct WebSocketServer {
 
 impl WebSocketServer {
     pub fn new() -> (Self, mpsc::Receiver<WsMessage>) {
-        let (tx, _rx) = broadcast::channel(100);
+        let (tx, _rx) = broadcast::channel(500);
         let (cmd_tx, cmd_rx) = mpsc::channel(100);
         (
             Self {

@@ -765,6 +765,10 @@ pub fn run() {
             let bridge_for_events = Arc::clone(&python_bridge);
 
             tauri::async_runtime::spawn(async move {
+                // Fase 3.1: Frame skipping - máximo 60fps al frontend
+                let mut last_frame_time = std::time::Instant::now();
+                let min_frame_interval = std::time::Duration::from_millis(16); // ~60fps
+
                 while let Ok(event) = bridge_events.recv().await {
                     match event {
                         BridgeEvent::Connected => {
@@ -798,8 +802,13 @@ pub fn run() {
                             ws_broadcast.broadcast(&WsMessage::EyeData(processed));
                         }
                         BridgeEvent::VideoFrame(jpeg) => {
-                            // Send raw binary frame for performance
-                            ws_broadcast.broadcast_binary(jpeg);
+                            // Fase 3.1: Frame skipping - solo enviar si pasó suficiente tiempo
+                            let now = std::time::Instant::now();
+                            if now.duration_since(last_frame_time) >= min_frame_interval {
+                                ws_broadcast.broadcast_binary(jpeg);
+                                last_frame_time = now;
+                            }
+                            // Si llegan frames muy rápido, se dropean silenciosamente
                         }
                         BridgeEvent::Disconnected => {
                             ws_broadcast.broadcast(&WsMessage::Status {

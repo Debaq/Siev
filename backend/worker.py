@@ -9,6 +9,7 @@ import time
 import cv2
 import json
 import traceback
+import concurrent.futures
 from typing import Optional, Dict, Any
 
 from tcp_client import ReconnectingTcpClient, DEFAULT_PORT, DEFAULT_HOST
@@ -45,6 +46,7 @@ class SievWorker:
         self.video_manager: VideoManagerAPI = dependencies.get_video_manager()
         self._stop_event = asyncio.Event()
         self._data_transmitter_task: Optional[asyncio.Task] = None
+        self._jpeg_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
     async def _on_connect(self):
         logger.info("Connected to Rust orchestrator")
@@ -97,6 +99,7 @@ class SievWorker:
                 pass
         
         self.video_manager.cleanup()
+        self._jpeg_executor.shutdown(wait=False)
         await self.client.stop()
         logger.info("SIEV Worker stopped")
 
@@ -274,16 +277,30 @@ class SievWorker:
         # Send ACK
         await self.client.send_ack(success, data, error)
 
+    def _encode_frame_sync(self, frame):
+        """Encode frame to JPEG synchronously (runs in thread pool)"""
+        # Fase 3.3: Reducir resolución para preview (50% = 4x menos datos)
+        small_frame = cv2.resize(frame, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
+        _, jpeg = cv2.imencode('.jpg', small_frame, [cv2.IMWRITE_JPEG_QUALITY, 40])
+        return jpeg.tobytes()
+
+    async def _encode_frame(self, frame):
+        """Encode frame to JPEG in thread pool to avoid blocking event loop"""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self._jpeg_executor, self._encode_frame_sync, frame)
+
     async def _data_transmitter_loop(self):
         """Loop that sends frames and eye data to Rust when capturing"""
         logger.info("Starting data transmitter loop")
-        
-        last_frame_sent = 0
-        # Sync with camera FPS (default to 60 if not initialized)
-        target_fps = self.video_manager.cap_fps if self.video_manager.cap_fps > 0 else 60
+
+        # Limitar a 60fps para el frontend (no necesita más)
+        target_fps = 60
         frame_interval = 1.0 / target_fps
+        last_frame_sent = 0
+        pending_encode: Optional[asyncio.Task] = None
+
         logger.info(f"Target transmission rate: {target_fps} FPS")
-        
+
         try:
             while self.video_manager.is_capturing:
                 if not self.client.connected:
@@ -291,14 +308,14 @@ class SievWorker:
                     continue
 
                 now = time.time()
-                
+
                 # 1. Send Eye Data
                 eye_data_batch = self.video_manager.get_latest_eye_data_batch()
                 for data in eye_data_batch:
                     left = None
                     if data.get('left_eye'):
                         left = {"x": data['left_eye'][0], "y": data['left_eye'][1], "radius": 5.0, "confidence": 1.0}
-                    
+
                     right = None
                     if data.get('right_eye'):
                         right = {"x": data['right_eye'][0], "y": data['right_eye'][1], "radius": 5.0, "confidence": 1.0}
@@ -306,25 +323,34 @@ class SievWorker:
                     ts_ms = int(data['timestamp'] * 1000)
                     await self.client.send_eye_data(ts_ms, left, right)
 
-                # 2. Send Video Frame (rate limited)
-                if now - last_frame_sent >= frame_interval:
+                # 2. Send Video Frame con encoding asíncrono y rate limiting
+                # Iniciar encode si pasó suficiente tiempo y no hay encode pendiente
+                if now - last_frame_sent >= frame_interval and pending_encode is None:
                     with self.video_manager.frame_lock:
                         frame = self.video_manager.latest_frame
-                    
+
                     if frame is not None:
-                        try:
-                            bgr_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                            # Reduce Quality to 50 to improve FPS over network
-                            _, jpeg = cv2.imencode('.jpg', bgr_frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
-                            await self.client.send_frame(jpeg.tobytes())
-                            last_frame_sent = now
-                        except Exception as e:
-                            logger.error(f"Error encoding/sending frame: {e}")
+                        # Hacer copia para evitar race conditions
+                        frame_copy = frame.copy()
+                        pending_encode = asyncio.create_task(self._encode_frame(frame_copy))
+
+                # Verificar si el encode terminó y enviar
+                if pending_encode is not None and pending_encode.done():
+                    try:
+                        jpeg_bytes = pending_encode.result()
+                        await self.client.send_frame(jpeg_bytes)
+                        last_frame_sent = time.time()
+                    except Exception as e:
+                        logger.error(f"Error encoding/sending frame: {e}")
+                    finally:
+                        pending_encode = None
 
                 await asyncio.sleep(0.001)
-                
+
         except asyncio.CancelledError:
             logger.info("Data transmitter loop cancelled")
+            if pending_encode:
+                pending_encode.cancel()
         except Exception as e:
             logger.error(f"Error in data transmitter loop: {e}")
         finally:
