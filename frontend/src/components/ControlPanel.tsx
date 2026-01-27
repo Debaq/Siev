@@ -37,7 +37,7 @@ function ControlPanel({
 
   // Extract values and methods from sessionConfig
   const { values, hasOverrides, updateAndSync, clearAllOverrides } = sessionConfig
-  const { brightness, contrast, threshold, erode, nose_width, eye_height, use_yolo, show_debug } = values
+  const { brightness, contrast, threshold, nose_width, eye_height, use_yolo, show_debug, smooth, manual_roi_right, manual_roi_left } = values
 
   // Close panel on click outside
   useEffect(() => {
@@ -76,14 +76,6 @@ function ControlPanel({
     send({ type: 'set_config', key: 'threshold', value: newThreshold })
   }
 
-  const handleErodeChange = (eye: 'right' | 'left', val: number) => {
-    const newErode: [number, number] = eye === 'right'
-      ? [val, erode[1]]
-      : [erode[0], val]
-    updateAndSync('erode', newErode)
-    send({ type: 'set_config', key: 'erode', value: newErode })
-  }
-
   const handleNoseWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value)
     updateAndSync('nose_width', val)
@@ -106,6 +98,20 @@ function ControlPanel({
     const val = !show_debug
     updateAndSync('show_debug', val)
     send({ type: 'set_config', key: 'show_debug', value: val })
+  }
+
+  const handleSmoothChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseFloat(e.target.value)
+    updateAndSync('smooth', val)
+    send({ type: 'set_config', key: 'smooth', value: val })
+  }
+
+  const handleRoiChange = (eye: 'right' | 'left', param: 'top' | 'bottom' | 'nasal' | 'temporal', value: number) => {
+    const currentRoi = eye === 'right' ? manual_roi_right : manual_roi_left
+    const newRoi = { ...currentRoi, [param]: value }
+    const key = eye === 'right' ? 'manual_roi_right' : 'manual_roi_left'
+    updateAndSync(key, newRoi)
+    send({ type: 'set_config', key, value: newRoi })
   }
 
   const handleStartRecording = () => {
@@ -250,35 +256,6 @@ function ControlPanel({
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="flex justify-between text-[10px] text-dark-400 mb-1">
-                    <span>Erosión Der</span>
-                    <span>{erode[0]}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0" max="10"
-                    className="w-full accent-siev-500"
-                    value={erode[0]}
-                    onChange={(e) => handleErodeChange('right', Number(e.target.value))}
-                  />
-                </div>
-                <div>
-                  <div className="flex justify-between text-[10px] text-dark-400 mb-1">
-                    <span>Erosión Izq</span>
-                    <span>{erode[1]}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0" max="10"
-                    className="w-full accent-siev-500"
-                    value={erode[1]}
-                    onChange={(e) => handleErodeChange('left', Number(e.target.value))}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="flex justify-between text-[10px] text-dark-400 mb-1">
                     <span>Ancho Nariz</span>
                     <span>{nose_width.toFixed(2)}</span>
                   </div>
@@ -304,7 +281,139 @@ function ControlPanel({
                   />
                 </div>
               </div>
+
+              {/* Smooth */}
+              <div>
+                <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                  <span>Suavizado (Smooth)</span>
+                  <span>{smooth.toFixed(1)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5" max="10" step="0.5"
+                  className="w-full accent-siev-500"
+                  value={smooth}
+                  onChange={handleSmoothChange}
+                />
+              </div>
             </div>
+
+            {/* ROI Manual - Solo visible cuando YOLO está desactivado */}
+            {!use_yolo && (
+              <>
+                <SectionTitle icon={Eye} title="ROI Manual - Ojo Derecho" />
+                <div className="px-1 space-y-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                        <span>Superior</span>
+                        <span>{manual_roi_right.top.toFixed(2)}</span>
+                      </div>
+                      <input
+                        type="range" min="0" max="0.5" step="0.01"
+                        className="w-full accent-red-500"
+                        value={manual_roi_right.top}
+                        onChange={(e) => handleRoiChange('right', 'top', parseFloat(e.target.value))}
+                      />
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                        <span>Inferior</span>
+                        <span>{manual_roi_right.bottom.toFixed(2)}</span>
+                      </div>
+                      <input
+                        type="range" min="0.5" max="1" step="0.01"
+                        className="w-full accent-red-500"
+                        value={manual_roi_right.bottom}
+                        onChange={(e) => handleRoiChange('right', 'bottom', parseFloat(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                        <span>Temporal</span>
+                        <span>{manual_roi_right.temporal.toFixed(2)}</span>
+                      </div>
+                      <input
+                        type="range" min="0" max="0.5" step="0.01"
+                        className="w-full accent-red-500"
+                        value={manual_roi_right.temporal}
+                        onChange={(e) => handleRoiChange('right', 'temporal', parseFloat(e.target.value))}
+                      />
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                        <span>Nasal</span>
+                        <span>{manual_roi_right.nasal.toFixed(2)}</span>
+                      </div>
+                      <input
+                        type="range" min="0.5" max="1" step="0.01"
+                        className="w-full accent-red-500"
+                        value={manual_roi_right.nasal}
+                        onChange={(e) => handleRoiChange('right', 'nasal', parseFloat(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <SectionTitle icon={Eye} title="ROI Manual - Ojo Izquierdo" />
+                <div className="px-1 space-y-2">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                        <span>Superior</span>
+                        <span>{manual_roi_left.top.toFixed(2)}</span>
+                      </div>
+                      <input
+                        type="range" min="0" max="0.5" step="0.01"
+                        className="w-full accent-cyan-500"
+                        value={manual_roi_left.top}
+                        onChange={(e) => handleRoiChange('left', 'top', parseFloat(e.target.value))}
+                      />
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                        <span>Inferior</span>
+                        <span>{manual_roi_left.bottom.toFixed(2)}</span>
+                      </div>
+                      <input
+                        type="range" min="0.5" max="1" step="0.01"
+                        className="w-full accent-cyan-500"
+                        value={manual_roi_left.bottom}
+                        onChange={(e) => handleRoiChange('left', 'bottom', parseFloat(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                        <span>Nasal</span>
+                        <span>{manual_roi_left.nasal.toFixed(2)}</span>
+                      </div>
+                      <input
+                        type="range" min="0" max="0.5" step="0.01"
+                        className="w-full accent-cyan-500"
+                        value={manual_roi_left.nasal}
+                        onChange={(e) => handleRoiChange('left', 'nasal', parseFloat(e.target.value))}
+                      />
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                        <span>Temporal</span>
+                        <span>{manual_roi_left.temporal.toFixed(2)}</span>
+                      </div>
+                      <input
+                        type="range" min="0.5" max="1" step="0.01"
+                        className="w-full accent-cyan-500"
+                        value={manual_roi_left.temporal}
+                        onChange={(e) => handleRoiChange('left', 'temporal', parseFloat(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
 
             {/* Detection */}
             <SectionTitle icon={Cpu} title="Procesamiento" />

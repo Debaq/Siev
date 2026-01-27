@@ -1,6 +1,16 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 
 /**
+ * ROI manual para un ojo (valores relativos 0.0 a 1.0)
+ */
+export interface ManualEyeRoi {
+    top: number;      // Límite superior
+    bottom: number;   // Límite inferior
+    nasal: number;    // Límite nasal
+    temporal: number; // Límite temporal
+}
+
+/**
  * Session-level video configuration that can temporarily override persistent settings.
  * These values are used during capture and reset when the app restarts.
  */
@@ -13,6 +23,9 @@ export interface VideoSessionConfig {
     eye_height: number;
     use_yolo: boolean;
     show_debug: boolean;
+    smooth: number;
+    manual_roi_right: ManualEyeRoi;
+    manual_roi_left: ManualEyeRoi;
 }
 
 export interface SessionConfigState {
@@ -27,12 +40,15 @@ export interface SessionConfigState {
 const DEFAULT_SESSION_CONFIG: VideoSessionConfig = {
     brightness: -21,
     contrast: 50,
-    threshold: [0, 0],
+    threshold: [40, 40],
     erode: [0, 0],
     nose_width: 0.25,
     eye_height: 0.25,
-    use_yolo: true,
+    use_yolo: false, // YOLO desactivado por defecto
     show_debug: false,
+    smooth: 2.5,
+    manual_roi_right: { top: 0.1, bottom: 0.9, nasal: 0.9, temporal: 0.1 },
+    manual_roi_left: { top: 0.1, bottom: 0.9, nasal: 0.1, temporal: 0.9 },
 };
 
 /**
@@ -59,14 +75,17 @@ export function useSessionConfig(sendToWs?: (msg: any) => void) {
             brightness: vng.camera?.exposure ?? DEFAULT_SESSION_CONFIG.brightness,
             contrast: vng.camera?.contrast ?? DEFAULT_SESSION_CONFIG.contrast,
             threshold: [
-                vng.algorithm?.threshold ?? 0,
-                vng.algorithm?.threshold ?? 0
+                vng.algorithm?.threshold ?? 40,
+                vng.algorithm?.threshold ?? 40
             ],
             erode: [0, 0],
             nose_width: 0.25,
             eye_height: 0.25,
-            use_yolo: vng.algorithm?.primary === 'yolo',
+            use_yolo: false, // YOLO desactivado por defecto
             show_debug: false,
+            smooth: 2.5,
+            manual_roi_right: { top: 0.1, bottom: 0.9, nasal: 0.9, temporal: 0.1 },
+            manual_roi_left: { top: 0.1, bottom: 0.9, nasal: 0.1, temporal: 0.9 },
         };
 
         setBaseConfig(newBase);
@@ -74,12 +93,12 @@ export function useSessionConfig(sendToWs?: (msg: any) => void) {
 
     const syncToBackend = useCallback(async (valuesToSync?: Partial<VideoSessionConfig>) => {
         if (!sendToWs) return;
-        
+
         const config = valuesToSync ? { ...effectiveValues, ...valuesToSync } : effectiveValues;
 
         sendToWs({
             type: 'set_config',
-            key: 'session_update', // Rust/Python can handle keys or just the object
+            key: 'session_update',
             value: {
                 brightness: config.brightness,
                 contrast: config.contrast,
@@ -89,6 +108,9 @@ export function useSessionConfig(sendToWs?: (msg: any) => void) {
                 eye_height: config.eye_height,
                 use_yolo: config.use_yolo,
                 show_debug: config.show_debug,
+                smooth: config.smooth,
+                manual_roi_right: config.manual_roi_right,
+                manual_roi_left: config.manual_roi_left,
             }
         });
     }, [sendToWs, effectiveValues]);
