@@ -240,45 +240,52 @@ class VideoManagerAPI:
         logger.info("Video capture stopped")
 
     def _frame_reader_loop(self):
-        """Thread loop that reads frames from video processes and updates buffers"""
+        """Thread loop that reads data from video processes and updates buffers"""
+        logger.info("Frame reader thread started")
         while self.reader_running:
             try:
-                if self.video_processes and hasattr(self.video_processes, 'ui_queue'):
-                    # Bloqueo con timeout es más eficiente que poll + sleep
+                if not self.video_processes:
+                    time.sleep(0.1)
+                    continue
+
+                # 1. Leer TELEMETRÍA (Alta velocidad: 210 FPS)
+                # Vaciamos la cola de resultados para tener los datos más recientes
+                while not self.video_processes.result_queue.empty():
                     try:
-                        output = self.video_processes.ui_queue.get(timeout=0.1)
+                        res = self.video_processes.result_queue.get_nowait()
+                        pupil_positions = res['pupil_positions']
+                        timestamp = time.time()
+                        
+                        # Procesar posiciones de ojos inmediatamente
+                        self._process_eye_positions(pupil_positions, timestamp)
+                        
+                        # Update FPS metric based on telemetría
+                        current_time = time.time()
+                        if self.last_frame_time > 0:
+                            fps = 1.0 / max(current_time - self.last_frame_time, 0.001)
+                            self.fps_values.append(fps)
+                            if len(self.fps_values) >= 10:
+                                self.current_fps = sum(self.fps_values) / len(self.fps_values)
+                        self.last_frame_time = current_time
                     except Empty:
-                        continue
+                        break
 
+                # 2. Leer VIDEO (Velocidad UI: 60 FPS)
+                if not self.video_processes.ui_queue.empty():
+                    output = self.video_processes.ui_queue.get_nowait()
                     frame = output.get('frame')
-                    pupil_positions = output['pupil_positions']
-                    timestamp = time.time()
-
-                    # Update FPS
-                    current_time = time.time()
-                    if self.last_frame_time > 0:
-                        fps = 1.0 / max(current_time - self.last_frame_time, 0.001)
-                        self.fps_values.append(fps)
-                        if len(self.fps_values) >= 10:
-                            self.current_fps = sum(self.fps_values) / len(self.fps_values)
-                    self.last_frame_time = current_time
-
-                    # Update frame buffer only if frame is not None
+                    
                     if frame is not None:
                         with self.frame_lock:
                             self.latest_frame = frame.copy()
 
-                    # Process eye positions (always do this for data accuracy)
-                    self._process_eye_positions(pupil_positions, timestamp)
+                        # Handle recording
+                        if self.is_recording:
+                            self.recording_frames.append(frame.copy())
+                
+                # Pequeño respiro para no saturar el hilo
+                time.sleep(0.001)
 
-                    # Handle recording only if frame is available
-                    if self.is_recording and frame is not None:
-                        self.recording_frames.append(frame.copy())
-                else:
-                    time.sleep(0.01)
-
-            except Empty:
-                continue
             except Exception as e:
                 logger.error(f"Error in frame reader: {e}")
                 time.sleep(0.01)
