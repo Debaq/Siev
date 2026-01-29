@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { emit } from '@tauri-apps/api/event'
+import { emit, listen } from '@tauri-apps/api/event'
 import { Settings, GripHorizontal } from 'lucide-react'
 import VideoFeed from './components/VideoFeed'
 import ControlPanel from './components/ControlPanel'
@@ -8,6 +8,7 @@ import StatusBar from './components/StatusBar'
 import EyeDataPanel from './components/EyeDataPanel'
 import SettingsView from './components/SettingsView'
 import PatientsView from './components/PatientsView'
+import SessionReviewView from './components/SessionReviewView'
 import TestSelectionView from './components/TestSelectionView'
 import WelcomeWizard from './components/WelcomeWizard'
 import UserSelectionScreen from './components/UserSelectionScreen'
@@ -38,11 +39,12 @@ const MainApp = () => {
   const [showSplash, setShowSplash] = useState(true)
 
   // Navigation State
-  const [activeView, setActiveView] = useState<'capture' | 'patients' | 'settings' | 'test_selection' | 'onboarding' | 'user_selection'>('user_selection')
+  const [activeView, setActiveView] = useState<'capture' | 'patients' | 'settings' | 'test_selection' | 'onboarding' | 'user_selection' | 'session_review'>('user_selection')
   const [currentPatient, setCurrentPatient] = useState<Patient | null>(null)
   const [currentSession, setCurrentSession] = useState<any | null>(null)
   const [currentTestType, setCurrentTestType] = useState<string | null>(null)
   const [activeSpecialist, setActiveSpecialist] = useState<Specialist | null>(null)
+  const [reviewSessionId, setReviewSessionId] = useState<number | null>(null)
 
   // App State
   const [isCapturing, setIsCapturing] = useState(false)
@@ -82,14 +84,36 @@ const MainApp = () => {
   }, [isWsConnected, send])
 
   const hasInitializedSessionRef = useRef(false);
+  const lastCaptureConfigRef = useRef<string | null>(null);
+  const captureStartedRef = useRef(false);
 
-  // Auto-start capture when entering capture view
+  // Extract camera config values to avoid object reference issues
+  const cameraId = appConfig?.vng?.camera?.camera_id;
+  const cameraWidth = appConfig?.vng?.camera?.resolution_width;
+  const cameraHeight = appConfig?.vng?.camera?.resolution_height;
+  const cameraFps = appConfig?.vng?.camera?.fps;
+
+  // Auto-start capture when entering capture view (only once per view entry or config change)
   useEffect(() => {
-    if (activeView === 'capture' && !isCapturing && isWsConnected) {
-      console.log("[App] Auto-starting capture for VNG...");
-      handleStartCapture();
+    if (activeView === 'capture' && isWsConnected && cameraId !== undefined) {
+      const currentConfig = `${cameraId}-${cameraWidth}-${cameraHeight}-${cameraFps}`;
+
+      // Only start if config is different from last capture
+      if (lastCaptureConfigRef.current !== currentConfig && !captureStartedRef.current) {
+        console.log("[App] Starting capture with config:", currentConfig);
+        lastCaptureConfigRef.current = currentConfig;
+        captureStartedRef.current = true;
+        const timer = setTimeout(() => {
+          handleStartCapture();
+          captureStartedRef.current = false;
+        }, 200);
+        return () => {
+          clearTimeout(timer);
+          captureStartedRef.current = false;
+        };
+      }
     }
-  }, [activeView, isWsConnected]);
+  }, [activeView, isWsConnected, cameraId, cameraWidth, cameraHeight, cameraFps]);
 
   // Sync selected camera with config or camera list
   useEffect(() => {
@@ -124,6 +148,31 @@ const MainApp = () => {
     }
     return () => { window.removeEventListener('mousemove', handleMouseMove); window.removeEventListener('mouseup', handleMouseUp) }
   }, [isResizing])
+
+  // Listen for manual calibration results
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    const setup = async () => {
+      unlisten = await listen('manual_calibration_complete', (event: any) => {
+        const result = event.payload;
+        console.log('[App] Manual calibration completed:', result);
+
+        // Send calibration data to backend for processing
+        send({
+          type: 'calibration_data',
+          points: result.points,
+          patient_distance: result.patientDistance
+        });
+      });
+    };
+
+    setup();
+
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [send])
 
   // Actions
   const handleStartCapture = async () => {
@@ -187,50 +236,31 @@ const MainApp = () => {
 
         // 1. Open external display window (patient screen)
         const wasCreated = await invoke<boolean>('open_external_display');
-        
-        if (wasCreated) {
-            // Wait for window to load (React hydration)
-            await new Promise(resolve => setTimeout(resolve, 1500));
-        }
 
-        // 2. Map VNG persistent calibration config to stimulus config
+        // Always wait a bit for the window to be ready
+        await new Promise(resolve => setTimeout(resolve, wasCreated ? 1500 : 500));
+
+        // 2. Clear any previous state
+        await emit('stop_stimulus');
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // 3. Get VNG calibration config from settings
         const cal = appConfig.vng.calibration;
-        const testConfig = {
-            test: 'calibration',
-            params: {
-                type: cal.pattern_type === '3_points' ? 'points_3' : 
-                      cal.pattern_type === '5_points' ? 'points_5' : 'points_9',
-                horizontal_fov: cal.horizontal_angle,
-                vertical_fov: cal.vertical_angle,
-                duration_per_point: cal.point_duration,
-                auto_advance: true
-            }
-        };
 
-        // 3. Screen config from persistence
-        const screenConfig = appConfig.stimulus_screen?.display;
-
-        // 4. Target config (can be default or from config if added later)
-        const targetConfig = {
-            size_degrees: 1.5,
-            color: 'red',
-            shape: 'circle',
-            brightness: 100
-        };
-
-        // 5. Emit stimulus event
-        await emit('start_stimulus', {
-            testConfig,
-            targetConfig,
-            screenConfig
+        // 4. Emit manual calibration event with config
+        await emit('start_manual_calibration', {
+            patternType: cal.pattern_type,
+            horizontalAngle: cal.horizontal_angle,
+            verticalAngle: cal.vertical_angle,
+            patientDistance: cal.patient_distance_cm || 150
         });
 
-        // 6. Notify backend (Native Video) to start calibration mode
+        // 5. Notify backend (Native Video) to prepare for calibration
         send({ type: 'send_command', cmd: 'calibrate' });
-        
-        console.log("[App] Ocular Calibration started with pattern:", cal.pattern_type);
+
+        console.log("[App] Manual Calibration started with pattern:", cal.pattern_type);
     } catch (e) {
-        console.error("Failed to start ocular calibration", e);
+        console.error("Failed to start manual calibration", e);
     }
   }
 
@@ -309,17 +339,24 @@ const MainApp = () => {
       <TitleBar />
       
       {activeView === 'user_selection' ? (
-        <UserSelectionScreen 
+        <UserSelectionScreen
             onSelect={(spec) => {
                 setActiveSpecialist(spec)
                 setActiveView('patients')
             }}
         />
+      ) : activeView === 'session_review' && reviewSessionId ? (
+        <div className="flex-1 overflow-hidden relative">
+            <SessionReviewView
+                sessionId={reviewSessionId}
+                onBack={() => { setReviewSessionId(null); setActiveView('patients') }}
+            />
+        </div>
       ) : (
         <div className="flex-1 flex overflow-hidden relative">
-            <Sidebar 
-                activeView={activeView} 
-                onNavigate={setActiveView} 
+            <Sidebar
+                activeView={activeView}
+                onNavigate={setActiveView}
                 activeSpecialist={activeSpecialist}
                 onLogout={() => {
                     setActiveSpecialist(null)
@@ -332,33 +369,34 @@ const MainApp = () => {
             )}
             {activeView === 'capture' && renderCaptureView()}
             {activeView === 'patients' && (
-                <PatientsView 
-                onSelectPatient={(p) => { setCurrentPatient(p); setActiveView('test_selection') }} 
+                <PatientsView
+                onSelectPatient={(p) => { setCurrentPatient(p); setActiveView('test_selection') }}
+                onReviewSession={(sessionId) => { setReviewSessionId(sessionId); setActiveView('session_review') }}
                 />
             )}
             {activeView === 'test_selection' && (
-                        <TestSelectionView 
+                        <TestSelectionView
                           patientName={currentPatient ? `${currentPatient.last_name}, ${currentPatient.first_name}` : "Modo Captura Libre"}
-                          onBack={() => { 
+                          onBack={() => {
                             if (currentPatient) setActiveView('capture');
                             else setActiveView('patients');
                           }}
-                          onSelectTest={async (testId) => { 
+                          onSelectTest={async (testId) => {
                               if (currentPatient) {
                                 const session = await createSession(
-                                    currentPatient.id, 
-                                    activeSpecialist?.id || null, 
+                                    currentPatient.id,
+                                    activeSpecialist?.id || null,
                                     `Evaluación: ${testId}`
                                 )
                                 setCurrentSession(session)
                               }
-                              
+
                               setCurrentTestType(testId)
                               setActiveView('capture')
                           }}
                         />
                       )}
-            
+
             {activeView === 'settings' && (
                 <SettingsView />
             )}

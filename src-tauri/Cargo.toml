@@ -45,6 +45,9 @@ ts-rs = "10.0" # Optional: for generating TypeScript types from Rust structs if 
 # Database
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
+# Video encoding
+openh264 = "0.6"
+minimp4 = "0.1"
 
 [features]
 default = ["custom-protocol"]
@@ -55,4 +58,4 @@ lto = true        # Link Time Optimization: Optimiza entre todas las librerías 
 codegen-units = 1 # Obliga al compilador a trabajar en un solo hilo para analizar todo el contexto junto
 panic = "abort"   # Si hay un error fatal, cierra la app inmediatamente
 opt-level = 3     # Máxima optimización de velocidad
-strip = true      # Elimina símbolos de depuración para reducir tamaño
+strip = false     # DESACTIVADO: Necesario para que el empaquetador de Tauri funcione correctamente

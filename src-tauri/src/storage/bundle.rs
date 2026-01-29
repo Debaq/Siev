@@ -3,9 +3,10 @@ use std::fs;
 use serde::{Serialize, Deserialize};
 use chrono::Local;
 use crate::database::models::Patient;
+use crate::math::processor::CalibrationSnapshot;
 
 /// Represents the metadata stored in session.json
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionManifest {
     pub version: String, // Schema version, e.g., "1.0"
     pub created_at: String,
@@ -16,7 +17,7 @@ pub struct SessionManifest {
 }
 
 /// A snapshot of patient data at the time of the session
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatientSnapshot {
     pub id: i64,
     pub first_name: String,
@@ -103,5 +104,22 @@ impl SievBundle {
         let content = fs::read_to_string(manifest_path)?;
         let manifest: SessionManifest = serde_json::from_str(&content)?;
         Ok(manifest)
+    }
+
+    /// Saves calibration snapshot to calibration.json in the bundle
+    pub fn save_calibration(bundle_path: &Path, snapshot: &CalibrationSnapshot) -> Result<(), std::io::Error> {
+        let cal_path = bundle_path.join("calibration.json");
+        let json = serde_json::to_string_pretty(snapshot)?;
+        fs::write(cal_path, json)?;
+        println!("[STORAGE] Calibration saved to {:?}", bundle_path);
+        Ok(())
+    }
+
+    /// Loads calibration snapshot from calibration.json in the bundle
+    pub fn load_calibration(bundle_path: &Path) -> Result<CalibrationSnapshot, std::io::Error> {
+        let cal_path = bundle_path.join("calibration.json");
+        let content = fs::read_to_string(cal_path)?;
+        let snapshot: CalibrationSnapshot = serde_json::from_str(&content)?;
+        Ok(snapshot)
     }
 }

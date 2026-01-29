@@ -8,9 +8,10 @@ import { useTauriDb, Patient } from '../hooks/useTauriDb'
 
 interface PatientsViewProps {
   onSelectPatient: (patient: Patient) => void
+  onReviewSession?: (sessionId: number) => void
 }
 
-function PatientsView({ onSelectPatient }: PatientsViewProps) {
+function PatientsView({ onSelectPatient, onReviewSession }: PatientsViewProps) {
   const [patients, setPatients] = useState<Patient[]>([])
   const [search, setSearch] = useState('')
   
@@ -260,7 +261,13 @@ function PatientsView({ onSelectPatient }: PatientsViewProps) {
                                     <button className="flex-1 btn btn-secondary text-xs py-1.5">
                                         Ver Informe
                                     </button>
-                                    <button className="flex-1 btn btn-primary text-xs py-1.5">
+                                    <button
+                                        className="flex-1 btn btn-primary text-xs py-1.5"
+                                        onClick={() => {
+                                            setShowHistory(false)
+                                            onReviewSession?.(session.id)
+                                        }}
+                                    >
                                         Reproducir
                                     </button>
                                 </div>

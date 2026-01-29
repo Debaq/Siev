@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { listen } from '@tauri-apps/api/event';
+import { listen, emit } from '@tauri-apps/api/event';
 import { Maximize2, X, Move, Monitor, AlertTriangle, Minimize2 } from 'lucide-react';
 
 // Sub-components
@@ -10,11 +10,19 @@ import { PursuitStimulus } from '../components/stimulus/PursuitStimulus';
 import { OPKStimulus } from '../components/stimulus/OPKStimulus';
 import { GazeStimulus } from '../components/stimulus/GazeStimulus';
 import { CalibrationPage } from './CalibrationPage';
+import { ManualCalibration, CalibrationResult } from '../components/stimulus/ManualCalibration';
 
 // Types
 import { VNGTestConfig, StimulusTargetConfig } from '../types/vng';
 
-type DisplayMode = 'idle' | 'stimulus' | 'calibration_wizard';
+type DisplayMode = 'idle' | 'stimulus' | 'calibration_wizard' | 'manual_calibration';
+
+interface ManualCalibrationConfig {
+    patternType: '3_points' | '5_points' | '9_points';
+    horizontalAngle: number;
+    verticalAngle: number;
+    patientDistance: number;
+}
 
 interface StimulusState {
     config: VNGTestConfig | null;
@@ -35,6 +43,12 @@ export const ExternalDisplayPage: React.FC = () => {
         targetConfig: { size_degrees: 1.0, color: 'red', shape: 'circle', brightness: 100 },
         screenConfig: { distance_cm: 100, pixel_density: 0, resolution_width: 0, resolution_height: 0 }
     });
+    const [manualCalibConfig, setManualCalibConfig] = useState<ManualCalibrationConfig>({
+        patternType: '5_points',
+        horizontalAngle: 15,
+        verticalAngle: 10,
+        patientDistance: 150
+    });
 
     useEffect(() => {
         const win = getCurrentWindow();
@@ -45,10 +59,16 @@ export const ExternalDisplayPage: React.FC = () => {
         const setupListeners = async () => {
             const unlistenStart = await listen('start_stimulus', async (event: any) => {
                 const payload = event.payload;
-                
-                // Auto-maximize if receiving a command and not fullscreen (optional, but user wants control)
-                // We'll just update state and warn if needed
-                
+
+                // Auto-fullscreen for calibration stimuli
+                if (payload.testConfig?.test === 'calibration') {
+                    const currentFullscreen = await win.isFullscreen();
+                    if (!currentFullscreen) {
+                        await win.setFullscreen(true);
+                        setIsFullscreen(true);
+                    }
+                }
+
                 setStimulusState(prev => ({
                     ...prev,
                     config: payload.testConfig,
@@ -77,11 +97,33 @@ export const ExternalDisplayPage: React.FC = () => {
                 setMode('idle');
             });
 
+            // Manual calibration for VNG (ocular tracking calibration)
+            const unlistenManualCalib = await listen('start_manual_calibration', async (event: any) => {
+                const payload = event.payload as ManualCalibrationConfig;
+
+                setManualCalibConfig({
+                    patternType: payload.patternType || '5_points',
+                    horizontalAngle: payload.horizontalAngle || 15,
+                    verticalAngle: payload.verticalAngle || 10,
+                    patientDistance: payload.patientDistance || 150
+                });
+
+                // Auto-fullscreen
+                const currentFullscreen = await win.isFullscreen();
+                if (!currentFullscreen) {
+                    await win.setFullscreen(true);
+                    setIsFullscreen(true);
+                }
+
+                setMode('manual_calibration');
+            });
+
             return () => {
                 unlistenStart();
                 unlistenStop();
                 unlistenCalib();
                 unlistenCalibDone();
+                unlistenManualCalib();
             };
         };
 
@@ -184,12 +226,36 @@ export const ExternalDisplayPage: React.FC = () => {
         );
     }
 
-    // 3. CALIBRATION WIZARD (Legacy Logic)
+    // 3. CALIBRATION WIZARD (Screen PPI calibration)
     if (mode === 'calibration_wizard') {
         return <CalibrationPage />;
     }
 
-    // 4. STIMULUS RUNNING
+    // 4. MANUAL CALIBRATION (VNG ocular tracking calibration)
+    if (mode === 'manual_calibration') {
+        const handleCalibrationComplete = async (result: CalibrationResult) => {
+            // Emit result to main app
+            await emit('manual_calibration_complete', result);
+            setMode('idle');
+        };
+
+        const handleCalibrationCancel = () => {
+            setMode('idle');
+        };
+
+        return (
+            <ManualCalibration
+                patternType={manualCalibConfig.patternType}
+                horizontalAngle={manualCalibConfig.horizontalAngle}
+                verticalAngle={manualCalibConfig.verticalAngle}
+                patientDistance={manualCalibConfig.patientDistance}
+                onComplete={handleCalibrationComplete}
+                onCancel={handleCalibrationCancel}
+            />
+        );
+    }
+
+    // 5. STIMULUS RUNNING
     const commonProps = {
         degToPx,
         targetConfig: stimulusState.targetConfig,

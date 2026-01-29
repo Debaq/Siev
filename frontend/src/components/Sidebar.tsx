@@ -33,7 +33,7 @@ function MenuItem({ view, icon, label, isActive, onNavigate }: MenuItemProps) {
 }
 
 interface SidebarProps {
-  activeView: 'capture' | 'patients' | 'settings' | 'test_selection' | 'onboarding' | 'user_selection'
+  activeView: 'capture' | 'patients' | 'settings' | 'test_selection' | 'onboarding' | 'user_selection' | 'session_review'
   onNavigate: (view: 'capture' | 'patients' | 'settings') => void
   onLogout: () => void
   activeSpecialist: { name: string } | null

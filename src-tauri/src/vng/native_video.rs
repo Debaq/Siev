@@ -2,7 +2,8 @@ use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
 use std::thread;
 use std::io::Cursor;
 use nokhwa::pixel_format::LumaFormat;
-use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType, CameraFormat, FrameFormat, Resolution, KnownCameraControl, ControlValueSetter};
+use nokhwa::utils::{CameraIndex, RequestedFormat, RequestedFormatType, CameraFormat, FrameFormat, Resolution, ApiBackend};
+use nokhwa::query;
 use nokhwa::Camera;
 use image::{GrayImage, ImageBuffer, Rgb, Luma, codecs::jpeg::JpegEncoder, DynamicImage};
 use imageproc::point::Point;
@@ -18,8 +19,97 @@ use ndarray::Array4;
 use serde::{Serialize, Deserialize};
 use crate::websocket::{WebSocketServer, WsMessage};
 use crate::math::processor::{RawEyeData, EyeProcessor};
+use crate::storage::recorder::SessionRecorder;
+use crate::storage::video_recorder::VideoRecorder;
 
-#[derive(Clone, Serialize)]
+/// Información de una cámara detectada
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CameraInfo {
+    pub index: u32,
+    pub name: String,
+    pub description: String,
+}
+
+/// Formato de cámara soportado
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CameraFormatInfo {
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    pub format: String,  // "MJPEG", "YUYV", etc.
+}
+
+/// Lista las cámaras disponibles en el sistema
+/// Nota: No intentamos abrir las cámaras aquí porque pueden estar en uso
+pub fn list_cameras() -> Result<Vec<CameraInfo>, String> {
+    let cameras = query(ApiBackend::Auto)
+        .map_err(|e| format!("Error listando cámaras: {:?}", e))?;
+
+    // Filtrar cámaras por índice par (en V4L2, los índices impares suelen ser metadata)
+    // /dev/video0 = video, /dev/video1 = metadata de video0
+    // /dev/video2 = video, /dev/video3 = metadata de video2, etc.
+    let valid_cameras: Vec<CameraInfo> = cameras
+        .into_iter()
+        .filter_map(|c| {
+            let idx = match c.index() {
+                CameraIndex::Index(i) => *i,
+                CameraIndex::String(s) => s.parse().unwrap_or(0),
+            };
+
+            // Solo incluir índices pares (nodos de video reales)
+            if idx % 2 == 0 {
+                Some(CameraInfo {
+                    index: idx,
+                    name: c.human_name().to_string(),
+                    description: c.description().to_string(),
+                })
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    Ok(valid_cameras)
+}
+
+/// Lista los formatos soportados por una cámara específica
+pub fn list_camera_formats(camera_id: u32) -> Result<Vec<CameraFormatInfo>, String> {
+    let index = CameraIndex::Index(camera_id);
+
+    // Crear cámara temporal solo para consultar formatos
+    let format = RequestedFormat::new::<LumaFormat>(RequestedFormatType::None);
+    let mut camera = Camera::new(index, format)
+        .map_err(|e| format!("Error abriendo cámara {}: {:?}", camera_id, e))?;
+
+    let formats = camera.compatible_camera_formats()
+        .map_err(|e| format!("Error obteniendo formatos: {:?}", e))?;
+
+    // Filtrar solo MJPEG y ordenar por resolución/fps
+    let mut result: Vec<CameraFormatInfo> = formats
+        .into_iter()
+        .filter(|f| f.format() == FrameFormat::MJPEG)
+        .map(|f| CameraFormatInfo {
+            width: f.resolution().width(),
+            height: f.resolution().height(),
+            fps: f.frame_rate(),
+            format: format!("{:?}", f.format()),
+        })
+        .collect();
+
+    // Ordenar: mayor resolución primero, luego mayor fps
+    result.sort_by(|a, b| {
+        let res_a = a.width * a.height;
+        let res_b = b.width * b.height;
+        res_b.cmp(&res_a).then(b.fps.cmp(&a.fps))
+    });
+
+    // Eliminar duplicados
+    result.dedup_by(|a, b| a.width == b.width && a.height == b.height && a.fps == b.fps);
+
+    Ok(result)
+}
+
+#[derive(Clone, Copy, Debug, Serialize)]
 pub struct RustPupilResult {
     pub center_x: f32,
     pub center_y: f32,
@@ -51,6 +141,7 @@ impl Default for ManualEyeRoi {
 
 pub struct NativeVideoManager {
     running: Arc<AtomicBool>,
+    starting: Arc<AtomicBool>,  // Bloquea nuevas llamadas mientras se está iniciando
     ws_server: Arc<WebSocketServer>,
     eye_processor: Arc<Mutex<EyeProcessor>>,
     threshold: Arc<Mutex<[u8; 2]>>,      // [right, left]
@@ -69,26 +160,42 @@ pub struct NativeVideoManager {
     contrast: Arc<Mutex<f32>>,    // 0.0 a 3.0 (1.0 = sin cambio)
     // Modo debug: muestra máscaras de umbralización
     show_debug: Arc<AtomicBool>,
+    // Session recorder for eye data
+    active_recorder: Arc<Mutex<Option<SessionRecorder>>>,
+    // Video recorder for raw frames (no UI marks)
+    active_video_recorder: Arc<Mutex<Option<VideoRecorder>>>,
+    // Capture dimensions (for video recorder initialization)
+    capture_width: Arc<Mutex<u32>>,
+    capture_height: Arc<Mutex<u32>>,
 }
 
 impl NativeVideoManager {
-    pub fn new(ws_server: Arc<WebSocketServer>, eye_processor: Arc<Mutex<EyeProcessor>>) -> Self {
+    pub fn new(
+        ws_server: Arc<WebSocketServer>,
+        eye_processor: Arc<Mutex<EyeProcessor>>,
+        active_recorder: Arc<Mutex<Option<SessionRecorder>>>,
+    ) -> Self {
         Self {
             running: Arc::new(AtomicBool::new(false)),
+            starting: Arc::new(AtomicBool::new(false)),
             ws_server,
             eye_processor,
             threshold: Arc::new(Mutex::new([40, 40])),
             erode: Arc::new(Mutex::new([1, 1])),
             nose_width: Arc::new(Mutex::new(0.25)),
             eye_height: Arc::new(Mutex::new(0.25)),
-            use_yolo: Arc::new(AtomicBool::new(false)), // YOLO desactivado por defecto
+            use_yolo: Arc::new(AtomicBool::new(false)),
             yolo_frequency: Arc::new(Mutex::new(10)),
             manual_roi_right: Arc::new(Mutex::new(ManualEyeRoi::default())),
             manual_roi_left: Arc::new(Mutex::new(ManualEyeRoi::default())),
-            smooth_sigma: Arc::new(Mutex::new(2.5)), // Suavizado por defecto
+            smooth_sigma: Arc::new(Mutex::new(2.5)),
             brightness: Arc::new(Mutex::new(0)),
             contrast: Arc::new(Mutex::new(1.0)),
             show_debug: Arc::new(AtomicBool::new(false)),
+            active_recorder,
+            active_video_recorder: Arc::new(Mutex::new(None)),
+            capture_width: Arc::new(Mutex::new(0)),
+            capture_height: Arc::new(Mutex::new(0)),
         }
     }
 
@@ -193,11 +300,24 @@ impl NativeVideoManager {
     }
 
     pub fn start_capture(&self, camera_id: u32, width: u32, height: u32, fps: u32, model_path: String) -> Result<(), String> {
-        if self.running.load(Ordering::SeqCst) {
+        // Usar compare_exchange para evitar múltiples llamadas concurrentes
+        if self.starting.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+            // Ya hay otra llamada en progreso, ignorar esta
             return Ok(());
         }
 
+        // Si ya está corriendo, primero detener y esperar
+        if self.running.load(Ordering::SeqCst) {
+            self.running.store(false, Ordering::SeqCst);
+            // Esperar a que el thread anterior libere la cámara
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+
         self.running.store(true, Ordering::SeqCst);
+        println!("[SIEV] Iniciando captura: cámara={}, {}x{}@{}", camera_id, width, height, fps);
+
+        // Liberar el flag de starting
+        self.starting.store(false, Ordering::SeqCst);
         let running = self.running.clone();
         let ws = self.ws_server.clone();
         let eye_proc = self.eye_processor.clone();
@@ -213,28 +333,72 @@ impl NativeVideoManager {
         let brightness_ref = self.brightness.clone();
         let contrast_ref = self.contrast.clone();
         let show_debug_ref = self.show_debug.clone();
+        let recorder_ref = self.active_recorder.clone();
+        let video_recorder_ref = self.active_video_recorder.clone();
+        let capture_w_ref = self.capture_width.clone();
+        let capture_h_ref = self.capture_height.clone();
 
         thread::spawn(move || {
-            // Abrir cámara
+            // Abrir cámara con fallback de formatos
             let index = CameraIndex::Index(camera_id);
-            let format = CameraFormat::new(Resolution::new(width, height), FrameFormat::MJPEG, fps);
-            let requested = RequestedFormat::new::<LumaFormat>(RequestedFormatType::Exact(format));
 
-            let mut camera = match Camera::new(index, requested) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("[SIEV] Error abriendo cámara: {}", e);
+            // Lista de formatos a intentar (el solicitado primero, luego fallbacks)
+            let formats_to_try = [
+                (width, height, fps),
+                (width, height, 240),  // Mismo tamaño, FPS alto
+                (width, height, 120),  // Mismo tamaño, FPS medio
+                (width, height, 60),   // Mismo tamaño, FPS bajo
+                (640, 480, 120),       // Formato común
+                (640, 480, 60),
+                (640, 400, 240),
+                (640, 360, 240),
+                (800, 600, 120),
+                (1280, 720, 120),
+            ];
+
+            let mut camera: Option<Camera> = None;
+            let mut actual_format = (width, height);
+
+            for (w, h, f) in formats_to_try {
+                let format = CameraFormat::new(Resolution::new(w, h), FrameFormat::MJPEG, f);
+                let requested = RequestedFormat::new::<LumaFormat>(RequestedFormatType::Closest(format));
+
+                match Camera::new(index.clone(), requested) {
+                    Ok(mut c) => {
+                        if c.open_stream().is_ok() {
+                            if w != width || h != height || f != fps {
+                                println!("[SIEV] Formato {}x{}@{} no disponible, usando {}x{}@{}", width, height, fps, w, h, f);
+                            }
+                            actual_format = (w, h);
+                            camera = Some(c);
+                            break;
+                        }
+                    }
+                    Err(_) => continue,
+                }
+            }
+
+            let mut camera = match camera {
+                Some(c) => c,
+                None => {
+                    eprintln!("[SIEV] Error: No se pudo abrir la cámara {} con ningún formato", camera_id);
+                    running.store(false, Ordering::SeqCst);
                     return;
                 }
             };
 
-            if camera.open_stream().is_err() {
-                eprintln!("[SIEV] Error iniciando stream de cámara");
-                return;
+            let (width, height) = actual_format;
+
+            // Store capture dimensions for external use (e.g., video recorder)
+            {
+                let mut cw = capture_w_ref.lock().unwrap();
+                *cw = width;
+                let mut ch = capture_h_ref.lock().unwrap();
+                *ch = height;
             }
 
-            // Forzar Auto-Exposición (3 = Auto en estándar V4L2)
-            let _ = camera.set_camera_control(KnownCameraControl::Other(10094849), ControlValueSetter::Integer(3));
+            // NOTA: No configuramos auto-exposición aquí porque causa panic en algunas webcams
+            // La exposición se puede ajustar manualmente desde la UI si es necesario
 
             // Pre-configuración de Zune-JPEG
             let zune_options = DecoderOptions::default().jpeg_set_out_colorspace(ColorSpace::Luma);
@@ -266,10 +430,22 @@ impl NativeVideoManager {
             let mut fps_frame_count: u32 = 0;
             let mut total_proc_time = std::time::Duration::from_secs(0);
 
+            // Buffers reutilizables para zero-allocation
+            let mut scratch_gray_right = GrayImage::new(1, 1);
+            let mut scratch_thresh_right = GrayImage::new(1, 1);
+            let mut scratch_gray_left = GrayImage::new(1, 1);
+            let mut scratch_thresh_left = GrayImage::new(1, 1);
+
             // Cajas de detección YOLO (coordenadas en la imagen combinada)
             // [x1, y1, x2, y2] para cada ojo en la imagen combinada
             let mut yolo_box_right: Option<[u32; 4]> = None;
             let mut yolo_box_left: Option<[u32; 4]> = None;
+
+            // Variables de estado persistente para matemáticas refinadas
+            let mut last_threshold_right = 40u8;
+            let mut last_threshold_left = 40u8;
+            let mut last_pupil_right: Option<RustPupilResult> = None;
+            let mut last_pupil_left: Option<RustPupilResult> = None;
 
             println!("[SIEV] Iniciando bucle de captura...");
 
@@ -382,6 +558,13 @@ impl NativeVideoManager {
                 // ===== PASO 2.5: Aplicar brillo y contraste optimizado =====
                 Self::apply_brightness_contrast_luma(&mut combined, brightness_val, contrast_val);
 
+                // Send clean frame (no UI marks) to video recorder if active
+                if let Ok(guard) = video_recorder_ref.lock() {
+                    if let Some(ref vrec) = *guard {
+                        vrec.send_frame(combined.clone());
+                    }
+                }
+
                 // ===== PASO 3: Ejecutar YOLO cada N frames =====
                 let use_yolo = use_yolo_ref.load(Ordering::SeqCst);
                 if use_yolo {
@@ -426,23 +609,40 @@ impl NativeVideoManager {
                     [x1, y1, x2.max(x1 + 1), y2.max(y1 + 1)]
                 };
 
-                // ===== PASO 5: Detectar pupilas en las cajas =====
-                let (pupil_right, mask_right) = Self::detect_pupil_optimized(&combined, search_box_right, thresholds[0], erodes[0], smooth_sigma);
-                let (pupil_left, mask_left) = Self::detect_pupil_optimized(&combined, search_box_left, thresholds[1], erodes[1], smooth_sigma);
+                // ===== PASO 5: Detectar pupilas con Matemáticas Refinadas =====
+                let pupil_right = Self::detect_pupil_math_refined(
+                    &combined,
+                    search_box_right,
+                    thresholds[0],
+                    &mut last_threshold_right,
+                    erodes[0],
+                    smooth_sigma,
+                    last_pupil_right,
+                    &mut scratch_gray_right,
+                    &mut scratch_thresh_right
+                );
+                last_pupil_right = pupil_right;
 
-                // Convertir coordenadas a posiciones de pupila
+                let pupil_left = Self::detect_pupil_math_refined(
+                    &combined,
+                    search_box_left,
+                    thresholds[1],
+                    &mut last_threshold_left,
+                    erodes[1],
+                    smooth_sigma,
+                    last_pupil_left,
+                    &mut scratch_gray_left,
+                    &mut scratch_thresh_left
+                );
+                last_pupil_left = pupil_left;
+
+                // Convertir coordenadas
                 let mut pupil_pos: [Option<[f64; 2]>; 2] = [None, None];
-
-                if let Some(ref pr) = pupil_right {
-                    if pr.found {
-                        pupil_pos[1] = Some([pr.center_x as f64, (pr.center_y as f64) * -1.0]);
-                    }
+                if let Some(pr) = pupil_right {
+                    if pr.found { pupil_pos[1] = Some([pr.center_x as f64, (pr.center_y as f64) * -1.0]); }
                 }
-
-                if let Some(ref pl) = pupil_left {
-                    if pl.found {
-                        pupil_pos[0] = Some([pl.center_x as f64, (pl.center_y as f64) * -1.0]);
-                    }
+                if let Some(pl) = pupil_left {
+                    if pl.found { pupil_pos[0] = Some([pl.center_x as f64, (pl.center_y as f64) * -1.0]); }
                 }
 
                 // ===== PASO 6: Enviar datos de ojos =====
@@ -457,7 +657,14 @@ impl NativeVideoManager {
                     let mut p = eye_proc.lock().unwrap();
                     p.process(raw_data)
                 };
-                ws.broadcast(&WsMessage::EyeData(processed));
+                ws.broadcast(&WsMessage::EyeData(processed.clone()));
+
+                // Send to session recorder if active
+                if let Ok(guard) = recorder_ref.lock() {
+                    if let Some(ref rec) = *guard {
+                        rec.record(processed);
+                    }
+                }
 
                 // ===== PASO 7: Enviar imagen a UI (30 FPS) =====
                 let show_debug = show_debug_ref.load(Ordering::SeqCst);
@@ -467,15 +674,28 @@ impl NativeVideoManager {
 
                     // Si modo debug está activo, superponer máscaras de umbralización
                     if show_debug {
-                        if let Some(ref mask) = mask_right {
-                            Self::overlay_mask(&mut display, mask, search_box_right, [255, 0, 0], 0.5);
-                        }
-                        if let Some(ref mask) = mask_left {
-                            Self::overlay_mask(&mut display, mask, search_box_left, [0, 191, 255], 0.5);
-                        }
+                        // El overlay dinámico ahora debe ajustarse a la última ROI de búsqueda (Offset relativo)
+                        let get_mask_box = |p: Option<RustPupilResult>, base_roi: [u32; 4], mask_w: u32, mask_h: u32| -> [u32; 4] {
+                            if let Some(prev) = p {
+                                if prev.found {
+                                    let margin = (prev.radius * 2.5) as u32;
+                                    let px = (prev.center_x - base_roi[0] as f32) as i32;
+                                    let py = (prev.center_y - base_roi[1] as f32) as i32;
+                                    let sx = (base_roi[0] as i32 + px - margin as i32).max(base_roi[0] as i32) as u32;
+                                    let sy = (base_roi[1] as i32 + py - margin as i32).max(base_roi[1] as i32) as u32;
+                                    [sx, sy, sx + mask_w, sy + mask_h]
+                                } else { base_roi }
+                            } else { base_roi }
+                        };
+
+                        let box_r = get_mask_box(last_pupil_right, search_box_right, scratch_thresh_right.width(), scratch_thresh_right.height());
+                        let box_l = get_mask_box(last_pupil_left, search_box_left, scratch_thresh_left.width(), scratch_thresh_left.height());
+
+                        Self::overlay_mask(&mut display, &scratch_thresh_right, box_r, [255, 0, 0], 0.5);
+                        Self::overlay_mask(&mut display, &scratch_thresh_left, box_l, [0, 191, 255], 0.5);
                     }
 
-                    // Dibujar cajas de búsqueda
+                    // Dibujar cajas de búsqueda originales
                     let box_color_r = if yolo_box_right.is_some() { [0, 255, 0] } else { [255, 255, 0] };
                     let box_color_l = if yolo_box_left.is_some() { [0, 255, 0] } else { [255, 255, 0] };
 
@@ -487,12 +707,12 @@ impl NativeVideoManager {
                     Self::draw_label(&mut display, search_box_left[0] + 2, search_box_left[1] + 2, "OI", [0, 191, 255]);
 
                     // Dibujar pupilas detectadas
-                    if let Some(ref pr) = pupil_right {
+                    if let Some(pr) = last_pupil_right {
                         if pr.found {
                             Self::draw_crosshair(&mut display, pr.center_x as u32, pr.center_y as u32, pr.radius as u32, [255, 0, 0]);
                         }
                     }
-                    if let Some(ref pl) = pupil_left {
+                    if let Some(pl) = last_pupil_left {
                         if pl.found {
                             Self::draw_crosshair(&mut display, pl.center_x as u32, pl.center_y as u32, pl.radius as u32, [0, 191, 255]);
                         }
@@ -652,113 +872,140 @@ impl NativeVideoManager {
         None
     }
 
-    /// Detector de pupila optimizado con Precisión Sub-píxel y Anti-Glint
-    fn detect_pupil_optimized(img: &GrayImage, roi: [u32; 4], threshold: u8, erode_iter: u8, smooth_sigma: f32) -> (Option<RustPupilResult>, Option<GrayImage>) {
+    /// Detector de pupila optimizado con Precisión Sub-píxel, Tracking y Centroide Ponderado
+    fn detect_pupil_math_refined(
+        img: &GrayImage,
+        roi: [u32; 4],
+        manual_threshold: u8,
+        last_threshold: &mut u8,
+        erode_iter: u8,
+        smooth_sigma: f32,
+        prev_pupil: Option<RustPupilResult>,
+        scratch_gray: &mut GrayImage,
+        scratch_thresh: &mut GrayImage
+    ) -> Option<RustPupilResult> {
         let (x1, y1, x2, y2) = (roi[0], roi[1], roi[2], roi[3]);
+        let full_rw = x2 - x1;
+        let full_rh = y2 - y1;
 
-        // Validación de seguridad
-        if x2 <= x1 || y2 <= y1 || x2 > img.width() || y2 > img.height() {
-            return (None, None);
+        // --- MEJORA 1: ROI DINÁMICO (Tracking) ---
+        let (search_x, search_y, search_w, search_h, offset_x, offset_y) = if let Some(prev) = prev_pupil {
+            if prev.found {
+                let margin = (prev.radius * 2.5) as u32;
+                let px = (prev.center_x - x1 as f32) as i32;
+                let py = (prev.center_y - y1 as f32) as i32;
+                
+                let sx = (px - margin as i32).max(0) as u32;
+                let sy = (py - margin as i32).max(0) as u32;
+                let sw = (margin * 2).min(full_rw - sx);
+                let sh = (margin * 2).min(full_rh - sy);
+                
+                if sw < 10 || sh < 10 {
+                    (0, 0, full_rw, full_rh, 0, 0)
+                } else {
+                    (sx, sy, sw, sh, sx, sy)
+                }
+            } else {
+                (0, 0, full_rw, full_rh, 0, 0)
+            }
+        } else {
+            (0, 0, full_rw, full_rh, 0, 0)
+        };
+
+        if scratch_gray.width() != search_w || scratch_gray.height() != search_h {
+            *scratch_gray = GrayImage::new(search_w, search_h);
+            *scratch_thresh = GrayImage::new(search_w, search_h);
         }
 
-        let rw = x2 - x1;
-        let rh = y2 - y1;
-
-        // 1. Extracción de ROI (Copia por bloques optimizada)
-        let mut gray = GrayImage::new(rw, rh);
+        // Extracción de ROI (más pequeña si hay tracking)
         let src_stride = img.width() as usize;
-        let dst_stride = rw as usize;
+        let dst_stride = search_w as usize;
         let src_raw = img.as_raw();
-        let dst_raw = gray.as_flat_samples_mut().samples;
+        let dst_raw = scratch_gray.as_flat_samples_mut().samples;
 
-        for y in 0..rh {
-            let src_start = ((y1 + y) as usize * src_stride) + x1 as usize;
-            let src_end = src_start + rw as usize;
+        for y in 0..search_h {
+            let src_start = ((y1 + search_y + y) as usize * src_stride) + (x1 + search_x) as usize;
+            let src_end = src_start + search_w as usize;
             let dst_start = y as usize * dst_stride;
-            let dst_end = dst_start + rw as usize;
+            let dst_end = dst_start + search_w as usize;
             
             if src_end <= src_raw.len() && dst_end <= dst_raw.len() {
                 dst_raw[dst_start..dst_end].copy_from_slice(&src_raw[src_start..src_end]);
             }
         }
 
-        // 2. Suavizado (Reducción de ruido de alta frecuencia)
-        let blurred = gaussian_blur_f32(&gray, smooth_sigma);
+        let blurred = gaussian_blur_f32(scratch_gray, smooth_sigma);
 
-        // 3. Umbralización Inteligente (Optimizado con Histograma)
-        let mut thresh = GrayImage::new(rw, rh);
-        let threshold_val = if threshold == 0 {
+        // --- MEJORA 2: UMBRAL ESTABILIZADO (Histéresis) ---
+        let current_thresh_val = if manual_threshold == 0 {
             let mut hist = [0u32; 256];
-            for p in blurred.pixels() {
-                hist[p.0[0] as usize] += 1;
+            let skip = if search_w > 100 { 2 } else { 1 }; 
+            for (i, p) in blurred.pixels().enumerate() {
+                if i % skip == 0 { hist[p.0[0] as usize] += 1; }
             }
-            let target = (rw * rh) as f32 * 0.15;
+            
+            let target = ((search_w * search_h) / (skip as u32 * skip as u32)) as f32 * 0.15;
             let mut acc = 0u32;
-            let mut val = 50u8;
+            let mut raw_val = 50u8;
             for (i, &count) in hist.iter().enumerate() {
                 acc += count;
                 if acc as f32 >= target {
-                    val = i as u8;
+                    raw_val = i as u8;
                     break;
                 }
             }
-            val
+
+            let smoothed = (*last_threshold as f32 * 0.8) + (raw_val as f32 * 0.2);
+            let final_val = smoothed as u8;
+            *last_threshold = final_val;
+            final_val
         } else {
-            threshold
+            manual_threshold
         };
 
         for (x, y, p) in blurred.enumerate_pixels() {
-            let val = if p.0[0] <= threshold_val { 255 } else { 0 };
-            thresh.put_pixel(x, y, Luma([val]));
+            let val = if p.0[0] <= current_thresh_val { 255 } else { 0 };
+            scratch_thresh.put_pixel(x, y, Luma([val]));
         }
 
-        // 4. Morfología Avanzada (Orden Crítico)
-        // A. CIERRE (Close): Tapa agujeros NEGROS dentro de lo blanco (Glints/Reflejos)
-        close_mut(&mut thresh, Norm::LInf, 2); 
-
-        // B. APERTURA (Open) / EROSIÓN: Elimina ruido BLANCO externo (Pestañas finas)
+        close_mut(scratch_thresh, Norm::LInf, 2); 
         for _ in 0..erode_iter {
-            erode_mut(&mut thresh, Norm::LInf, 1);
+            erode_mut(scratch_thresh, Norm::LInf, 1);
         }
 
-        // 5. Contornos
-        let contours = find_contours::<i32>(&thresh);
-        if contours.is_empty() {
-            return (Some(RustPupilResult {
-                center_x: 0.0, center_y: 0.0, radius: 0.0, confidence: 0.0, found: false
-            }), Some(thresh));
-        }
+        let contours = find_contours::<i32>(scratch_thresh);
+        if contours.is_empty() { return Some(RustPupilResult { center_x: 0.0, center_y: 0.0, radius: 0.0, confidence: 0.0, found: false }); }
 
-        // 6. Análisis de Candidatos
-        let max_area = (rw * rh) as f32 * 0.6;
-        let min_area = 50.0;
-
+        let max_area = (full_rw * full_rh) as f32 * 0.6;
+        let min_area = 30.0;
         let mut best_pupil: Option<RustPupilResult> = None;
         let mut max_score = 0.0;
 
         for contour in contours.iter() {
-            // 1. Cálculo rápido de límites para momentos
-            let mut min_cx = rw as i32; let mut max_cx = 0;
-            let mut min_cy = rh as i32; let mut max_cy = 0;
-            
+            let mut min_bcx = search_w as i32; let mut max_bcx = 0;
+            let mut min_bcy = search_h as i32; let mut max_bcy = 0;
             for p in &contour.points {
-                if p.x < min_cx { min_cx = p.x; }
-                if p.x > max_cx { max_cx = p.x; }
-                if p.y < min_cy { min_cy = p.y; }
-                if p.y > max_cy { max_cy = p.y; }
+                if p.x < min_bcx { min_bcx = p.x; }
+                if p.x > max_bcx { max_bcx = p.x; }
+                if p.y < min_bcy { min_bcy = p.y; }
+                if p.y > max_bcy { max_bcy = p.y; }
             }
 
-            // 2. Cálculo de Momentos (Area y Centro de Masa)
+            // --- MEJORA 3: CENTROIDE PONDERADO (Weighted Moments) ---
             let mut m00 = 0.0;
-            let mut m10 = 0.0;
-            let mut m01 = 0.0;
+            let mut m10_w = 0.0;
+            let mut m01_w = 0.0;
+            let mut weight_sum = 0.0;
 
-            for y in min_cy.max(0)..=max_cy.min(rh as i32 - 1) {
-                for x in min_cx.max(0)..=max_cx.min(rw as i32 - 1) {
-                    if thresh.get_pixel(x as u32, y as u32).0[0] > 128 {
-                            m00 += 1.0;
-                            m10 += x as f32;
-                            m01 += y as f32;
+            for y in min_bcy.max(0)..=max_bcy.min(search_h as i32 - 1) {
+                for x in min_bcx.max(0)..=max_bcx.min(search_w as i32 - 1) {
+                    if scratch_thresh.get_pixel(x as u32, y as u32).0[0] > 128 {
+                        m00 += 1.0;
+                        let intensity = blurred.get_pixel(x as u32, y as u32).0[0] as f32;
+                        let weight = (255.0 - intensity).powi(2); 
+                        m10_w += x as f32 * weight;
+                        m01_w += y as f32 * weight;
+                        weight_sum += weight;
                     }
                 }
             }
@@ -766,26 +1013,22 @@ impl NativeVideoManager {
             let area = m00;
             if area < min_area || area > max_area { continue; }
 
-            // 3. Circularidad Real: 4 * pi * Area / Perimetro^2
             let perimeter_val = perimeter(&contour.points);
             if perimeter_val == 0.0 { continue; }
-            
             let circularity = (4.0 * std::f32::consts::PI * area) / (perimeter_val.powi(2) as f32);
-
-            // Filtro de circularidad: 0.6 es un buen balance para pupilas reales
-            if circularity < 0.60 { continue; }
+            if circularity < 0.55 { continue; }
 
             let score = area * circularity; 
 
             if score > max_score {
-                let center_x = m10 / m00;
-                let center_y = m01 / m00;
+                let center_x = if weight_sum > 0.0 { m10_w / weight_sum } else { 0.0 };
+                let center_y = if weight_sum > 0.0 { m01_w / weight_sum } else { 0.0 };
                 let radius = (area / std::f32::consts::PI).sqrt();
 
                 max_score = score;
                 best_pupil = Some(RustPupilResult {
-                    center_x: x1 as f32 + center_x,
-                    center_y: y1 as f32 + center_y,
+                    center_x: x1 as f32 + offset_x as f32 + center_x,
+                    center_y: y1 as f32 + offset_y as f32 + center_y,
                     radius,
                     confidence: circularity.min(1.0),
                     found: true,
@@ -793,12 +1036,9 @@ impl NativeVideoManager {
             }
         }
 
-        match best_pupil {
-            Some(p) => (Some(p), Some(thresh)),
-            None => (Some(RustPupilResult {
-                center_x: 0.0, center_y: 0.0, radius: 0.0, confidence: 0.0, found: false
-            }), Some(thresh))
-        }
+        best_pupil.or(Some(RustPupilResult {
+            center_x: 0.0, center_y: 0.0, radius: 0.0, confidence: 0.0, found: false
+        }))
     }
 
     /// Dibuja un rectángulo en buffer RGB
@@ -894,6 +1134,16 @@ impl NativeVideoManager {
 
     pub fn stop_capture(&self) {
         self.running.store(false, Ordering::SeqCst);
+    }
+
+    pub fn get_video_recorder_arc(&self) -> Arc<Mutex<Option<VideoRecorder>>> {
+        self.active_video_recorder.clone()
+    }
+
+    pub fn get_capture_dimensions(&self) -> (u32, u32) {
+        let w = *self.capture_width.lock().unwrap();
+        let h = *self.capture_height.lock().unwrap();
+        (w, h)
     }
 
     /// Aplica brillo y contraste optimizado para GrayImage usando LUT

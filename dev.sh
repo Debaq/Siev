@@ -22,8 +22,7 @@ NC='\033[0m' # No Color
 # Step 0: Cleanup
 # ---------------------------------------------------------
 echo -e "${YELLOW}Cleaning up existing SIEV processes...${NC}"
-# Kill any existing python backend or tauri processes
-pkill -f "backend/main.py" || true
+# Kill any existing tauri processes
 pkill -f "siev" || true
 
 # Check for busy cameras
@@ -67,11 +66,6 @@ else
     echo -e "${YELLOW}lsof not found, skipping camera check.${NC}"
 fi
 
-# Clean up Python cache to ensure fresh execution
-echo -e "${YELLOW}Cleaning up Python cache...${NC}"
-find backend -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-find backend -name "*.pyc" -delete 2>/dev/null || true
-
 # Helper: Prompt with Timeout
 ask_with_default() {
     # $1 = Prompt text, $2 = Default, $3 = Var Name
@@ -92,7 +86,7 @@ ask_with_default() {
 # ---------------------------------------------------------
 # Step 1: Frontend (Vite/Node)
 # ---------------------------------------------------------
-echo -e "\n${BLUE}[1/3] Building Frontend...${NC}"
+echo -e "\n${BLUE}[1/2] Building Frontend...${NC}"
 cd frontend
 
 # Check if we need to install first
@@ -127,7 +121,7 @@ cd ..
 # ---------------------------------------------------------
 # Step 2: Rust Backend (Tauri)
 # ---------------------------------------------------------
-echo -e "\n${BLUE}[2/3] Checking Rust backend...${NC}"
+echo -e "\n${BLUE}[2/2] Checking Rust backend...${NC}"
 cd src-tauri
 # Cargo automatically handles deps on build/check, but we can check connectivity/setup
 if cargo check 2>/dev/null; then
@@ -146,159 +140,7 @@ fi
 cd ..
 
 # ---------------------------------------------------------
-# Step 3: Python Backend
-# ---------------------------------------------------------
-echo -e "\n${BLUE}[3/3] Checking Python backend...${NC}"
-
-check_python_deps() {
-    python3 -c "import cv2, numpy, torch; print('Dependencies OK')" 2>/dev/null
-}
-
-if check_python_deps; then
-    echo -e "${GREEN}✓ Python dependencies OK${NC}"
-else
-    echo -e "${YELLOW}⚠ Python dependencies missing.${NC}"
-    
-    # Check for managers
-    # Helper to detect managers more robustly
-    detect_managers() {
-        # 1. Check PATH first
-        if command -v micromamba >/dev/null 2>&1; then return 0; fi
-        if command -v conda >/dev/null 2>&1; then return 0; fi
-
-        # 2. Try to extract location from user's interactive shell (loads .bashrc)
-        # This catches custom installs where MAMBA_EXE/CONDA_EXE are set in .bashrc
-        local mamba_exe
-        mamba_exe=$(bash -i -c "echo \"\$MAMBA_EXE\"" 2>/dev/null | tail -n 1) # tail to avoid prompt noise
-        if [ -n "$mamba_exe" ] && [ -x "$mamba_exe" ]; then
-             echo -e "${YELLOW}Found MAMBA_EXE via interactive shell: $mamba_exe${NC}"
-             # Add the directory of the executable to PATH so subsequent calls work
-             export PATH="$(dirname "$mamba_exe"):$PATH"
-             return 0
-        fi
-
-        local conda_exe
-        conda_exe=$(bash -i -c "echo \"\$CONDA_EXE\"" 2>/dev/null | tail -n 1)
-        if [ -n "$conda_exe" ] && [ -x "$conda_exe" ]; then
-             echo -e "${YELLOW}Found CONDA_EXE via interactive shell: $conda_exe${NC}"
-             export PATH="$(dirname "$conda_exe"):$PATH"
-             return 0
-        fi
-
-        # 3. Check common installation paths
-        local common_paths=(
-            "$HOME/.local/bin"
-            "$HOME/micromamba/bin"
-            "$HOME/miniconda3/bin"
-            "$HOME/anaconda3/bin"
-            "$HOME/miniforge3/bin"
-            "/opt/conda/bin"
-            "/usr/local/bin"
-        )
-
-        for p in "${common_paths[@]}"; do
-            if [ -x "$p/micromamba" ]; then
-                echo -e "${YELLOW}Found micromamba in $p, adding to PATH...${NC}"
-                export PATH="$p:$PATH"
-                return 0
-            elif [ -x "$p/conda" ]; then
-                echo -e "${YELLOW}Found conda in $p, adding to PATH...${NC}"
-                export PATH="$p:$PATH"
-                return 0
-            fi
-        done
-        return 1
-    }
-
-    if ! detect_managers; then
-        echo -e "${YELLOW}No Conda or Micromamba found.${NC}"
-        ask_with_default "Install Micromamba now?" "Y" INSTALL_MAMBA
-        if [[ "$INSTALL_MAMBA" =~ ^[Yy] ]]; then
-            echo "Installing Micromamba..."
-            "${SHELL}" <(curl -L micro.mamba.pm/install.sh)
-            # Attempt to add to PATH if installed to default location
-            [ -f "$HOME/.local/bin/micromamba" ] && export PATH="$HOME/.local/bin:$PATH"
-        fi
-    fi
-    
-    ask_with_default "Setup/Activate Python environment?" "Y" SETUP_ENV
-    
-    if [[ "$SETUP_ENV" =~ ^[Yy] ]]; then
-        # Determine default manager
-        DEF_MGR="micromamba"
-        # Check if conda is preferred/available if micromamba isn't
-        if ! (command -v micromamba >/dev/null 2>&1 || micromamba --version >/dev/null 2>&1) && \
-           (command -v conda >/dev/null 2>&1 || conda --version >/dev/null 2>&1); then
-            DEF_MGR="conda"
-        fi
-
-        ask_with_default "Manager [micromamba/conda]?" "$DEF_MGR" MGR
-        ask_with_default "Environment name?" "siev" ENV_NAME
-        
-        # 1. Initialize Shell Hook
-        # Allow if command -v works OR if --version works (handling user's edge case)
-        if command -v $MGR >/dev/null 2>&1 || $MGR --version >/dev/null 2>&1; then
-            if [ "$MGR" = "micromamba" ]; then
-                eval "$(micromamba shell hook --shell bash)"
-            else
-                eval "$(conda shell.bash hook)"
-            fi
-        else
-            echo -e "${RED}✗ $MGR not found in PATH.${NC}"
-            exit 1
-        fi
-
-        # 2. Try Activate
-        echo "Attempting to activate '$ENV_NAME'..."
-        if ! $MGR activate "$ENV_NAME" 2>/dev/null; then
-            echo -e "${YELLOW}Environment '$ENV_NAME' not found.${NC}"
-            
-            ask_with_default "Create environment '$ENV_NAME'?" "Y" CREATE_ENV
-            if [[ "$CREATE_ENV" =~ ^[Yy] ]]; then
-                echo "Creating '$ENV_NAME' (python 3.13)..."
-                # Use -y to confirm
-                $MGR create -n "$ENV_NAME" python=3.13 -y
-                
-                echo "Activating..."
-                $MGR activate "$ENV_NAME"
-            fi
-        fi
-        
-        # 3. Check Dependencies Again
-        if check_python_deps; then
-            echo -e "${GREEN}✓ Environment activated & dependencies OK${NC}"
-        else
-            echo -e "${YELLOW}Dependencies still missing in '$ENV_NAME'.${NC}"
-            
-            if [ -f "requirements.txt" ]; then
-                ask_with_default "Install dependencies from requirements.txt?" "Y" INSTALL_DEPS
-                if [[ "$INSTALL_DEPS" =~ ^[Yy] ]]; then
-                    echo "Checking for NVIDIA GPU..."
-                    if ! (lspci | grep -i nvidia > /dev/null 2>&1) && ! command -v nvidia-smi &> /dev/null; then
-                        echo -e "${YELLOW}No NVIDIA GPU detected. Installing CPU-only PyTorch...${NC}"
-                        pip install "torch<2.10" torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-                    else
-                         echo -e "${GREEN}NVIDIA GPU detected (or check skipped). Proceeding with standard install...${NC}"
-                    fi
-
-                    echo "Installing dependencies..."
-                    pip install -r requirements.txt
-                    
-                    if check_python_deps; then
-                        echo -e "${GREEN}✓ Dependencies installed successfully${NC}"
-                    else
-                        echo -e "${RED}✗ Dependencies check failed even after install.${NC}"
-                    fi
-                fi
-            else
-                echo -e "${RED}✗ requirements.txt not found in root.${NC}"
-            fi
-        fi
-    fi
-fi
-
-# ---------------------------------------------------------
-# Step 4: Final Launch
+# Step 3: Final Launch
 # ---------------------------------------------------------
 ask_with_default "Launch in Release mode for maximum performance?" "N" RELEASE_MODE
 

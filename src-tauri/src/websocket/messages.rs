@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::math::processor::ProcessedEyeData;
+use crate::math::processor::{ProcessedEyeData, ManualCalibrationPoint};
 
 fn default_fps() -> u32 {
     120
@@ -63,4 +63,8 @@ pub enum WsMessage {
         session_id: i64,
     },
     StopRecording,
+    CalibrationData {
+        points: Vec<ManualCalibrationPoint>,
+        patient_distance: f64,
+    },
 }

@@ -15,6 +15,7 @@ use math::processor::{EyeProcessor, ProcessedEyeData, RawEyeData};
 use websocket::{WebSocketServer, WsMessage};
 use crate::storage::bundle::{SievBundle, SessionManifest};
 use crate::storage::recorder::SessionRecorder;
+use crate::storage::review::{SessionReviewPayload, ChartEyeDataPoint};
 use crate::vng::report::{VNGReportData, PatientReportData, SessionReportData};
 use std::path::PathBuf;
 
@@ -26,6 +27,7 @@ pub struct AppState {
     pub ws_server: Arc<WebSocketServer>,
     pub active_recorder: Arc<Mutex<Option<SessionRecorder>>>,
     pub native_video: Arc<vng::NativeVideoManager>,
+    pub active_bundle_path: Arc<Mutex<Option<PathBuf>>>,
 }
 
 // --- Math & Processing Commands ---
@@ -167,6 +169,11 @@ async fn create_session(
         specialist_id,
     };
     bundle.init(&manifest).map_err(|e| format!("Failed to initialize storage: {}", e))?;
+    // Store bundle path for calibration saving
+    {
+        let mut bp = state.active_bundle_path.lock().unwrap();
+        *bp = Some(bundle.bundle_path.clone());
+    }
     let video_path = bundle.get_video_path().to_string_lossy().to_string();
     let data_path = bundle.get_data_path().to_string_lossy().to_string();
     state.db.update_session_paths(session.id, Some(video_path.clone()), Some(data_path.clone())).await?;
@@ -267,8 +274,13 @@ async fn python_stop_capture(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn python_list_cameras(_state: State<'_, AppState>) -> Result<(), String> {
-    Ok(())
+async fn python_list_cameras(_state: State<'_, AppState>) -> Result<Vec<vng::native_video::CameraInfo>, String> {
+    vng::native_video::list_cameras()
+}
+
+#[tauri::command]
+async fn list_camera_formats(camera_id: u32, _state: State<'_, AppState>) -> Result<Vec<vng::native_video::CameraFormatInfo>, String> {
+    vng::native_video::list_camera_formats(camera_id)
 }
 
 #[tauri::command]
@@ -484,6 +496,187 @@ async fn open_external_display(app: tauri::AppHandle) -> Result<bool, String> {
     Ok(true)
 }
 
+// --- Session Review Commands ---
+
+#[tauri::command]
+async fn load_session_review(
+    session_id: i64,
+    _app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<SessionReviewPayload, String> {
+    // 1. Look up session in DB
+    let session = state.db.get_session_by_id(session_id).await?
+        .ok_or_else(|| format!("Session {} not found", session_id))?;
+
+    // 2. Deduce bundle path from data_path
+    let data_path = session.data_path
+        .ok_or_else(|| "Session has no data path".to_string())?;
+    let bundle_path = PathBuf::from(&data_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "Cannot deduce bundle path".to_string())?;
+
+    // 3. Build review payload (data + metrics)
+    let max_points = 2000;
+    let mut payload = storage::review::build_session_review(&bundle_path, session_id, max_points)?;
+
+    // 4. Convert H.264 -> MP4 if needed
+    let raw_video = bundle_path.join("video").join("raw_capture.mp4");
+    let playback = bundle_path.join("video").join("playback.mp4");
+
+    if raw_video.exists() && !playback.exists() {
+        let (width, height) = storage::video_convert::detect_video_dimensions(&raw_video, 640, 480);
+        storage::video_convert::convert_h264_to_mp4(&raw_video, &playback, width, height, 30)?;
+    }
+
+    // 5. Return the file path - frontend converts it with convertFileSrc()
+    if playback.exists() {
+        payload.video_url = Some(playback.to_string_lossy().to_string());
+        payload.video_available = true;
+    }
+
+    Ok(payload)
+}
+
+#[tauri::command]
+async fn get_eye_data_window(
+    session_id: i64,
+    start_time: f64,
+    end_time: f64,
+    max_points: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<ChartEyeDataPoint>, String> {
+    let session = state.db.get_session_by_id(session_id).await?
+        .ok_or_else(|| format!("Session {} not found", session_id))?;
+
+    let data_path = session.data_path
+        .ok_or_else(|| "Session has no data path".to_string())?;
+
+    let window_data = storage::review::load_eye_data_window(
+        &PathBuf::from(&data_path),
+        start_time,
+        end_time,
+    )?;
+
+    let target = max_points.unwrap_or(2000);
+    let base_ts = window_data.first().map(|d| d.timestamp).unwrap_or(0.0);
+
+    // Convert to chart data points with LTTB
+    if window_data.len() <= target {
+        return Ok(window_data.iter().map(|d| ChartEyeDataPoint {
+            t: d.timestamp - base_ts + start_time,
+            lx: d.left.map(|l| l[0]),
+            ly: d.left.map(|l| l[1]),
+            rx: d.right.map(|r| r[0]),
+            ry: d.right.map(|r| r[1]),
+        }).collect());
+    }
+
+    // Downsample using LTTB on right eye horizontal
+    let time_vals: Vec<(f64, f64)> = window_data.iter().map(|d| {
+        let t = d.timestamp - base_ts + start_time;
+        let v = d.right.map(|r| r[0]).or(d.left.map(|l| l[0])).unwrap_or(0.0);
+        (t, v)
+    }).collect();
+
+    let downsampled = storage::review::downsample_lttb(&time_vals, target);
+    let target_times: Vec<f64> = downsampled.iter().map(|(t, _)| *t).collect();
+
+    let mut result = Vec::with_capacity(target_times.len());
+    let mut search_start = 0;
+
+    for target_t in &target_times {
+        let mut best_idx = search_start;
+        let mut best_diff = ((window_data[search_start].timestamp - base_ts + start_time) - target_t).abs();
+
+        for i in (search_start + 1)..window_data.len() {
+            let diff = ((window_data[i].timestamp - base_ts + start_time) - target_t).abs();
+            if diff < best_diff {
+                best_diff = diff;
+                best_idx = i;
+            } else if diff > best_diff {
+                break;
+            }
+        }
+
+        search_start = best_idx;
+        let d = &window_data[best_idx];
+        result.push(ChartEyeDataPoint {
+            t: d.timestamp - base_ts + start_time,
+            lx: d.left.map(|l| l[0]),
+            ly: d.left.map(|l| l[1]),
+            rx: d.right.map(|r| r[0]),
+            ry: d.right.map(|r| r[1]),
+        });
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+async fn recalibrate_session(
+    session_id: i64,
+    calibration: math::processor::CalibrationSnapshot,
+    _app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<SessionReviewPayload, String> {
+    let session = state.db.get_session_by_id(session_id).await?
+        .ok_or_else(|| format!("Session {} not found", session_id))?;
+
+    let data_path = session.data_path
+        .ok_or_else(|| "Session has no data path".to_string())?;
+    let bundle_path = PathBuf::from(&data_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "Cannot deduce bundle path".to_string())?;
+
+    // Load old calibration for relative correction
+    let old_calibration = SievBundle::load_calibration(&bundle_path)
+        .map_err(|e| format!("No previous calibration found: {}", e))?;
+
+    // Save new calibration
+    SievBundle::save_calibration(&bundle_path, &calibration)
+        .map_err(|e| format!("Failed to save calibration: {}", e))?;
+
+    // Rebuild with recalibrated data
+    let mut payload = storage::review::build_recalibrated_review(
+        &bundle_path, session_id, 2000, &calibration, &old_calibration,
+    )?;
+
+    // Set video path if available - frontend converts with convertFileSrc()
+    let playback = bundle_path.join("video").join("playback.mp4");
+    if playback.exists() {
+        payload.video_url = Some(playback.to_string_lossy().to_string());
+    }
+
+    Ok(payload)
+}
+
+#[tauri::command]
+async fn get_video_conversion_status(
+    session_id: i64,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let session = state.db.get_session_by_id(session_id).await?
+        .ok_or_else(|| format!("Session {} not found", session_id))?;
+
+    let data_path = session.data_path
+        .ok_or_else(|| "Session has no data path".to_string())?;
+    let bundle_path = PathBuf::from(&data_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "Cannot deduce bundle path".to_string())?;
+
+    let raw_exists = bundle_path.join("video").join("raw_capture.mp4").exists();
+    let mp4_exists = storage::video_convert::playback_mp4_exists(&bundle_path);
+
+    Ok(serde_json::json!({
+        "raw_exists": raw_exists,
+        "mp4_exists": mp4_exists,
+        "status": if mp4_exists { "ready" } else if raw_exists { "needs_conversion" } else { "no_video" }
+    }))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -491,10 +684,28 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             println!("SIEV Application started (Native Video Mode)");
+
+            // Intentar cargar el icono de la ventana explícitamente (Crítico para Linux)
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_title("SIEV - Video-Oculografía");
+                
+                // Cargar y decodificar el icono desde los recursos
+                let icon_path = app.path().resource_dir().unwrap().join("icons/32x32.png");
+                if let Ok(icon_bytes) = std::fs::read(icon_path) {
+                    if let Ok(img) = image::load_from_memory(&icon_bytes) {
+                        let rgba = img.to_rgba8();
+                        let (width, height) = rgba.dimensions();
+                        let tauri_image = tauri::image::Image::new(rgba.as_raw(), width, height);
+                        let _ = window.set_icon(tauri_image);
+                    }
+                }
+            }
+
             let app_handle = app.handle();
             let db_service = tauri::async_runtime::block_on(async { DatabaseService::new(app_handle).await }).expect("Failed to initialize database");
             let db_for_state = Arc::new(db_service);
             let active_recorder: Arc<Mutex<Option<SessionRecorder>>> = Arc::new(Mutex::new(None));
+            let active_bundle_path: Arc<Mutex<Option<PathBuf>>> = Arc::new(Mutex::new(None));
             let hardware_manager = Arc::new(Mutex::new(HardwareManager::new()));
             let (ws_server, mut ws_commands) = WebSocketServer::new();
             let ws_server = Arc::new(ws_server);
@@ -502,13 +713,61 @@ pub fn run() {
             tauri::async_runtime::spawn(async move { if let Err(e) = ws_clone.start("127.0.0.1:0").await { eprintln!("WebSocket server error: {}", e); } });
 
             let eye_processor = Arc::new(Mutex::new(EyeProcessor::new()));
-            let native_video = Arc::new(vng::NativeVideoManager::new(Arc::clone(&ws_server), Arc::clone(&eye_processor)));
+            let native_video = Arc::new(vng::NativeVideoManager::new(Arc::clone(&ws_server), Arc::clone(&eye_processor), Arc::clone(&active_recorder)));
 
             let native_cmds = Arc::clone(&native_video);
+            let ws_for_handler = Arc::clone(&ws_server);
+            let eye_proc_for_ws = Arc::clone(&eye_processor);
+            let bundle_path_for_ws = Arc::clone(&active_bundle_path);
+            let recorder_for_ws = Arc::clone(&active_recorder);
+            let db_for_ws = Arc::clone(&db_for_state);
             let app_handle_for_ws = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 while let Some(msg) = ws_commands.recv().await {
                     match msg {
+                        WsMessage::ListCameras => {
+                            match vng::native_video::list_cameras() {
+                                Ok(cameras) => {
+                                    let cameras_json: Vec<serde_json::Value> = cameras.iter().map(|c| {
+                                        serde_json::json!({
+                                            "id": c.index,
+                                            "name": c.name,
+                                            "path": format!("/dev/video{}", c.index)
+                                        })
+                                    }).collect();
+                                    ws_for_handler.broadcast(&WsMessage::CamerasList {
+                                        cameras: serde_json::Value::Array(cameras_json),
+                                    });
+                                }
+                                Err(e) => {
+                                    eprintln!("[SIEV] Error listando cámaras: {}", e);
+                                    ws_for_handler.broadcast(&WsMessage::Error {
+                                        source: "camera".to_string(),
+                                        message: e,
+                                    });
+                                }
+                            }
+                        }
+                        WsMessage::ListResolutions { camera_id } => {
+                            match vng::native_video::list_camera_formats(camera_id as u32) {
+                                Ok(formats) => {
+                                    let resolutions: Vec<String> = formats.iter()
+                                        .map(|f| format!("{}x{}@{}", f.width, f.height, f.fps))
+                                        .collect();
+                                    ws_for_handler.broadcast(&WsMessage::ResolutionsList {
+                                        resolutions,
+                                        camera_id,
+                                    });
+                                }
+                                Err(e) => {
+                                    eprintln!("[SIEV] Error listando formatos: {}", e);
+                                    ws_for_handler.broadcast(&WsMessage::Error {
+                                        source: "camera".to_string(),
+                                        message: e,
+                                    });
+                                }
+                            }
+                        }
                         WsMessage::StartCapture { camera_id, width, height, fps } => {
                             let model_path = app_handle_for_ws.path().resource_dir()
                                 .map(|p| p.join("backend/models/siev_vng_r01.onnx"))
@@ -565,7 +824,125 @@ pub fn run() {
                                 "smooth" => { if let Some(val) = value.as_f64() { native_cmds.set_smooth(val as f32); } }
                                 "brightness" => { if let Some(val) = value.as_i64() { native_cmds.set_brightness(val as i32); } }
                                 "contrast" => { if let Some(val) = value.as_f64() { native_cmds.set_contrast(val as f32); } }
+                                "camera_setup" => {
+                                    // Reiniciar captura con nueva configuración (start_capture maneja stop internamente)
+                                    if let Some(obj) = value.as_object() {
+                                        let camera_id = obj.get("camera_id").and_then(|v| v.as_i64()).unwrap_or(0) as u32;
+                                        let width = obj.get("width").and_then(|v| v.as_u64()).unwrap_or(640) as u32;
+                                        let height = obj.get("height").and_then(|v| v.as_u64()).unwrap_or(480) as u32;
+                                        let fps = obj.get("fps").and_then(|v| v.as_u64()).unwrap_or(120) as u32;
+
+                                        let model_path = app_handle_for_ws.path().resource_dir()
+                                            .map(|p| p.join("backend/models/siev_vng_r01.onnx"))
+                                            .ok()
+                                            .filter(|p| p.exists())
+                                            .or_else(|| {
+                                                let dev_path = std::path::PathBuf::from("../backend/models/siev_vng_r01.onnx");
+                                                if dev_path.exists() { Some(dev_path) } else { None }
+                                            })
+                                            .or_else(|| {
+                                                let abs_path = std::path::PathBuf::from("/home/nick/Escritorio/Proyectos/Siev/backend/models/siev_vng_r01.onnx");
+                                                if abs_path.exists() { Some(abs_path) } else { None }
+                                            })
+                                            .map(|p| p.to_string_lossy().to_string())
+                                            .unwrap_or_else(|| "backend/models/siev_vng_r01.onnx".to_string());
+
+                                        let _ = native_cmds.start_capture(camera_id, width, height, fps, model_path);
+                                    }
+                                }
                                 _ => {}
+                            }
+                        }
+                        WsMessage::StartRecording { session_id } => {
+                            println!("[SIEV] StartRecording for session {}", session_id);
+                            match db_for_ws.get_session_by_id(session_id).await {
+                                Ok(Some(session)) => {
+                                    // Start eye data recorder
+                                    if let Some(data_path) = session.data_path {
+                                        let path = PathBuf::from(&data_path);
+                                        let recorder = SessionRecorder::start(path);
+                                        let mut guard = recorder_for_ws.lock().unwrap();
+                                        *guard = Some(recorder);
+                                        println!("[SIEV] Data recording started -> {}", data_path);
+                                    } else {
+                                        eprintln!("[SIEV] Session {} has no data_path", session_id);
+                                    }
+
+                                    // Start video recorder
+                                    if let Some(video_path) = session.video_path {
+                                        let (cw, ch) = native_cmds.get_capture_dimensions();
+                                        if cw > 0 && ch > 0 {
+                                            let vpath = PathBuf::from(&video_path);
+                                            match storage::VideoRecorder::start(vpath, cw, ch, 30) {
+                                                Ok(vrec) => {
+                                                    let vr_arc = native_cmds.get_video_recorder_arc();
+                                                    let mut guard = vr_arc.lock().unwrap();
+                                                    *guard = Some(vrec);
+                                                    println!("[SIEV] Video recording started -> {}", video_path);
+                                                }
+                                                Err(e) => {
+                                                    eprintln!("[SIEV] Failed to start video recorder: {}", e);
+                                                }
+                                            }
+                                        } else {
+                                            eprintln!("[SIEV] Cannot start video recording: capture not active");
+                                        }
+                                    }
+                                }
+                                Ok(None) => {
+                                    eprintln!("[SIEV] Session {} not found", session_id);
+                                }
+                                Err(e) => {
+                                    eprintln!("[SIEV] Error fetching session {}: {}", session_id, e);
+                                }
+                            }
+                        }
+                        WsMessage::StopRecording => {
+                            println!("[SIEV] StopRecording");
+                            // Stop eye data recorder
+                            let recorder = {
+                                let mut guard = recorder_for_ws.lock().unwrap();
+                                guard.take()
+                            };
+                            if let Some(rec) = recorder {
+                                rec.stop().await;
+                                println!("[SIEV] Data recording stopped and saved");
+                            }
+                            // Stop video recorder
+                            let video_recorder = {
+                                let vr_arc = native_cmds.get_video_recorder_arc();
+                                let mut guard = vr_arc.lock().unwrap();
+                                guard.take()
+                            };
+                            if let Some(vrec) = video_recorder {
+                                // Run blocking stop in a separate thread to avoid blocking async
+                                tokio::task::spawn_blocking(move || {
+                                    vrec.stop();
+                                }).await.ok();
+                                println!("[SIEV] Video recording stopped and saved");
+                            }
+                        }
+                        WsMessage::CalibrationData { points, patient_distance } => {
+                            let num_points = points.len();
+                            let points_clone = points.clone();
+                            let cal_data = math::processor::ManualCalibrationData {
+                                points,
+                                patient_distance,
+                            };
+                            let mut proc = eye_proc_for_ws.lock().unwrap();
+                            proc.apply_manual_calibration(cal_data);
+                            println!("[SIEV] Manual calibration applied ({} points, distance: {}cm)",
+                                num_points, patient_distance);
+
+                            // Save calibration to bundle if active
+                            if let Some(mut snapshot) = proc.export_calibration_snapshot() {
+                                snapshot.points = points_clone;
+                                snapshot.patient_distance = patient_distance;
+                                if let Some(ref bp) = *bundle_path_for_ws.lock().unwrap() {
+                                    if let Err(e) = storage::bundle::SievBundle::save_calibration(bp, &snapshot) {
+                                        eprintln!("[SIEV] Failed to save calibration: {}", e);
+                                    }
+                                }
                             }
                         }
                         _ => {}
@@ -573,7 +950,7 @@ pub fn run() {
                 }
             });
 
-            app.manage(AppState { eye_processor, hardware_manager, db: db_for_state, ws_server, active_recorder, native_video });
+            app.manage(AppState { eye_processor, hardware_manager, db: db_for_state, ws_server, active_recorder, native_video, active_bundle_path });
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -585,11 +962,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_version, get_websocket_port, process_eye_data_batch, reset_calibration, list_serial_ports, is_hardware_connected, connect_hardware, disconnect_hardware, send_hardware_command,
-            is_python_connected, python_start_capture, python_stop_capture, python_list_cameras, python_set_pupil_config,
+            is_python_connected, python_start_capture, python_stop_capture, python_list_cameras, list_camera_formats, python_set_pupil_config,
             get_patients, create_patient, update_patient, delete_patient, get_sessions, create_session, get_specialists, create_specialist, delete_specialist,
             get_setting, set_setting, get_default_storage_path, set_filtering_enabled, sync_storage, reset_application,
             get_vng_report_data, save_vng_test_result, get_vng_test_results, get_reference_values, calculate_vng_metrics, open_external_display,
-            set_manual_roi_right, set_manual_roi_left, get_manual_rois, set_use_yolo
+            set_manual_roi_right, set_manual_roi_left, get_manual_rois, set_use_yolo,
+            load_session_review, get_eye_data_window, recalibrate_session, get_video_conversion_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
