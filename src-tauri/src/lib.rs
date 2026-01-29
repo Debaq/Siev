@@ -850,6 +850,52 @@ pub fn run() {
                                         let _ = native_cmds.start_capture(camera_id, width, height, fps, model_path);
                                     }
                                 }
+                                "session_update" => {
+                                    // Bulk update: unpack all fields and apply individually
+                                    if let Some(obj) = value.as_object() {
+                                        if let Some(val) = obj.get("brightness").and_then(|v| v.as_i64()) {
+                                            native_cmds.set_brightness(val as i32);
+                                        }
+                                        if let Some(val) = obj.get("contrast").and_then(|v| v.as_f64()) {
+                                            native_cmds.set_contrast(val as f32);
+                                        }
+                                        if let Some(arr) = obj.get("threshold").and_then(|v| v.as_array()) {
+                                            let right = arr.get(0).and_then(|v| v.as_u64()).unwrap_or(40) as u8;
+                                            let left = arr.get(1).and_then(|v| v.as_u64()).unwrap_or(40) as u8;
+                                            native_cmds.set_thresholds(right, left);
+                                        }
+                                        if let Some(val) = obj.get("nose_width").and_then(|v| v.as_f64()) {
+                                            native_cmds.set_nose_width(val as f32);
+                                        }
+                                        if let Some(val) = obj.get("eye_height").and_then(|v| v.as_f64()) {
+                                            native_cmds.set_eye_height(val as f32);
+                                        }
+                                        if let Some(val) = obj.get("use_yolo").and_then(|v| v.as_bool()) {
+                                            native_cmds.set_use_yolo(val);
+                                        }
+                                        if let Some(val) = obj.get("show_debug").and_then(|v| v.as_bool()) {
+                                            native_cmds.set_show_debug(val);
+                                        }
+                                        if let Some(val) = obj.get("smooth").and_then(|v| v.as_f64()) {
+                                            native_cmds.set_smooth(val as f32);
+                                        }
+                                        if let Some(roi_obj) = obj.get("manual_roi_right").and_then(|v| v.as_object()) {
+                                            let top = roi_obj.get("top").and_then(|v| v.as_f64()).unwrap_or(0.1) as f32;
+                                            let bottom = roi_obj.get("bottom").and_then(|v| v.as_f64()).unwrap_or(0.9) as f32;
+                                            let nasal = roi_obj.get("nasal").and_then(|v| v.as_f64()).unwrap_or(0.1) as f32;
+                                            let temporal = roi_obj.get("temporal").and_then(|v| v.as_f64()).unwrap_or(0.9) as f32;
+                                            native_cmds.set_manual_roi_right(top, bottom, nasal, temporal);
+                                        }
+                                        if let Some(roi_obj) = obj.get("manual_roi_left").and_then(|v| v.as_object()) {
+                                            let top = roi_obj.get("top").and_then(|v| v.as_f64()).unwrap_or(0.1) as f32;
+                                            let bottom = roi_obj.get("bottom").and_then(|v| v.as_f64()).unwrap_or(0.9) as f32;
+                                            let nasal = roi_obj.get("nasal").and_then(|v| v.as_f64()).unwrap_or(0.1) as f32;
+                                            let temporal = roi_obj.get("temporal").and_then(|v| v.as_f64()).unwrap_or(0.9) as f32;
+                                            native_cmds.set_manual_roi_left(top, bottom, nasal, temporal);
+                                        }
+                                        println!("[SIEV] Session update applied (bulk config sync)");
+                                    }
+                                }
                                 _ => {}
                             }
                         }

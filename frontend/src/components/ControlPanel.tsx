@@ -2,12 +2,50 @@ import { useState, useRef, useEffect } from 'react'
 import {
   Circle, Crosshair,
   Cpu, Lightbulb, LightbulbOff,
-  Sun, Activity, Eye, Settings, X, RotateCcw
+  Sun, Activity, Eye, Settings, X, RotateCcw, ChevronDown
 } from 'lucide-react'
 import { useTauriHardware } from '../hooks/useTauriHardware'
 import { UseSessionConfigReturn } from '../hooks/useSessionConfig'
 import { useWebSocket } from '../contexts/WebSocketContext'
 import { StimulusController } from './StimulusController'
+
+interface AccordionSectionProps {
+  id: string
+  icon: any
+  title: string
+  badge?: { label: string; color: string }
+  children: React.ReactNode
+  openSection: string
+  onToggle: (id: string) => void
+}
+
+function AccordionSection({ id, icon: Icon, title, badge, children, openSection, onToggle }: AccordionSectionProps) {
+  const isOpen = openSection === id
+  return (
+    <div className="border-b border-dark-700/50">
+      <button
+        onClick={() => onToggle(id)}
+        className="flex items-center justify-between w-full py-2 px-1 text-left hover:bg-dark-800/50 transition-colors rounded"
+      >
+        <div className="flex items-center gap-1.5">
+          <Icon className="w-3 h-3 text-dark-400" />
+          <span className="text-[10px] uppercase font-bold text-dark-400">{title}</span>
+          {badge && (
+            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full" style={{ backgroundColor: `${badge.color}20`, color: badge.color }}>
+              {badge.label}
+            </span>
+          )}
+        </div>
+        <ChevronDown className={`w-3 h-3 text-dark-500 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      <div
+        className={`overflow-hidden transition-all duration-200 ${isOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}
+      >
+        <div className="pb-3 px-1">{children}</div>
+      </div>
+    </div>
+  )
+}
 
 interface ControlPanelProps {
   isCapturing: boolean
@@ -29,6 +67,7 @@ function ControlPanel({
   const { send, hardwareStatus: _wsHardwareStatus } = useWebSocket()
   const [isRecording, setIsRecording] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [openSection, setOpenSection] = useState<string>('image')
   const advancedPanelRef = useRef<HTMLDivElement>(null)
 
   // Extract values and methods from sessionConfig
@@ -135,6 +174,17 @@ function ControlPanel({
     await controlLed(ledType, action)
   }
 
+  /** Compute CSS vars for colored track fill */
+  const sliderStyle = (value: number, min: number, max: number, color?: string): React.CSSProperties => {
+    const pct = ((value - min) / (max - min)) * 100
+    return {
+      '--val-pct': `${pct}%`,
+      ...(color ? { '--slider-color': color } : {}),
+    } as React.CSSProperties
+  }
+
+  const toggleSection = (id: string) => setOpenSection(prev => prev === id ? '' : id)
+
   const SectionTitle = ({ icon: Icon, title }: { icon: any, title: string }) => (
     <div className="flex items-center gap-1.5 text-[10px] uppercase font-bold text-dark-400 mt-4 mb-2 pl-1">
       <Icon className="w-3 h-3" />
@@ -187,118 +237,124 @@ function ControlPanel({
             </div>
           </div>
 
-          <div className="max-h-[350px] overflow-y-auto pr-1 custom-scrollbar">
-            {/* Image Settings */}
-            <SectionTitle icon={Sun} title="Imagen" />
-            <div className="space-y-3 px-1">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="flex justify-between text-[10px] text-dark-400 mb-1">
-                    <span>Brillo</span>
-                    <span>{brightness}</span>
+          <div className="max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
+            {/* === Imagen === */}
+            <AccordionSection id="image" icon={Sun} title="Imagen" openSection={openSection} onToggle={toggleSection}>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                      <span>Brillo</span>
+                      <span>{brightness}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="-64" max="64"
+                      className="w-full"
+                      value={brightness}
+                      onChange={handleBrightnessChange}
+                      style={sliderStyle(brightness, -64, 64)}
+                    />
                   </div>
-                  <input
-                    type="range"
-                    min="-64" max="64"
-                    className="w-full accent-siev-500"
-                    value={brightness}
-                    onChange={handleBrightnessChange}
-                  />
+                  <div>
+                    <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                      <span>Contraste</span>
+                      <span>{contrast}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0" max="100"
+                      className="w-full"
+                      value={contrast}
+                      onChange={handleContrastChange}
+                      style={sliderStyle(contrast, 0, 100)}
+                    />
+                  </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                      <span>Umbral Der</span>
+                      <span>{threshold[0]}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0" max="255"
+                      className="w-full"
+                      value={threshold[0]}
+                      onChange={(e) => handleThresholdChange('right', Number(e.target.value))}
+                      style={sliderStyle(threshold[0], 0, 255)}
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                      <span>Umbral Izq</span>
+                      <span>{threshold[1]}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0" max="255"
+                      className="w-full"
+                      value={threshold[1]}
+                      onChange={(e) => handleThresholdChange('left', Number(e.target.value))}
+                      style={sliderStyle(threshold[1], 0, 255)}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                      <span>Ancho Nariz</span>
+                      <span>{nose_width.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.05" max="0.5" step="0.01"
+                      className="w-full"
+                      value={nose_width}
+                      onChange={handleNoseWidthChange}
+                      style={sliderStyle(nose_width, 0.05, 0.5)}
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                      <span>Altura Ojo</span>
+                      <span>{eye_height.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.05" max="0.5" step="0.01"
+                      className="w-full"
+                      value={eye_height}
+                      onChange={handleEyeHeightChange}
+                      style={sliderStyle(eye_height, 0.05, 0.5)}
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <div className="flex justify-between text-[10px] text-dark-400 mb-1">
-                    <span>Contraste</span>
-                    <span>{contrast}</span>
+                    <span>Suavizado</span>
+                    <span>{smooth.toFixed(1)}</span>
                   </div>
                   <input
                     type="range"
-                    min="0" max="100"
-                    className="w-full accent-siev-500"
-                    value={contrast}
-                    onChange={handleContrastChange}
+                    min="0.5" max="10" step="0.5"
+                    className="w-full"
+                    value={smooth}
+                    onChange={handleSmoothChange}
+                    style={sliderStyle(smooth, 0.5, 10)}
                   />
                 </div>
               </div>
+            </AccordionSection>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="flex justify-between text-[10px] text-dark-400 mb-1">
-                    <span>Umbral Der</span>
-                    <span>{threshold[0]}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0" max="255"
-                    className="w-full accent-siev-500"
-                    value={threshold[0]}
-                    onChange={(e) => handleThresholdChange('right', Number(e.target.value))}
-                  />
-                </div>
-                <div>
-                  <div className="flex justify-between text-[10px] text-dark-400 mb-1">
-                    <span>Umbral Izq</span>
-                    <span>{threshold[1]}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0" max="255"
-                    className="w-full accent-siev-500"
-                    value={threshold[1]}
-                    onChange={(e) => handleThresholdChange('left', Number(e.target.value))}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="flex justify-between text-[10px] text-dark-400 mb-1">
-                    <span>Ancho Nariz</span>
-                    <span>{nose_width.toFixed(2)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.05" max="0.5" step="0.01"
-                    className="w-full accent-siev-500"
-                    value={nose_width}
-                    onChange={handleNoseWidthChange}
-                  />
-                </div>
-                <div>
-                  <div className="flex justify-between text-[10px] text-dark-400 mb-1">
-                    <span>Altura Ojo</span>
-                    <span>{eye_height.toFixed(2)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.05" max="0.5" step="0.01"
-                    className="w-full accent-siev-500"
-                    value={eye_height}
-                    onChange={handleEyeHeightChange}
-                  />
-                </div>
-              </div>
-
-              {/* Smooth */}
-              <div>
-                <div className="flex justify-between text-[10px] text-dark-400 mb-1">
-                  <span>Suavizado (Smooth)</span>
-                  <span>{smooth.toFixed(1)}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.5" max="10" step="0.5"
-                  className="w-full accent-siev-500"
-                  value={smooth}
-                  onChange={handleSmoothChange}
-                />
-              </div>
-            </div>
-
-            {/* ROI Manual - Solo visible cuando YOLO está desactivado */}
+            {/* === ROI Ojo Derecho (solo sin YOLO) === */}
             {!use_yolo && (
-              <>
-                <SectionTitle icon={Eye} title="ROI Manual - Ojo Derecho" />
-                <div className="px-1 space-y-2">
+              <AccordionSection id="roi-right" icon={Eye} title="ROI Ojo Derecho" badge={{ label: 'OD', color: '#ef4444' }} openSection={openSection} onToggle={toggleSection}>
+                <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <div className="flex justify-between text-[10px] text-dark-400 mb-1">
@@ -307,9 +363,10 @@ function ControlPanel({
                       </div>
                       <input
                         type="range" min="0" max="0.5" step="0.01"
-                        className="w-full accent-red-500"
+                        className="w-full"
                         value={manual_roi_right.top}
                         onChange={(e) => handleRoiChange('right', 'top', parseFloat(e.target.value))}
+                        style={sliderStyle(manual_roi_right.top, 0, 0.5, '#ef4444')}
                       />
                     </div>
                     <div>
@@ -319,9 +376,10 @@ function ControlPanel({
                       </div>
                       <input
                         type="range" min="0.5" max="1" step="0.01"
-                        className="w-full accent-red-500"
+                        className="w-full"
                         value={manual_roi_right.bottom}
                         onChange={(e) => handleRoiChange('right', 'bottom', parseFloat(e.target.value))}
+                        style={sliderStyle(manual_roi_right.bottom, 0.5, 1, '#ef4444')}
                       />
                     </div>
                   </div>
@@ -333,9 +391,10 @@ function ControlPanel({
                       </div>
                       <input
                         type="range" min="0" max="0.5" step="0.01"
-                        className="w-full accent-red-500"
+                        className="w-full"
                         value={manual_roi_right.temporal}
                         onChange={(e) => handleRoiChange('right', 'temporal', parseFloat(e.target.value))}
+                        style={sliderStyle(manual_roi_right.temporal, 0, 0.5, '#ef4444')}
                       />
                     </div>
                     <div>
@@ -345,16 +404,21 @@ function ControlPanel({
                       </div>
                       <input
                         type="range" min="0.5" max="1" step="0.01"
-                        className="w-full accent-red-500"
+                        className="w-full"
                         value={manual_roi_right.nasal}
                         onChange={(e) => handleRoiChange('right', 'nasal', parseFloat(e.target.value))}
+                        style={sliderStyle(manual_roi_right.nasal, 0.5, 1, '#ef4444')}
                       />
                     </div>
                   </div>
                 </div>
+              </AccordionSection>
+            )}
 
-                <SectionTitle icon={Eye} title="ROI Manual - Ojo Izquierdo" />
-                <div className="px-1 space-y-2">
+            {/* === ROI Ojo Izquierdo (solo sin YOLO) === */}
+            {!use_yolo && (
+              <AccordionSection id="roi-left" icon={Eye} title="ROI Ojo Izquierdo" badge={{ label: 'OI', color: '#06b6d4' }} openSection={openSection} onToggle={toggleSection}>
+                <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <div className="flex justify-between text-[10px] text-dark-400 mb-1">
@@ -363,9 +427,10 @@ function ControlPanel({
                       </div>
                       <input
                         type="range" min="0" max="0.5" step="0.01"
-                        className="w-full accent-cyan-500"
+                        className="w-full"
                         value={manual_roi_left.top}
                         onChange={(e) => handleRoiChange('left', 'top', parseFloat(e.target.value))}
+                        style={sliderStyle(manual_roi_left.top, 0, 0.5, '#06b6d4')}
                       />
                     </div>
                     <div>
@@ -375,9 +440,10 @@ function ControlPanel({
                       </div>
                       <input
                         type="range" min="0.5" max="1" step="0.01"
-                        className="w-full accent-cyan-500"
+                        className="w-full"
                         value={manual_roi_left.bottom}
                         onChange={(e) => handleRoiChange('left', 'bottom', parseFloat(e.target.value))}
+                        style={sliderStyle(manual_roi_left.bottom, 0.5, 1, '#06b6d4')}
                       />
                     </div>
                   </div>
@@ -389,9 +455,10 @@ function ControlPanel({
                       </div>
                       <input
                         type="range" min="0" max="0.5" step="0.01"
-                        className="w-full accent-cyan-500"
+                        className="w-full"
                         value={manual_roi_left.nasal}
                         onChange={(e) => handleRoiChange('left', 'nasal', parseFloat(e.target.value))}
+                        style={sliderStyle(manual_roi_left.nasal, 0, 0.5, '#06b6d4')}
                       />
                     </div>
                     <div>
@@ -401,38 +468,40 @@ function ControlPanel({
                       </div>
                       <input
                         type="range" min="0.5" max="1" step="0.01"
-                        className="w-full accent-cyan-500"
+                        className="w-full"
                         value={manual_roi_left.temporal}
                         onChange={(e) => handleRoiChange('left', 'temporal', parseFloat(e.target.value))}
+                        style={sliderStyle(manual_roi_left.temporal, 0.5, 1, '#06b6d4')}
                       />
                     </div>
                   </div>
                 </div>
-              </>
+              </AccordionSection>
             )}
 
-            {/* Detection */}
-            <SectionTitle icon={Cpu} title="Procesamiento" />
-            <div className="px-1 space-y-2 pb-2">
-              <button
-                className={`w-full btn ${use_yolo ? 'btn-primary' : 'btn-secondary'} justify-between px-3 h-8`}
-                onClick={handleToggleYolo}
-              >
-                <span className="text-[10px]">Detección IA (YOLO)</span>
-                <div className={`w-2 h-2 rounded-full ${use_yolo ? 'bg-white' : 'bg-dark-500'}`} />
-              </button>
+            {/* === Procesamiento === */}
+            <AccordionSection id="processing" icon={Cpu} title="Procesamiento" openSection={openSection} onToggle={toggleSection}>
+              <div className="space-y-2">
+                <button
+                  className={`w-full btn ${use_yolo ? 'btn-primary' : 'btn-secondary'} justify-between px-3 h-8`}
+                  onClick={handleToggleYolo}
+                >
+                  <span className="text-[10px]">Detección IA (YOLO)</span>
+                  <div className={`w-2 h-2 rounded-full ${use_yolo ? 'bg-white' : 'bg-dark-500'}`} />
+                </button>
 
-              <button
-                className={`w-full btn ${show_debug ? 'btn-success' : 'btn-secondary'} justify-between px-3 h-8`}
-                onClick={handleToggleDebug}
-              >
-                <div className="flex items-center gap-1">
-                  <Eye className="w-3 h-3" />
-                  <span className="text-[10px]">Modo Debug</span>
-                </div>
-                <div className={`w-2 h-2 rounded-full ${show_debug ? 'bg-white' : 'bg-dark-500'}`} />
-              </button>
-            </div>
+                <button
+                  className={`w-full btn ${show_debug ? 'btn-success' : 'btn-secondary'} justify-between px-3 h-8`}
+                  onClick={handleToggleDebug}
+                >
+                  <div className="flex items-center gap-1">
+                    <Eye className="w-3 h-3" />
+                    <span className="text-[10px]">Modo Debug</span>
+                  </div>
+                  <div className={`w-2 h-2 rounded-full ${show_debug ? 'bg-white' : 'bg-dark-500'}`} />
+                </button>
+              </div>
+            </AccordionSection>
           </div>
         </div>
       )}

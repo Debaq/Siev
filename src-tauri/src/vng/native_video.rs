@@ -22,6 +22,10 @@ use crate::math::processor::{RawEyeData, EyeProcessor};
 use crate::storage::recorder::SessionRecorder;
 use crate::storage::video_recorder::VideoRecorder;
 
+// V4L2 directo como fallback cuando nokhwa falla (framerates fraccionarios, etc.)
+use v4l::video::Capture as V4lCapture;
+use v4l::io::traits::CaptureStream as V4lCaptureStream;
+
 /// Información de una cámara detectada
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CameraInfo {
@@ -74,9 +78,20 @@ pub fn list_cameras() -> Result<Vec<CameraInfo>, String> {
 
 /// Lista los formatos soportados por una cámara específica
 pub fn list_camera_formats(camera_id: u32) -> Result<Vec<CameraFormatInfo>, String> {
+    // Intentar con nokhwa primero
+    match list_camera_formats_nokhwa(camera_id) {
+        Ok(formats) => Ok(formats),
+        Err(nokhwa_err) => {
+            // Fallback a v4l directo (maneja framerates fraccionarios)
+            println!("[SIEV] nokhwa falló para cámara {}, usando v4l directo: {}", camera_id, nokhwa_err);
+            list_camera_formats_v4l(camera_id)
+        }
+    }
+}
+
+fn list_camera_formats_nokhwa(camera_id: u32) -> Result<Vec<CameraFormatInfo>, String> {
     let index = CameraIndex::Index(camera_id);
 
-    // Crear cámara temporal solo para consultar formatos
     let format = RequestedFormat::new::<LumaFormat>(RequestedFormatType::None);
     let mut camera = Camera::new(index, format)
         .map_err(|e| format!("Error abriendo cámara {}: {:?}", camera_id, e))?;
@@ -84,7 +99,6 @@ pub fn list_camera_formats(camera_id: u32) -> Result<Vec<CameraFormatInfo>, Stri
     let formats = camera.compatible_camera_formats()
         .map_err(|e| format!("Error obteniendo formatos: {:?}", e))?;
 
-    // Filtrar solo MJPEG y ordenar por resolución/fps
     let mut result: Vec<CameraFormatInfo> = formats
         .into_iter()
         .filter(|f| f.format() == FrameFormat::MJPEG)
@@ -96,14 +110,80 @@ pub fn list_camera_formats(camera_id: u32) -> Result<Vec<CameraFormatInfo>, Stri
         })
         .collect();
 
-    // Ordenar: mayor resolución primero, luego mayor fps
     result.sort_by(|a, b| {
         let res_a = a.width * a.height;
         let res_b = b.width * b.height;
         res_b.cmp(&res_a).then(b.fps.cmp(&a.fps))
     });
+    result.dedup_by(|a, b| a.width == b.width && a.height == b.height && a.fps == b.fps);
 
-    // Eliminar duplicados
+    Ok(result)
+}
+
+/// Fallback: lista formatos usando v4l directo (soporta framerates fraccionarios)
+fn list_camera_formats_v4l(camera_id: u32) -> Result<Vec<CameraFormatInfo>, String> {
+    let dev = v4l::Device::new(camera_id as usize)
+        .map_err(|e| format!("Error abriendo dispositivo V4L2 {}: {:?}", camera_id, e))?;
+
+    let formats = V4lCapture::enum_formats(&dev)
+        .map_err(|e| format!("Error listando formatos v4l: {:?}", e))?;
+
+    let mut result = Vec::new();
+    let mjpg = v4l::FourCC::new(b"MJPG");
+
+    for fmt_desc in &formats {
+        let is_mjpeg = fmt_desc.fourcc == mjpg;
+        let format_name = if is_mjpeg { "MJPEG".to_string() } else { format!("{}", fmt_desc.fourcc) };
+
+        let framesizes = V4lCapture::enum_framesizes(&dev, fmt_desc.fourcc).unwrap_or_default();
+
+        for size in &framesizes {
+            match &size.size {
+                v4l::framesize::FrameSizeEnum::Discrete(d) => {
+                    let intervals = V4lCapture::enum_frameintervals(&dev, fmt_desc.fourcc, d.width, d.height)
+                        .unwrap_or_default();
+
+                    for interval in &intervals {
+                        match &interval.interval {
+                            v4l::frameinterval::FrameIntervalEnum::Discrete(frac) => {
+                                if frac.numerator > 0 {
+                                    let fps = (frac.denominator as f64 / frac.numerator as f64).round() as u32;
+                                    if fps > 0 {
+                                        result.push(CameraFormatInfo {
+                                            width: d.width,
+                                            height: d.height,
+                                            fps,
+                                            format: format_name.clone(),
+                                        });
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    // Si no hay intervalos reportados, agregar con fps=30 por defecto
+                    if V4lCapture::enum_frameintervals(&dev, fmt_desc.fourcc, d.width, d.height)
+                        .unwrap_or_default().is_empty()
+                    {
+                        result.push(CameraFormatInfo {
+                            width: d.width,
+                            height: d.height,
+                            fps: 30,
+                            format: format_name.clone(),
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    result.sort_by(|a, b| {
+        let res_a = a.width * a.height;
+        let res_b = b.width * b.height;
+        res_b.cmp(&res_a).then(b.fps.cmp(&a.fps))
+    });
     result.dedup_by(|a, b| a.width == b.width && a.height == b.height && a.fps == b.fps);
 
     Ok(result)
@@ -356,9 +436,11 @@ impl NativeVideoManager {
                 (1280, 720, 120),
             ];
 
-            let mut camera: Option<Camera> = None;
+            let mut nokhwa_camera: Option<Camera> = None;
+            let mut v4l_stream: Option<v4l::io::mmap::Stream> = None;
             let mut actual_format = (width, height);
 
+            // Intentar nokhwa primero
             for (w, h, f) in formats_to_try {
                 let format = CameraFormat::new(Resolution::new(w, h), FrameFormat::MJPEG, f);
                 let requested = RequestedFormat::new::<LumaFormat>(RequestedFormatType::Closest(format));
@@ -370,7 +452,7 @@ impl NativeVideoManager {
                                 println!("[SIEV] Formato {}x{}@{} no disponible, usando {}x{}@{}", width, height, fps, w, h, f);
                             }
                             actual_format = (w, h);
-                            camera = Some(c);
+                            nokhwa_camera = Some(c);
                             break;
                         }
                     }
@@ -378,14 +460,58 @@ impl NativeVideoManager {
                 }
             }
 
-            let mut camera = match camera {
-                Some(c) => c,
-                None => {
-                    eprintln!("[SIEV] Error: No se pudo abrir la cámara {} con ningún formato", camera_id);
-                    running.store(false, Ordering::SeqCst);
-                    return;
+            // Si nokhwa falló, intentar v4l directo
+            if nokhwa_camera.is_none() {
+                println!("[SIEV] nokhwa falló para cámara {}, intentando v4l directo...", camera_id);
+                if let Ok(dev) = v4l::Device::new(camera_id as usize) {
+                    let mjpg = v4l::FourCC::new(b"MJPG");
+                    let mut opened = false;
+
+                    for &(w, h, _f) in &formats_to_try {
+                        let fmt = v4l::Format::new(w, h, mjpg);
+                        match V4lCapture::set_format(&dev, &fmt) {
+                            Ok(actual) if actual.fourcc == mjpg => {
+                                match v4l::io::mmap::Stream::with_buffers(&dev, v4l::buffer::Type::VideoCapture, 4) {
+                                    Ok(stream) => {
+                                        actual_format = (actual.width, actual.height);
+                                        println!("[SIEV] Cámara {} abierta con v4l directo: {}x{}", camera_id, actual.width, actual.height);
+                                        v4l_stream = Some(stream);
+                                        opened = true;
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        println!("[SIEV] v4l stream falló para {}x{}: {:?}", w, h, e);
+                                        continue;
+                                    }
+                                }
+                            }
+                            _ => continue,
+                        }
+                    }
+
+                    if !opened {
+                        // Intentar sin especificar formato (usar el default de la cámara)
+                        if let Ok(current_fmt) = V4lCapture::format(&dev) {
+                            if let Ok(stream) = v4l::io::mmap::Stream::with_buffers(&dev, v4l::buffer::Type::VideoCapture, 4) {
+                                actual_format = (current_fmt.width, current_fmt.height);
+                                println!("[SIEV] Cámara {} abierta con formato default v4l: {}x{} {:?}",
+                                    camera_id, current_fmt.width, current_fmt.height, current_fmt.fourcc);
+                                v4l_stream = Some(stream);
+                            }
+                        }
+                    }
                 }
-            };
+            }
+
+            if nokhwa_camera.is_none() && v4l_stream.is_none() {
+                eprintln!("[SIEV] Error: No se pudo abrir la cámara {} con ningún método", camera_id);
+                running.store(false, Ordering::SeqCst);
+                return;
+            }
+
+            if v4l_stream.is_some() {
+                println!("[SIEV] Usando captura v4l directa");
+            }
 
             let (width, height) = actual_format;
 
@@ -450,20 +576,31 @@ impl NativeVideoManager {
             println!("[SIEV] Iniciando bucle de captura...");
 
             while running.load(Ordering::SeqCst) {
-                // Capturar frame
-                let frame = match camera.frame() {
-                    Ok(f) => f,
-                    Err(e) => {
-                        if frame_count == 0 { println!("[CAM] Error capturando: {:?}", e); }
-                        continue;
+                // Capturar frame desde nokhwa o v4l
+                let frame_bytes: Vec<u8> = if let Some(ref mut cam) = nokhwa_camera {
+                    match cam.frame() {
+                        Ok(f) => f.buffer().to_vec(),
+                        Err(e) => {
+                            if frame_count == 0 { println!("[CAM] Error capturando: {:?}", e); }
+                            continue;
+                        }
                     }
+                } else if let Some(ref mut stream) = v4l_stream {
+                    match V4lCaptureStream::next(stream) {
+                        Ok((buf, meta)) => buf[..meta.bytesused as usize].to_vec(),
+                        Err(e) => {
+                            if frame_count == 0 { println!("[CAM] Error capturando v4l: {:?}", e); }
+                            continue;
+                        }
+                    }
+                } else {
+                    break;
                 };
-                
+
                 let start_proc = std::time::Instant::now();
 
                 // DECODIFICACIÓN TURBO (Zune-JPEG)
-                let frame_buffer = frame.buffer();
-                let mut decoder = JpegDecoder::new_with_options(frame_buffer, zune_options);
+                let mut decoder = JpegDecoder::new_with_options(&frame_bytes, zune_options);
                 
                 let pixels = match decoder.decode() {
                     Ok(p) => p,
@@ -760,7 +897,12 @@ impl NativeVideoManager {
                 }
             }
 
-            camera.stop_stream().ok();
+            // Limpiar recursos
+            if let Some(ref mut cam) = nokhwa_camera {
+                cam.stop_stream().ok();
+            }
+            // v4l_stream se limpia automáticamente al hacer drop
+            drop(v4l_stream);
         });
 
         Ok(())
