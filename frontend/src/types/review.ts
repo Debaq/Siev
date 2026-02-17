@@ -27,7 +27,10 @@ export interface NystagmusBeatMarker {
     slow_end: number;
     fast_end: number;
     spv: number;
+    fast_velocity: number;
     amplitude: number;
+    direction: string;
+    deflection_points: [number, number][];
 }
 
 export interface ManualCalibrationPoint {
@@ -66,8 +69,15 @@ export interface SessionManifest {
     specialist_id: number | null;
 }
 
+export interface VideoCropInfo {
+    content_width: number;
+    content_height: number;
+    encoder_width: number;
+    encoder_height: number;
+}
+
 export interface SessionReviewPayload {
-    session_id: number;
+    recording_id: number;
     manifest: SessionManifest;
     calibration: CalibrationSnapshot | null;
     duration_seconds: number;
@@ -75,10 +85,12 @@ export interface SessionReviewPayload {
     total_samples: number;
     video_url: string | null;
     video_available: boolean;
+    video_crop: VideoCropInfo | null;
     eye_data: ChartEyeDataPoint[];
     saccades: SaccadeMarker[];
     spv_timeline: SPVTimePoint[];
     nystagmus_beats: NystagmusBeatMarker[];
+    deflection_points: [number, number][];
     overall_spv: number;
     pursuit_gain: number | null;
 }

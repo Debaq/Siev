@@ -9,6 +9,15 @@ use crate::storage::bundle::{SievBundle, SessionManifest};
 // Serializable structs for the frontend
 // ============================================
 
+/// Video crop metadata: content dimensions vs encoder dimensions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoCropInfo {
+    pub content_width: u32,
+    pub content_height: u32,
+    pub encoder_width: u32,
+    pub encoder_height: u32,
+}
+
 /// Downsampled eye data point for charts
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChartEyeDataPoint {
@@ -37,20 +46,23 @@ pub struct SPVTimePoint {
     pub spv: f64,
 }
 
-/// Nystagmus beat marker
+/// Nystagmus beat marker (enriched from NystagmusAnalyzer)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NystagmusBeatMarker {
     pub slow_start: f64,
     pub slow_end: f64,
     pub fast_end: f64,
     pub spv: f64,
+    pub fast_velocity: f64,
     pub amplitude: f64,
+    pub direction: String,
+    pub deflection_points: Vec<(f64, f64)>,
 }
 
-/// Full session review payload
+/// Full recording review payload
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionReviewPayload {
-    pub session_id: i64,
+    pub recording_id: i64,
     pub manifest: SessionManifest,
     pub calibration: Option<CalibrationSnapshot>,
     pub duration_seconds: f64,
@@ -58,10 +70,12 @@ pub struct SessionReviewPayload {
     pub total_samples: usize,
     pub video_url: Option<String>,
     pub video_available: bool,
+    pub video_crop: Option<VideoCropInfo>,
     pub eye_data: Vec<ChartEyeDataPoint>,
     pub saccades: Vec<SaccadeMarker>,
     pub spv_timeline: Vec<SPVTimePoint>,
     pub nystagmus_beats: Vec<NystagmusBeatMarker>,
+    pub deflection_points: Vec<(f64, f64)>,
     pub overall_spv: f64,
     pub pursuit_gain: Option<f64>,
 }
@@ -250,49 +264,22 @@ fn to_chart_data(data: &[ProcessedEyeData], max_points: usize) -> Vec<ChartEyeDa
 }
 
 // ============================================
-// SPV computation
+// SPV computation (based on detected nystagmus beats)
 // ============================================
 
-/// Compute Slow Phase Velocity timeline using sliding window
-pub fn compute_spv_timeline(
-    data: &[ProcessedEyeData],
+/// Compute SPV timeline from detected nystagmus beats using sliding windows.
+/// For each window, average the slow phase velocities of beats whose slow phase
+/// falls within the window.
+pub fn compute_spv_timeline_from_beats(
+    beats: &[NystagmusBeatMarker],
+    total_duration: f64,
     window_secs: f64,
     step_secs: f64,
-    saccade_threshold: f64,
 ) -> Vec<SPVTimePoint> {
-    if data.len() < 2 {
+    if beats.is_empty() || total_duration <= 0.0 {
         return Vec::new();
     }
 
-    let base_ts = data[0].timestamp;
-    let total_duration = data.last().unwrap().timestamp - base_ts;
-
-    // Compute instantaneous velocities
-    let mut velocities: Vec<(f64, f64)> = Vec::with_capacity(data.len());
-    for i in 1..data.len() {
-        let dt = data[i].timestamp - data[i - 1].timestamp;
-        if dt <= 0.0 {
-            continue;
-        }
-
-        // Use horizontal component of right eye (or left)
-        let pos_curr = data[i].right.map(|r| r[0])
-            .or_else(|| data[i].left.map(|l| l[0]));
-        let pos_prev = data[i - 1].right.map(|r| r[0])
-            .or_else(|| data[i - 1].left.map(|l| l[0]));
-
-        if let (Some(curr), Some(prev)) = (pos_curr, pos_prev) {
-            let vel = (curr - prev) / dt;
-            let t = data[i].timestamp - base_ts;
-            velocities.push((t, vel));
-        }
-    }
-
-    if velocities.is_empty() {
-        return Vec::new();
-    }
-
-    // Sliding window SPV computation
     let mut spv_points = Vec::new();
     let mut t = 0.0;
 
@@ -300,22 +287,23 @@ pub fn compute_spv_timeline(
         let window_start = t - window_secs / 2.0;
         let window_end = t + window_secs / 2.0;
 
-        // Collect velocities in window, excluding saccades
-        let slow_vels: Vec<f64> = velocities
+        // Collect SPVs of beats whose slow phase midpoint falls in this window
+        let window_spvs: Vec<f64> = beats
             .iter()
-            .filter(|(vt, _)| *vt >= window_start && *vt <= window_end)
-            .filter(|(_, v)| v.abs() < saccade_threshold)
-            .map(|(_, v)| *v)
+            .filter(|b| {
+                let mid = (b.slow_start + b.slow_end) / 2.0;
+                mid >= window_start && mid <= window_end
+            })
+            .map(|b| b.spv)
             .collect();
 
-        if !slow_vels.is_empty() {
-            let mean_spv = slow_vels.iter().sum::<f64>() / slow_vels.len() as f64;
-            spv_points.push(SPVTimePoint {
-                time: t,
-                spv: mean_spv,
-            });
-        }
+        let spv = if !window_spvs.is_empty() {
+            window_spvs.iter().sum::<f64>() / window_spvs.len() as f64
+        } else {
+            0.0
+        };
 
+        spv_points.push(SPVTimePoint { time: t, spv });
         t += step_secs;
     }
 
@@ -412,102 +400,60 @@ pub fn detect_saccades(
 }
 
 // ============================================
-// Nystagmus beat detection
+// Nystagmus beat detection (using NystagmusAnalyzer)
 // ============================================
 
-/// Detect nystagmus beats (slow phase + fast phase = one beat)
+use crate::vng::nystagmus::NystagmusAnalyzer;
+
+/// Detect nystagmus beats using the deflection-point based analyzer.
+/// Returns (beats, deflection_points).
 pub fn detect_nystagmus_beats(
     data: &[ProcessedEyeData],
-    saccade_threshold: f64,
-) -> Vec<NystagmusBeatMarker> {
-    if data.len() < 3 {
-        return Vec::new();
+    min_amplitude: f64,
+) -> (Vec<NystagmusBeatMarker>, Vec<(f64, f64)>) {
+    if data.len() < 5 {
+        return (Vec::new(), Vec::new());
     }
 
     let base_ts = data[0].timestamp;
-    let mut beats = Vec::new();
 
-    // Compute velocities
-    let mut velocities: Vec<(f64, f64, f64)> = Vec::new();
-    for i in 1..data.len() {
-        let dt = data[i].timestamp - data[i - 1].timestamp;
-        if dt <= 0.0 {
-            continue;
-        }
+    // Build (time, position) series from right eye horizontal (or left as fallback)
+    let series: Vec<(f64, f64)> = data
+        .iter()
+        .filter_map(|d| {
+            let pos = d.right.map(|r| r[0])
+                .or_else(|| d.left.map(|l| l[0]))?;
+            Some((d.timestamp - base_ts, pos))
+        })
+        .collect();
 
-        let pos_curr = data[i].right.map(|r| r[0])
-            .or_else(|| data[i].left.map(|l| l[0]));
-        let pos_prev = data[i - 1].right.map(|r| r[0])
-            .or_else(|| data[i - 1].left.map(|l| l[0]));
+    let result = NystagmusAnalyzer::analyze_batch(&series, min_amplitude);
 
-        if let (Some(curr), Some(prev)) = (pos_curr, pos_prev) {
-            let vel = (curr - prev) / dt;
-            let t = data[i].timestamp - base_ts;
-            velocities.push((t, vel, curr));
-        }
-    }
+    let beats: Vec<NystagmusBeatMarker> = result.beats
+        .iter()
+        .map(|b| NystagmusBeatMarker {
+            slow_start: b.slow_start_time,
+            slow_end: b.slow_end_time,
+            fast_end: b.fast_end_time,
+            spv: b.slow_velocity,
+            fast_velocity: b.fast_velocity,
+            amplitude: b.amplitude,
+            direction: b.direction.clone(),
+            deflection_points: b.deflection_points.clone(),
+        })
+        .collect();
 
-    // Segment into slow and fast phases
-    let mut slow_start: Option<usize> = None;
-    let mut slow_vel_sum = 0.0f64;
-    let mut slow_count = 0usize;
-
-    for i in 0..velocities.len() {
-        let (_, vel, _) = velocities[i];
-        let abs_vel = vel.abs();
-
-        if abs_vel < saccade_threshold {
-            // Slow phase
-            if slow_start.is_none() {
-                slow_start = Some(i);
-                slow_vel_sum = 0.0;
-                slow_count = 0;
-            }
-            slow_vel_sum += vel;
-            slow_count += 1;
-        } else if let Some(ss) = slow_start {
-            // Fast phase detected - this could be end of a beat
-            if slow_count > 2 {
-                let spv = slow_vel_sum / slow_count as f64;
-                let slow_end_idx = i - 1;
-
-                // Find end of fast phase
-                let mut fast_end_idx = i;
-                for j in (i + 1)..velocities.len() {
-                    if velocities[j].1.abs() < saccade_threshold {
-                        fast_end_idx = j;
-                        break;
-                    }
-                    fast_end_idx = j;
-                }
-
-                let amplitude = (velocities[fast_end_idx].2 - velocities[slow_end_idx].2).abs();
-
-                if amplitude > 0.3 {
-                    beats.push(NystagmusBeatMarker {
-                        slow_start: velocities[ss].0,
-                        slow_end: velocities[slow_end_idx].0,
-                        fast_end: velocities[fast_end_idx].0,
-                        spv,
-                        amplitude,
-                    });
-                }
-            }
-            slow_start = None;
-        }
-    }
-
-    beats
+    (beats, result.deflection_points)
 }
 
 // ============================================
 // Main builder
 // ============================================
 
-/// Build the complete session review payload
-pub fn build_session_review(
+/// Build the complete recording review payload
+pub fn build_recording_review(
     bundle_path: &Path,
-    session_id: i64,
+    recording_id: i64,
     max_points: usize,
 ) -> Result<SessionReviewPayload, String> {
     // Load manifest
@@ -548,15 +494,15 @@ pub fn build_session_review(
     // Detect saccades (velocity threshold 80 deg/s, min duration 10ms)
     let saccades = detect_saccades(&raw_data, 80.0, 10.0);
 
-    // Compute SPV timeline (2s window, 0.5s step, 80 deg/s saccade threshold)
-    let spv_timeline = compute_spv_timeline(&raw_data, 2.0, 0.5, 80.0);
+    // Detect nystagmus beats (min amplitude 0.5°)
+    let (nystagmus_beats, deflection_points) = detect_nystagmus_beats(&raw_data, 0.5);
 
-    // Detect nystagmus beats
-    let nystagmus_beats = detect_nystagmus_beats(&raw_data, 80.0);
+    // Compute SPV timeline from detected beats (2s window, 0.5s step)
+    let spv_timeline = compute_spv_timeline_from_beats(&nystagmus_beats, duration_seconds, 2.0, 0.5);
 
-    // Overall SPV
-    let overall_spv = if !spv_timeline.is_empty() {
-        spv_timeline.iter().map(|p| p.spv.abs()).sum::<f64>() / spv_timeline.len() as f64
+    // Overall SPV from beats
+    let overall_spv = if !nystagmus_beats.is_empty() {
+        nystagmus_beats.iter().map(|b| b.spv.abs()).sum::<f64>() / nystagmus_beats.len() as f64
     } else {
         0.0
     };
@@ -566,8 +512,11 @@ pub fn build_session_review(
     let raw_video_path = bundle_path.join("video").join("raw_capture.mp4");
     let video_available = video_path.exists() || raw_video_path.exists();
 
+    // Load video crop metadata if available
+    let video_crop = load_video_crop_info(bundle_path);
+
     Ok(SessionReviewPayload {
-        session_id,
+        recording_id,
         manifest,
         calibration,
         duration_seconds,
@@ -575,10 +524,12 @@ pub fn build_session_review(
         total_samples,
         video_url: None, // Set by the command handler after asset conversion
         video_available,
+        video_crop,
         eye_data,
         saccades,
         spv_timeline,
         nystagmus_beats,
+        deflection_points,
         overall_spv,
         pursuit_gain: None, // Computed if pursuit test data available
     })
@@ -587,7 +538,7 @@ pub fn build_session_review(
 /// Build payload with recalibrated data
 pub fn build_recalibrated_review(
     bundle_path: &Path,
-    session_id: i64,
+    recording_id: i64,
     max_points: usize,
     new_calibration: &CalibrationSnapshot,
     old_calibration: &CalibrationSnapshot,
@@ -642,10 +593,10 @@ pub fn build_recalibrated_review(
 
     let eye_data = to_chart_data(&raw_data, max_points);
     let saccades = detect_saccades(&raw_data, 80.0, 10.0);
-    let spv_timeline = compute_spv_timeline(&raw_data, 2.0, 0.5, 80.0);
-    let nystagmus_beats = detect_nystagmus_beats(&raw_data, 80.0);
-    let overall_spv = if !spv_timeline.is_empty() {
-        spv_timeline.iter().map(|p| p.spv.abs()).sum::<f64>() / spv_timeline.len() as f64
+    let (nystagmus_beats, deflection_points) = detect_nystagmus_beats(&raw_data, 0.5);
+    let spv_timeline = compute_spv_timeline_from_beats(&nystagmus_beats, duration_seconds, 2.0, 0.5);
+    let overall_spv = if !nystagmus_beats.is_empty() {
+        nystagmus_beats.iter().map(|b| b.spv.abs()).sum::<f64>() / nystagmus_beats.len() as f64
     } else {
         0.0
     };
@@ -654,8 +605,10 @@ pub fn build_recalibrated_review(
     let raw_video_path = bundle_path.join("video").join("raw_capture.mp4");
     let video_available = video_path.exists() || raw_video_path.exists();
 
+    let video_crop = load_video_crop_info(bundle_path);
+
     Ok(SessionReviewPayload {
-        session_id,
+        recording_id,
         manifest,
         calibration: Some(new_calibration.clone()),
         duration_seconds,
@@ -663,11 +616,36 @@ pub fn build_recalibrated_review(
         total_samples,
         video_url: None,
         video_available,
+        video_crop,
         eye_data,
         saccades,
         spv_timeline,
         nystagmus_beats,
+        deflection_points,
         overall_spv,
         pursuit_gain: None,
     })
+}
+
+// ============================================
+// Video crop metadata
+// ============================================
+
+/// Save video crop info to video_meta.json in the bundle
+pub fn save_video_crop_info(bundle_path: &Path, crop: &VideoCropInfo) -> Result<(), String> {
+    let meta_path = bundle_path.join("video").join("video_meta.json");
+    let json = serde_json::to_string(crop)
+        .map_err(|e| format!("Failed to serialize video meta: {}", e))?;
+    fs::write(&meta_path, json)
+        .map_err(|e| format!("Failed to write video meta: {}", e))?;
+    println!("[STORAGE] Video crop metadata saved: {}x{} content in {}x{} encoder",
+        crop.content_width, crop.content_height, crop.encoder_width, crop.encoder_height);
+    Ok(())
+}
+
+/// Load video crop info from video_meta.json in the bundle
+pub fn load_video_crop_info(bundle_path: &Path) -> Option<VideoCropInfo> {
+    let meta_path = bundle_path.join("video").join("video_meta.json");
+    let content = fs::read_to_string(&meta_path).ok()?;
+    serde_json::from_str(&content).ok()
 }
