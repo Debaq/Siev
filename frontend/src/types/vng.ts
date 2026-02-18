@@ -248,6 +248,8 @@ export interface PositionalTestResult {
 
 export type IrrigationType = 'warm' | 'cool';
 export type IrrigationSide = 'left' | 'right';
+export type CaloricCalculationMethod = 'spv' | 'beat_count' | 'total_duration';
+export type CaloricProtocolType = 'bithermal' | 'monothermal_warm' | 'monothermal_cool';
 
 export interface SPVTimePoint {
     time_seconds: number;
@@ -270,6 +272,10 @@ export interface CaloricIrrigation {
     // Índice de fijación
     spv_with_fixation?: number;
     fixation_index?: number;      // % de supresión
+
+    // Beat metrics
+    beat_count?: number;           // Conteo total de nistagmos detectados
+    nystagmus_frequency?: number;  // Frecuencia (beats/s) en ventana de culminación
 }
 
 export interface JongkeesFormula {
@@ -288,6 +294,9 @@ export interface JongkeesFormula {
     rc: number;  // Right Cool
     lw: number;  // Left Warm
     lc: number;  // Left Cool
+
+    // Método de cálculo
+    calculation_method: CaloricCalculationMethod;
 }
 
 export interface CaloricTestResult {
@@ -312,6 +321,9 @@ export interface CaloricTestResult {
         affected_side?: 'left' | 'right' | 'bilateral';
         central_signs?: string[];
     };
+
+    // Tipo de protocolo
+    protocol_type?: CaloricProtocolType;
 
     clinical_notes?: string;
 }
@@ -362,6 +374,21 @@ export interface SessionReportData {
     description?: string;
 }
 
+export interface SPVReportData {
+    timeline: { time: number; spv: number }[];
+    overall_spv: number;
+    beat_count: number;
+}
+
+export interface SaccadeMarkerReport {
+    start_time: number;
+    end_time: number;
+    amplitude: number;
+    peak_velocity: number;
+    duration_ms: number;
+    direction: string;
+}
+
 export interface VNGReportData {
     patient: PatientReportData;
     session: SessionReportData;
@@ -372,6 +399,10 @@ export interface VNGReportData {
     okn?: OKNTestResult;
     positional?: PositionalTestResult;
     caloric?: CaloricTestResult;
+
+    // SPV and raw saccade data for report charts
+    spv_data?: SPVReportData;
+    raw_saccades?: SaccadeMarkerReport[];
 
     // Historical comparison (optional)
     previous_session?: {

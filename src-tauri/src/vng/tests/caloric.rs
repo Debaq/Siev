@@ -27,6 +27,22 @@ pub enum VestibularFunction {
     Hyperactive,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum CaloricCalculationMethod {
+    Spv,           // VCL máxima (default)
+    BeatCount,     // Conteo de nistagmos
+    TotalDuration, // Duración total de respuesta
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum CaloricProtocolType {
+    Bithermal,
+    MonothermalWarm,
+    MonothermalCool,
+}
+
 // ============================================
 // SPV Timeline Data
 // ============================================
@@ -58,6 +74,10 @@ pub struct CaloricIrrigation {
     // Fixation index
     pub spv_with_fixation: Option<f64>,
     pub fixation_index: Option<f64>,        // % suppression
+
+    // Beat metrics
+    pub beat_count: Option<u32>,            // Conteo total de nistagmos detectados
+    pub nystagmus_frequency: Option<f64>,   // Frecuencia (beats/s) en ventana de culminación
 }
 
 impl CaloricIrrigation {
@@ -79,6 +99,8 @@ impl CaloricIrrigation {
             duration_response: 0.0,
             spv_with_fixation: None,
             fixation_index: None,
+            beat_count: None,
+            nystagmus_frequency: None,
         }
     }
 }
@@ -104,10 +126,18 @@ pub struct JongkeesFormula {
     pub rc: f64, // Right Cool
     pub lw: f64, // Left Warm
     pub lc: f64, // Left Cool
+
+    // Calculation method
+    #[serde(default = "default_calculation_method")]
+    pub calculation_method: CaloricCalculationMethod,
+}
+
+fn default_calculation_method() -> CaloricCalculationMethod {
+    CaloricCalculationMethod::Spv
 }
 
 impl JongkeesFormula {
-    pub fn calculate(rw: f64, rc: f64, lw: f64, lc: f64) -> Self {
+    pub fn calculate(rw: f64, rc: f64, lw: f64, lc: f64, method: CaloricCalculationMethod) -> Self {
         let total = rw + rc + lw + lc;
 
         let (uw_percent, dp_percent) = if total > 0.0 {
@@ -121,12 +151,13 @@ impl JongkeesFormula {
         Self {
             unilateral_weakness_percent: uw_percent,
             directional_preponderance_percent: dp_percent,
-            uw_significant: uw_percent.abs() > 22.0, // 22% threshold common
-            dp_significant: dp_percent.abs() > 28.0, // 28% threshold common
+            uw_significant: uw_percent.abs() > 22.0,
+            dp_significant: dp_percent.abs() > 28.0,
             rw,
             rc,
             lw,
             lc,
+            calculation_method: method,
         }
     }
 }
@@ -185,13 +216,21 @@ pub struct CaloricTestResult {
     // Clinical interpretation
     pub interpretation: CaloricInterpretation,
 
+    // Protocol type
+    #[serde(default = "default_protocol_type")]
+    pub protocol_type: CaloricProtocolType,
+
     pub clinical_notes: Option<String>,
+}
+
+fn default_protocol_type() -> CaloricProtocolType {
+    CaloricProtocolType::Bithermal
 }
 
 impl CaloricTestResult {
     pub fn new(session_id: i64) -> Self {
         let irrigations = CaloricIrrigations::default();
-        let jongkees = JongkeesFormula::calculate(0.0, 0.0, 0.0, 0.0);
+        let jongkees = JongkeesFormula::calculate(0.0, 0.0, 0.0, 0.0, CaloricCalculationMethod::Spv);
 
         Self {
             id: None,
@@ -205,16 +244,25 @@ impl CaloricTestResult {
                 bilateral: false,
                 central_signs: None,
             },
+            protocol_type: CaloricProtocolType::Bithermal,
             clinical_notes: None,
         }
     }
 
-    pub fn recalculate_jongkees(&mut self) {
+    pub fn recalculate_jongkees(&mut self, method: CaloricCalculationMethod) {
+        let extract = |irr: &CaloricIrrigation| -> f64 {
+            match method {
+                CaloricCalculationMethod::Spv => irr.spv_max,
+                CaloricCalculationMethod::BeatCount => irr.beat_count.unwrap_or(0) as f64,
+                CaloricCalculationMethod::TotalDuration => irr.duration_response,
+            }
+        };
         self.jongkees = JongkeesFormula::calculate(
-            self.irrigations.right_warm.spv_max,
-            self.irrigations.right_cool.spv_max,
-            self.irrigations.left_warm.spv_max,
-            self.irrigations.left_cool.spv_max,
+            extract(&self.irrigations.right_warm),
+            extract(&self.irrigations.right_cool),
+            extract(&self.irrigations.left_warm),
+            extract(&self.irrigations.left_cool),
+            method,
         );
     }
 }
