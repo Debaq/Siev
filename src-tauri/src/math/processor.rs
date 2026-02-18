@@ -83,6 +83,10 @@ pub struct EyeProcessor {
     manual_cal_right: Option<EyeCalibrationMapping>,
     manual_cal_left: Option<EyeCalibrationMapping>,
 
+    // Manual calibration input data (for persistence)
+    manual_cal_points: Vec<ManualCalibrationPoint>,
+    manual_cal_patient_distance: f64,
+
     // Controls
     pub filtering_enabled: bool,
     last_timestamp: Option<f64>,
@@ -102,6 +106,8 @@ impl EyeProcessor {
             calibration_target_samples: 30,
             manual_cal_right: None,
             manual_cal_left: None,
+            manual_cal_points: Vec::new(),
+            manual_cal_patient_distance: 0.0,
             filtering_enabled: true,
             last_timestamp: None,
         }
@@ -315,6 +321,10 @@ impl EyeProcessor {
         println!("  Left eye  - center: ({:.1}, {:.1}), scale: ({:.4}, {:.4}) deg/px",
             center_left.x, center_left.y, scale_x_l, scale_y_l);
 
+        // Store input data for persistence
+        self.manual_cal_points = data.points.clone();
+        self.manual_cal_patient_distance = data.patient_distance;
+
         self.manual_cal_right = Some(EyeCalibrationMapping {
             scale: Vector2::new(scale_x_r, scale_y_r),
         });
@@ -351,8 +361,8 @@ impl EyeProcessor {
             .unwrap_or([1.0, 1.0]);
 
         Some(CalibrationSnapshot {
-            points: Vec::new(), // filled by caller
-            patient_distance: 0.0, // filled by caller
+            points: self.manual_cal_points.clone(),
+            patient_distance: self.manual_cal_patient_distance,
             left_center,
             right_center,
             left_scale,
@@ -363,6 +373,8 @@ impl EyeProcessor {
 
     /// Restore calibration from a previously saved snapshot
     pub fn restore_calibration(&mut self, snapshot: CalibrationSnapshot) {
+        self.manual_cal_points = snapshot.points.clone();
+        self.manual_cal_patient_distance = snapshot.patient_distance;
         self.left_center = Some(Vector2::new(snapshot.left_center[0], snapshot.left_center[1]));
         self.right_center = Some(Vector2::new(snapshot.right_center[0], snapshot.right_center[1]));
         self.manual_cal_left = Some(EyeCalibrationMapping {
@@ -384,6 +396,8 @@ impl EyeProcessor {
         self.right_center = None;
         self.manual_cal_right = None;
         self.manual_cal_left = None;
+        self.manual_cal_points.clear();
+        self.manual_cal_patient_distance = 0.0;
         self.calibration_samples_left.clear();
         self.calibration_samples_right.clear();
         self.kalman_left.reset();

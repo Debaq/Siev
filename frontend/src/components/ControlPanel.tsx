@@ -64,6 +64,7 @@ interface ControlPanelProps {
   onRecordingChange: (v: boolean) => void
   onStartRecording?: () => Promise<void> | void
   isCalibrated: boolean
+  calibrationSource?: 'none' | 'saved' | 'new'
   onBypassCalibration: () => void
   onReviewSession?: () => void
   caloricTimerInfo?: { elapsedSeconds: number; timing: CaloricProtocolTiming }
@@ -82,6 +83,7 @@ function ControlPanel({
   onRecordingChange,
   onStartRecording,
   isCalibrated,
+  calibrationSource,
   onBypassCalibration,
   onReviewSession,
   caloricTimerInfo,
@@ -719,6 +721,16 @@ function ControlPanel({
           <Circle className={`w-3 h-3 ${isRecording ? 'fill-current animate-pulse' : ''}`} />
           {isRecording ? 'DETENER PRUEBA' : !isCalibrated ? 'REQUIERE CALIBRACIÓN' : 'INICIAR PRUEBA'}
         </button>
+
+        {isCalibrated && calibrationSource && calibrationSource !== 'none' && (
+          <div className={`col-span-2 text-center text-[9px] font-bold py-0.5 rounded ${
+            calibrationSource === 'saved'
+              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
+              : 'bg-green-500/15 text-green-400 border border-green-500/20'
+          }`}>
+            {calibrationSource === 'saved' ? 'Cal. guardada' : 'Cal. nueva'}
+          </div>
+        )}
 
         <div className="col-span-2 flex gap-1.5 relative">
           <button

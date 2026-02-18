@@ -52,6 +52,7 @@ const MainApp = () => {
 
   // Calibration state — required before any test can start
   const [isCalibrated, setIsCalibrated] = useState(false)
+  const [calibrationSource, setCalibrationSource] = useState<'none' | 'saved' | 'new'>('none')
 
   // UX State
   const [showSplash, setShowSplash] = useState(true)
@@ -235,6 +236,7 @@ const MainApp = () => {
         console.log('[App] Manual calibration completed:', result);
 
         setIsCalibrated(true);
+        setCalibrationSource('new');
 
         // Send calibration data to backend for processing
         send({
@@ -242,6 +244,13 @@ const MainApp = () => {
           points: result.points,
           patient_distance: result.patientDistance
         });
+
+        // Persist calibration for current patient
+        if (currentPatient) {
+          setTimeout(() => {
+            invoke('save_patient_calibration', { patientId: currentPatient.id }).catch(console.error);
+          }, 150);
+        }
       });
     };
 
@@ -250,7 +259,7 @@ const MainApp = () => {
     return () => {
       if (unlisten) unlisten();
     };
-  }, [send])
+  }, [send, currentPatient])
 
   // Sync caloric timer with recording state
   useEffect(() => {
@@ -506,6 +515,7 @@ const MainApp = () => {
                   setIsRecording(true)
                 }}
                 isCalibrated={isCalibrated}
+                calibrationSource={calibrationSource}
                 onBypassCalibration={() => setIsCalibrated(true)}
                 onReviewSession={currentRecording ? () => {
                   setReviewRecordingId(currentRecording.id)
@@ -605,7 +615,7 @@ const MainApp = () => {
                   activeSpecialist={activeSpecialist}
                   hasActiveTest={currentTestType !== null}
                   hasAudioTest={currentTestType?.startsWith('audio_') ?? false}
-                  hasPosturalTest={currentTestType?.startsWith('vppb_') ?? false}
+                  hasPosturalTest={(currentTestType?.startsWith('vppb_') || currentTestType?.startsWith('custom_')) ?? false}
                   onLogout={() => {
                       setActiveSpecialist(null)
                       setActiveView('user_selection')
@@ -636,8 +646,27 @@ const MainApp = () => {
                           }}
                           onSelectTest={async (testId, protocol?: CaloricProtocol) => {
                               const isAudioTest = testId.startsWith('audio_')
-                              const isPosturalTest = testId.startsWith('vppb_')
-                              if (!isAudioTest && !isPosturalTest) setIsCalibrated(false)
+                              const isPosturalTest = testId.startsWith('vppb_') || testId.startsWith('custom_')
+                              if (!isAudioTest && !isPosturalTest) {
+                                if (currentPatient) {
+                                  try {
+                                    const calInfo = await invoke('load_patient_calibration', { patientId: currentPatient.id })
+                                    if (calInfo) {
+                                      setIsCalibrated(true)
+                                      setCalibrationSource('saved')
+                                    } else {
+                                      setIsCalibrated(false)
+                                      setCalibrationSource('none')
+                                    }
+                                  } catch {
+                                    setIsCalibrated(false)
+                                    setCalibrationSource('none')
+                                  }
+                                } else {
+                                  setIsCalibrated(false)
+                                  setCalibrationSource('none')
+                                }
+                              }
 
                               if (currentPatient) {
                                 const protocolType = testId
@@ -692,7 +721,7 @@ const MainApp = () => {
                     isCapturing={isCapturing}
                     patientName={currentPatient ? `${currentPatient.last_name}, ${currentPatient.first_name}` : null}
                     posturalConfig={appConfig?.postural ?? {
-                        timing: { position_durations: {}, auto_advance: false, countdown_sound: true },
+                        timing: { auto_advance: false, countdown_sound: true },
                         visualization: { show_3d_head: true, show_target_orientation: true, head_model: 'ellipsoid' },
                         symptoms: {
                             scale: { type: 'vas_0_10' },
@@ -703,6 +732,7 @@ const MainApp = () => {
                             ],
                         },
                         enabled_tests: [],
+                        custom_tests: [],
                     }}
                     hardwareStatus={!!hardwareStatus}
                     onSelectTest={() => setActiveView('test_selection')}

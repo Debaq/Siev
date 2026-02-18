@@ -44,6 +44,7 @@ impl DatabaseService {
         service.init_schema().await?;
         service.migrate_v2_recordings().await?;
         service.migrate_vng_test_results_schema().await?;
+        service.migrate_patient_calibrations().await?;
 
         Ok(service)
     }
@@ -316,6 +317,47 @@ impl DatabaseService {
         Ok(())
     }
 
+    async fn migrate_patient_calibrations(&self) -> Result<(), String> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS patient_calibrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_id INTEGER NOT NULL UNIQUE,
+                calibration_json TEXT NOT NULL,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(patient_id) REFERENCES patients(id) ON DELETE CASCADE
+            )
+            "#
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub async fn get_patient_calibration(&self, patient_id: i64) -> Result<Option<String>, String> {
+        let result: Option<(String,)> = sqlx::query_as(
+            "SELECT calibration_json FROM patient_calibrations WHERE patient_id = ?"
+        )
+        .bind(patient_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        Ok(result.map(|r| r.0))
+    }
+
+    pub async fn save_patient_calibration(&self, patient_id: i64, json: &str) -> Result<(), String> {
+        sqlx::query(
+            "INSERT INTO patient_calibrations (patient_id, calibration_json, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) ON CONFLICT(patient_id) DO UPDATE SET calibration_json = excluded.calibration_json, updated_at = CURRENT_TIMESTAMP"
+        )
+        .bind(patient_id)
+        .bind(json)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     pub async fn reset_database(&self) -> Result<(), String> {
         sqlx::query("DROP TABLE IF EXISTS vng_reports")
             .execute(&self.pool)
@@ -338,6 +380,11 @@ impl DatabaseService {
             .map_err(|e| e.to_string())?;
 
         sqlx::query("DROP TABLE IF EXISTS sessions")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query("DROP TABLE IF EXISTS patient_calibrations")
             .execute(&self.pool)
             .await
             .map_err(|e| e.to_string())?;

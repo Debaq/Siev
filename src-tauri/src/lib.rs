@@ -457,6 +457,53 @@ async fn reset_application(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn load_patient_calibration(
+    patient_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Option<serde_json::Value>, String> {
+    let json_str = match state.db.get_patient_calibration(patient_id).await? {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+    let snapshot: math::processor::CalibrationSnapshot = serde_json::from_str(&json_str)
+        .map_err(|e| format!("Invalid calibration data: {}", e))?;
+    let point_count = snapshot.points.len();
+    let patient_distance = snapshot.patient_distance;
+    let timestamp = snapshot.timestamp.clone();
+    {
+        let mut proc = state.eye_processor.lock().unwrap();
+        proc.restore_calibration(snapshot);
+    }
+    println!("[SIEV] Loaded patient calibration ({} points, distance: {}cm)", point_count, patient_distance);
+    Ok(Some(serde_json::json!({
+        "timestamp": timestamp,
+        "patient_distance": patient_distance,
+        "point_count": point_count,
+    })))
+}
+
+#[tauri::command]
+async fn save_patient_calibration(
+    patient_id: i64,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let snapshot = {
+        let proc = state.eye_processor.lock().unwrap();
+        proc.export_calibration_snapshot()
+    };
+    match snapshot {
+        Some(snap) => {
+            let json = serde_json::to_string(&snap)
+                .map_err(|e| format!("Failed to serialize calibration: {}", e))?;
+            state.db.save_patient_calibration(patient_id, &json).await?;
+            println!("[SIEV] Saved calibration for patient {} ({} points)", patient_id, snap.points.len());
+            Ok(())
+        }
+        None => Err("No active calibration to save".to_string()),
+    }
+}
+
+#[tauri::command]
 fn get_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
@@ -1444,7 +1491,6 @@ pub fn run() {
                         }
                         WsMessage::CalibrationData { points, patient_distance } => {
                             let num_points = points.len();
-                            let points_clone = points.clone();
                             let cal_data = math::processor::ManualCalibrationData {
                                 points,
                                 patient_distance,
@@ -1455,9 +1501,7 @@ pub fn run() {
                                 num_points, patient_distance);
 
                             // Save calibration to bundle if active
-                            if let Some(mut snapshot) = proc.export_calibration_snapshot() {
-                                snapshot.points = points_clone;
-                                snapshot.patient_distance = patient_distance;
+                            if let Some(snapshot) = proc.export_calibration_snapshot() {
                                 if let Some(ref bp) = *bundle_path_for_ws.lock().unwrap() {
                                     if let Err(e) = storage::bundle::SievBundle::save_calibration(bp, &snapshot) {
                                         eprintln!("[SIEV] Failed to save calibration: {}", e);
@@ -1487,7 +1531,7 @@ pub fn run() {
             get_version, get_websocket_port, process_eye_data_batch, reset_calibration, list_serial_ports, is_hardware_connected, connect_hardware, disconnect_hardware, send_hardware_command,
             start_video_capture, stop_video_capture, list_cameras, list_camera_formats, set_pupil_config,
             get_patients, create_patient, update_patient, delete_patient, delete_session, delete_recording, get_sessions, get_recordings, create_session, create_recording, get_specialists, create_specialist, delete_specialist,
-            get_setting, set_setting, get_default_storage_path, set_filtering_enabled, sync_storage, reset_application,
+            get_setting, set_setting, get_default_storage_path, set_filtering_enabled, sync_storage, reset_application, load_patient_calibration, save_patient_calibration,
             get_vng_report_data, save_vng_test_result, get_vng_test_results, get_reference_values, calculate_vng_metrics, open_external_display,
             set_manual_roi_right, set_manual_roi_left, get_manual_rois, set_use_yolo,
             load_recording_review, get_recording_video, get_eye_data_window, recalibrate_recording, get_video_conversion_status
