@@ -22,8 +22,8 @@
         "title": "SIEV - Video-Oculografía",
         "width": 1400,
         "height": 900,
-        "minWidth": 1200,
-        "minHeight": 700,
+        "minWidth": 1280,
+        "minHeight": 720,
         "resizable": true,
         "fullscreen": false,
         "decorations": false,
@@ -36,7 +36,7 @@
         "default-src": "'self' 'unsafe-inline' data: blob:",
         "img-src": "'self' data: blob: http://localhost:* ws://localhost:* asset: https://asset.localhost",
         "connect-src": "'self' http://localhost:* ws://localhost:* ws://127.0.0.1:*",
-        "media-src": "'self' asset: https://asset.localhost blob: data:"
+        "media-src": "'self' asset: https://asset.localhost http://127.0.0.1:* http://localhost:* blob: data:"
       },
       "assetProtocol": {
         "enable": true,

@@ -1,6 +1,8 @@
-import { useMemo, useEffect, useRef, type MutableRefObject } from 'react'
-import ReactECharts from 'echarts-for-react'
+import { useMemo, useEffect, useRef, useCallback, type MutableRefObject } from 'react'
+import uPlot from 'uplot'
 import type { ChartEyeDataPoint, SaccadeMarker } from '../../types/review'
+import UPlotChart from '../charts/UPlotChart'
+import { DARK_THEME, darkAxis, darkXAxis } from '../charts/uplot-theme'
 
 interface EyePositionChartProps {
     data: ChartEyeDataPoint[]
@@ -19,177 +21,169 @@ export default function EyePositionChart({
     saccades,
     deflectionPoints,
     currentTime,
-    currentTimeRef,
+    currentTimeRef: _,
     axis,
     onSeek,
     zoomRange,
     onZoomChange,
 }: EyePositionChartProps) {
     const title = axis === 'horizontal' ? 'Posicion X (Horizontal)' : 'Posicion Y (Vertical)'
-    const chartRef = useRef<ReactECharts>(null)
+    const chartInstanceRef = useRef<uPlot | null>(null)
+    const currentTimeInternalRef = useRef(currentTime)
+    currentTimeInternalRef.current = currentTime
 
-    const option = useMemo(() => {
-        const rightData = data.map(d => [d.t, axis === 'horizontal' ? d.rx : d.ry])
-        const leftData = data.map(d => [d.t, axis === 'horizontal' ? d.lx : d.ly])
+    // Refs for draw hook data (avoid options recreation)
+    const saccadesRef = useRef(saccades)
+    saccadesRef.current = saccades
+    const deflectionPointsRef = useRef(deflectionPoints)
+    deflectionPointsRef.current = deflectionPoints
+    const axisRef = useRef(axis)
+    axisRef.current = axis
 
-        // Saccade markAreas
-        const markAreaData = saccades.map(s => ([
-            { xAxis: s.start_time },
-            { xAxis: s.end_time },
-        ]))
+    const uplotData = useMemo<uPlot.AlignedData>(() => {
+        if (data.length === 0) return [[], [], []] as unknown as uPlot.AlignedData
+        const timestamps = data.map(d => d.t)
+        const rightData = data.map(d => axis === 'horizontal' ? d.rx : d.ry)
+        const leftData = data.map(d => axis === 'horizontal' ? d.lx : d.ly)
+        return [timestamps, rightData as (number | null)[], leftData as (number | null)[]]
+    }, [data, axis])
 
-        // Deflection point markers (diamonds on the signal)
-        const deflectionData = deflectionPoints.map(([t, pos]) => [t, pos])
-
-        const dataZoomStart = zoomRange ? (zoomRange[0] / (data[data.length - 1]?.t || 1)) * 100 : 0
-        const dataZoomEnd = zoomRange ? (zoomRange[1] / (data[data.length - 1]?.t || 1)) * 100 : 100
-
-        const series: any[] = [
-            {
-                name: 'OD',
-                type: 'line',
-                data: rightData,
-                symbol: 'none',
-                lineStyle: { color: '#f43f5e', width: 1.2 },
-                itemStyle: { color: '#f43f5e' },
-                markLine: {
-                    silent: true,
-                    symbol: 'none',
-                    lineStyle: { color: '#0ea5e9', width: 1, type: 'solid' },
-                    data: [{ xAxis: currentTimeRef.current }],
-                    label: { show: false },
-                },
-                markArea: axis === 'horizontal' ? {
-                    silent: true,
-                    itemStyle: { color: 'rgba(251, 191, 36, 0.08)' },
-                    data: markAreaData,
-                } : undefined,
-            },
-            {
-                name: 'OI',
-                type: 'line',
-                data: leftData,
-                symbol: 'none',
-                lineStyle: { color: '#0ea5e9', width: 1.2 },
-                itemStyle: { color: '#0ea5e9' },
-            },
-        ]
-
-        // Add deflection points as scatter series (only for horizontal)
-        if (deflectionData.length > 0 && axis === 'horizontal') {
-            series.push({
-                name: 'Deflexiones',
-                type: 'scatter',
-                data: deflectionData,
-                symbol: 'diamond',
-                symbolSize: 6,
-                itemStyle: { color: '#fbbf24', borderColor: '#f59e0b', borderWidth: 1 },
-                z: 10,
-            })
-        }
-
-        return {
-            backgroundColor: 'transparent',
-            grid: { left: 50, right: 20, top: 30, bottom: 50 },
-            xAxis: {
-                type: 'value',
-                name: 'Tiempo (s)',
-                nameTextStyle: { color: '#6b7280', fontSize: 10 },
-                axisLine: { lineStyle: { color: '#374151' } },
-                axisTick: { lineStyle: { color: '#374151' } },
-                axisLabel: { color: '#9ca3af', fontSize: 10 },
-                splitLine: { lineStyle: { color: '#1f2937', type: 'dashed' } },
-            },
-            yAxis: {
-                type: 'value',
-                name: 'Grados',
-                nameTextStyle: { color: '#6b7280', fontSize: 10 },
-                axisLine: { lineStyle: { color: '#374151' } },
-                axisLabel: { color: '#9ca3af', fontSize: 10 },
-                splitLine: { lineStyle: { color: '#1f2937', type: 'dashed' } },
-            },
-            tooltip: {
-                trigger: 'axis',
-                backgroundColor: '#1f2937',
-                borderColor: '#374151',
-                textStyle: { color: '#e5e7eb', fontSize: 11 },
-                formatter: (params: any) => {
-                    const t = params[0]?.value?.[0]?.toFixed(2) ?? '?'
-                    const lines = params
-                        .filter((p: any) => p.seriesName !== 'Deflexiones')
-                        .map((p: any) =>
-                            `<span style="color:${p.color}">${p.seriesName}</span>: ${p.value?.[1]?.toFixed(2) ?? '-'}°`
-                        ).join('<br/>')
-                    return `${t}s<br/>${lines}`
-                },
-            },
-            dataZoom: [
-                {
-                    type: 'inside',
-                    start: dataZoomStart,
-                    end: dataZoomEnd,
-                },
-                {
-                    type: 'slider',
-                    height: 15,
-                    bottom: 5,
-                    start: dataZoomStart,
-                    end: dataZoomEnd,
-                    borderColor: '#374151',
-                    backgroundColor: '#111827',
-                    fillerColor: 'rgba(14, 165, 233, 0.1)',
-                    handleStyle: { color: '#0ea5e9' },
-                    textStyle: { color: '#9ca3af', fontSize: 9 },
-                },
-            ],
-            series,
-        }
-    }, [data, saccades, deflectionPoints, axis, zoomRange])
-
-    // Imperatively update markLine cursor without re-rendering the full chart
+    // Apply external zoom range
     useEffect(() => {
-        const instance = chartRef.current?.getEchartsInstance()
-        if (!instance) return
-        instance.setOption({
-            series: [{
-                markLine: {
-                    silent: true,
-                    symbol: 'none',
-                    lineStyle: { color: '#0ea5e9', width: 1, type: 'solid' },
-                    data: [{ xAxis: currentTime }],
-                    label: { show: false },
-                },
-            }, {}],
-        })
+        const u = chartInstanceRef.current
+        if (!u || !zoomRange) return
+        u.setScale('x', { min: zoomRange[0], max: zoomRange[1] })
+    }, [zoomRange])
+
+    // Redraw cursor line when currentTime changes
+    useEffect(() => {
+        const u = chartInstanceRef.current
+        if (u) u.redraw(false, false)
     }, [currentTime])
 
-    // Click-to-seek anywhere on the chart grid via zrender
-    useEffect(() => {
-        const instance = chartRef.current?.getEchartsInstance()
-        if (!instance) return
-        const zr = instance.getZr()
-        const handler = (e: any) => {
-            const pointInPixel = [e.offsetX, e.offsetY]
-            if (instance.containPixel('grid', pointInPixel)) {
-                const coordX = instance.convertFromPixel({ seriesIndex: 0 }, pointInPixel)[0]
-                if (typeof coordX === 'number' && isFinite(coordX)) {
-                    onSeek(coordX)
-                }
-            }
-        }
-        zr.on('click', handler)
-        return () => { zr.off('click', handler) }
+    const onCreateChart = useCallback((u: uPlot) => {
+        chartInstanceRef.current = u
+
+        // Click-to-seek
+        u.over.addEventListener('click', (e) => {
+            const left = e.clientX - u.over.getBoundingClientRect().left
+            const timeVal = u.posToVal(left, 'x')
+            if (isFinite(timeVal)) onSeek(timeVal)
+        })
+
+        // Double-click to reset zoom
+        u.over.addEventListener('dblclick', () => {
+            u.setScale('x', { min: u.data[0][0], max: u.data[0][u.data[0].length - 1] })
+        })
     }, [onSeek])
 
-    const onEvents = useMemo(() => ({
-        datazoom: (params: any) => {
-            if (data.length === 0) return
-            const maxT = data[data.length - 1].t
-            const start = (params.start ?? params.batch?.[0]?.start ?? 0) / 100 * maxT
-            const end = (params.end ?? params.batch?.[0]?.end ?? 100) / 100 * maxT
-            onZoomChange([start, end])
+    const options = useMemo((): Omit<uPlot.Options, 'width' | 'height'> => ({
+        cursor: {
+            drag: { x: true, y: false, setScale: true },
+            show: true,
+            y: false,
         },
-    }), [data, onZoomChange])
+        select: { show: false, left: 0, top: 0, width: 0, height: 0 },
+        legend: { show: false },
+        padding: [8, 10, 0, 0],
+        hooks: {
+            setScale: [
+                (u: uPlot, scaleKey: string) => {
+                    if (scaleKey === 'x') {
+                        const xMin = u.scales.x.min
+                        const xMax = u.scales.x.max
+                        if (xMin != null && xMax != null) {
+                            onZoomChange([xMin, xMax])
+                        }
+                    }
+                }
+            ],
+            draw: [
+                (u: uPlot) => {
+                    const ctx = u.ctx
+                    const { left, top, width, height } = u.bbox
+
+                    ctx.save()
+
+                    // Saccade areas (horizontal only)
+                    if (axisRef.current === 'horizontal') {
+                        ctx.fillStyle = DARK_THEME.colors.saccadeArea
+                        for (const s of saccadesRef.current) {
+                            const x0 = u.valToPos(s.start_time, 'x', true)
+                            const x1 = u.valToPos(s.end_time, 'x', true)
+                            if (x1 > left && x0 < left + width) {
+                                ctx.fillRect(
+                                    Math.max(x0, left),
+                                    top,
+                                    Math.min(x1, left + width) - Math.max(x0, left),
+                                    height,
+                                )
+                            }
+                        }
+
+                        // Deflection points (diamonds)
+                        const dps = deflectionPointsRef.current
+                        if (dps.length > 0) {
+                            ctx.fillStyle = DARK_THEME.colors.deflection
+                            ctx.strokeStyle = '#f59e0b'
+                            ctx.lineWidth = 1
+                            const size = 4
+                            for (const [t, pos] of dps) {
+                                const cx = u.valToPos(t, 'x', true)
+                                const cy = u.valToPos(pos, 'y', true)
+                                if (cx >= left && cx <= left + width) {
+                                    ctx.beginPath()
+                                    ctx.moveTo(cx, cy - size)
+                                    ctx.lineTo(cx + size, cy)
+                                    ctx.lineTo(cx, cy + size)
+                                    ctx.lineTo(cx - size, cy)
+                                    ctx.closePath()
+                                    ctx.fill()
+                                    ctx.stroke()
+                                }
+                            }
+                        }
+                    }
+
+                    // Time cursor line
+                    const cursorX = u.valToPos(currentTimeInternalRef.current, 'x', true)
+                    if (cursorX >= left && cursorX <= left + width) {
+                        ctx.strokeStyle = DARK_THEME.colors.cursor
+                        ctx.lineWidth = 1
+                        ctx.beginPath()
+                        ctx.moveTo(cursorX, top)
+                        ctx.lineTo(cursorX, top + height)
+                        ctx.stroke()
+                    }
+
+                    ctx.restore()
+                }
+            ],
+        },
+        axes: [
+            darkXAxis('Tiempo (s)'),
+            darkAxis('Grados'),
+        ],
+        scales: {
+            x: { auto: true, time: false },
+            y: { auto: true },
+        },
+        series: [
+            {},
+            {
+                label: 'OD',
+                stroke: DARK_THEME.colors.od,
+                width: 1.2,
+                points: { show: false },
+            },
+            {
+                label: 'OI',
+                stroke: DARK_THEME.colors.oi,
+                width: 1.2,
+                points: { show: false },
+            },
+        ],
+    }), [onZoomChange])
 
     return (
         <div className="bg-dark-900/50 border border-dark-800 rounded-lg overflow-hidden">
@@ -209,13 +203,13 @@ export default function EyePositionChart({
                     )}
                 </div>
             </div>
-            <ReactECharts
-                ref={chartRef}
-                option={option}
-                style={{ height: 250 }}
-                opts={{ renderer: 'canvas' }}
-                onEvents={onEvents}
-            />
+            <div style={{ height: 250 }}>
+                <UPlotChart
+                    options={options}
+                    data={uplotData}
+                    onCreate={onCreateChart}
+                />
+            </div>
         </div>
     )
 }

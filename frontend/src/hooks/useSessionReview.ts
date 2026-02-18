@@ -7,17 +7,17 @@ export function useSessionReview() {
     const [error, setError] = useState<string | null>(null)
     const [payload, setPayload] = useState<SessionReviewPayload | null>(null)
 
-    const loadSession = useCallback(async (sessionId: number) => {
+    const loadRecording = useCallback(async (recordingId: number) => {
         setLoading(true)
         setError(null)
         try {
-            const result = await invoke<SessionReviewPayload>('load_session_review', { sessionId })
+            const result = await invoke<SessionReviewPayload>('load_recording_review', { recordingId })
             setPayload(result)
             return result
         } catch (err) {
-            const errMsg = typeof err === 'string' ? err : 'Error al cargar la sesión'
+            const errMsg = typeof err === 'string' ? err : 'Error al cargar la grabacion'
             setError(errMsg)
-            console.error('[useSessionReview] loadSession error:', err)
+            console.error('[useSessionReview] loadRecording error:', err)
             return null
         } finally {
             setLoading(false)
@@ -25,14 +25,14 @@ export function useSessionReview() {
     }, [])
 
     const getEyeDataWindow = useCallback(async (
-        sessionId: number,
+        recordingId: number,
         startTime: number,
         endTime: number,
         maxPoints?: number,
     ): Promise<ChartEyeDataPoint[]> => {
         try {
             return await invoke<ChartEyeDataPoint[]>('get_eye_data_window', {
-                sessionId,
+                recordingId,
                 startTime,
                 endTime,
                 maxPoints: maxPoints ?? 2000,
@@ -44,14 +44,14 @@ export function useSessionReview() {
     }, [])
 
     const recalibrate = useCallback(async (
-        sessionId: number,
+        recordingId: number,
         calibration: CalibrationSnapshot,
     ) => {
         setLoading(true)
         setError(null)
         try {
-            const result = await invoke<SessionReviewPayload>('recalibrate_session', {
-                sessionId,
+            const result = await invoke<SessionReviewPayload>('recalibrate_recording', {
+                recordingId,
                 calibration,
             })
             setPayload(result)
@@ -70,7 +70,7 @@ export function useSessionReview() {
         loading,
         error,
         payload,
-        loadSession,
+        loadRecording,
         getEyeDataWindow,
         recalibrate,
     }

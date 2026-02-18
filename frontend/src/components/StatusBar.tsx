@@ -1,8 +1,6 @@
-import { Wifi, WifiOff, Video, Cpu, CircleDot, ChevronRight, Activity } from 'lucide-react'
+import { Cpu, CircleDot, ChevronRight, Activity } from 'lucide-react'
 
 interface StatusBarProps {
-  isConnected: boolean
-  videoStatus: 'offline' | 'online' | 'error'
   hardwareStatus: 'offline' | 'online' | 'error'
   fps: number
   recording: boolean
@@ -13,8 +11,6 @@ interface StatusBarProps {
 }
 
 function StatusBar({
-  isConnected,
-  videoStatus,
   hardwareStatus,
   fps,
   recording,
@@ -53,7 +49,11 @@ function StatusBar({
       'pursuit': 'Seguimiento Pendular',
       'positional': 'Pruebas Posicionales',
       'caloric': 'Pruebas Calóricas',
-      'optokinetic': 'Optocinético'
+      'optokinetic': 'Optocinético',
+      'audio_tonal_liminar': 'Audiometría Tonal Liminar',
+      'audio_vocal': 'Audiometría Vocal',
+      'audio_supraliminar': 'Pruebas Supraliminares',
+      'audio_altas_frecuencias': 'Altas Frecuencias',
     }
     return labels[id] || id;
   }
@@ -64,8 +64,12 @@ function StatusBar({
         {/* Module, Patient & Test Info */}
         <div className="flex items-center gap-3">
           <div className="flex flex-col pr-1">
-            <h1 className="text-sm font-bold text-white tracking-tight uppercase">Video-Oculografía</h1>
-            <p className="text-[10px] text-dark-500 font-medium">Protocolos VNG</p>
+            <h1 className="text-sm font-bold text-white tracking-tight uppercase">
+              {testType?.startsWith('audio_') ? 'Evaluación Auditiva' : 'Video-Oculografía'}
+            </h1>
+            <p className="text-[10px] text-dark-500 font-medium">
+              {testType?.startsWith('audio_') ? 'Evaluación Audiológica' : 'Protocolos VNG'}
+            </p>
           </div>
 
           <div className="h-6 w-px bg-dark-700 mx-1" />
@@ -121,32 +125,6 @@ function StatusBar({
 
         {/* Status Indicators */}
         <div className="flex items-center gap-6">
-          {/* Backend Connection */}
-          <div className="flex items-center gap-2">
-            {isConnected ? (
-              <Wifi className="w-4 h-4 text-green-400" />
-            ) : (
-              <WifiOff className="w-4 h-4 text-red-400" />
-            )}
-            <span className={`text-sm ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
-              {isConnected ? 'Conectado' : 'Desconectado'}
-            </span>
-          </div>
-
-          {/* Divider */}
-          <div className="w-px h-6 bg-dark-700" />
-
-          {/* Video Status */}
-          <div className="flex items-center gap-2">
-            <Video className={`w-4 h-4 ${getStatusColor(videoStatus)}`} />
-            <div className="flex items-center gap-1.5">
-              <span className={`status-dot ${getStatusDotClass(videoStatus)}`} />
-              <span className={`text-sm ${getStatusColor(videoStatus)}`}>
-                Video
-              </span>
-            </div>
-          </div>
-
           {/* Hardware Status */}
           <div className="flex items-center gap-2">
             <Cpu className={`w-4 h-4 ${getStatusColor(hardwareStatus)}`} />

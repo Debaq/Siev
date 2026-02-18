@@ -1,11 +1,15 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Circle, Crosshair,
   Cpu, Lightbulb, LightbulbOff,
-  Sun, Activity, Eye, Settings, X, RotateCcw, ChevronDown
+  Sun, Activity, Eye, Settings, X, RotateCcw, ChevronDown,
+  Check, Plus, Thermometer, Minus, ShieldOff, AlertTriangle, Target
 } from 'lucide-react'
 import { useTauriHardware } from '../hooks/useTauriHardware'
 import { UseSessionConfigReturn } from '../hooks/useSessionConfig'
+import { UseCaloricProtocolReturn } from '../hooks/useCaloricProtocol'
+import { computeCompletionStatus, CompletionStatus } from '../hooks/useCaloricTimer'
+import { CaloricProtocolTiming } from '../types/config'
 import { useWebSocket } from '../contexts/WebSocketContext'
 import { StimulusController } from './StimulusController'
 
@@ -53,7 +57,17 @@ interface ControlPanelProps {
   sessionConfig: UseSessionConfigReturn
   appConfig: any
   currentSession?: any
+  currentRecording?: any
   currentTestType?: string | null
+  caloricProtocol?: UseCaloricProtocolReturn
+  isRecording: boolean
+  onRecordingChange: (v: boolean) => void
+  onStartRecording?: () => Promise<void> | void
+  isCalibrated: boolean
+  onBypassCalibration: () => void
+  onReviewSession?: () => void
+  caloricTimerInfo?: { elapsedSeconds: number; timing: CaloricProtocolTiming }
+  onRedoStage?: (index: number) => void
 }
 
 function ControlPanel({
@@ -61,18 +75,57 @@ function ControlPanel({
   onCalibrate,
   sessionConfig,
   appConfig,
-  currentSession,
-  currentTestType
+  currentRecording,
+  currentTestType,
+  caloricProtocol,
+  isRecording,
+  onRecordingChange,
+  onStartRecording,
+  isCalibrated,
+  onBypassCalibration,
+  onReviewSession,
+  caloricTimerInfo,
+  onRedoStage,
 }: ControlPanelProps) {
-  const { send, hardwareStatus: _wsHardwareStatus } = useWebSocket()
-  const [isRecording, setIsRecording] = useState(false)
+  const { send } = useWebSocket()
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const [showAddStage, setShowAddStage] = useState(false)
+  const [newStageTemp, setNewStageTemp] = useState<number>(40)
+  const [newStageEar, setNewStageEar] = useState<'od' | 'oi'>('od')
   const [openSection, setOpenSection] = useState<string>('image')
   const advancedPanelRef = useRef<HTMLDivElement>(null)
+  const [showBypass, setShowBypass] = useState(false)
+  const bypassTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Spinner hold logic for temperature
+  const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const holdCountRef = useRef(0)
+
+  const clearHold = useCallback(() => {
+    if (holdIntervalRef.current) {
+      clearInterval(holdIntervalRef.current)
+      holdIntervalRef.current = null
+    }
+    holdCountRef.current = 0
+  }, [])
+
+  const startHold = useCallback((direction: 1 | -1) => {
+    clearHold()
+    holdIntervalRef.current = setInterval(() => {
+      holdCountRef.current += 1
+      const step = holdCountRef.current > 5 ? 5 : 1
+      setNewStageTemp(prev => Math.max(1, Math.min(55, prev + direction * step)))
+    }, 150)
+  }, [clearHold])
+
+  useEffect(() => {
+    // Cleanup on unmount
+    return clearHold
+  }, [clearHold])
 
   // Extract values and methods from sessionConfig
   const { values, hasOverrides, updateAndSync, clearAllOverrides } = sessionConfig
-  const { brightness, contrast, threshold, nose_width, eye_height, use_yolo, show_debug, smooth, manual_roi_right, manual_roi_left } = values
+  const { brightness, contrast, threshold, nose_width, eye_height, use_yolo, show_debug, smooth, manual_roi_right, manual_roi_left, min_circularity, min_area, blink_detection, blink_white_ratio, lost_tolerance, velocity_margin_factor, aspect_ratio_min, aspect_ratio_max } = values
 
   // Close panel on click outside
   useEffect(() => {
@@ -149,19 +202,43 @@ function ControlPanel({
     send({ type: 'set_config', key, value: newRoi })
   }
 
-  const handleStartRecording = () => {
-    if (currentSession) {
-      send({ type: 'start_recording', session_id: currentSession.id })
+  const handleTrackingChange = (key: string, value: number | boolean) => {
+    updateAndSync(key as any, value)
+    send({ type: 'set_config', key, value })
+  }
+
+  const handleStartRecording = async () => {
+    if (onStartRecording) {
+      await onStartRecording()
+    } else if (currentRecording) {
+      send({ type: 'start_recording', recording_id: currentRecording.id })
+      onRecordingChange(true)
     } else {
-      // Fallback for "free capture" if needed, but here we require a session
       send({ type: 'send_command', cmd: 'start_recording' })
+      onRecordingChange(true)
     }
-    setIsRecording(true)
   }
 
   const handleStopRecording = () => {
     send({ type: 'stop_recording' })
-    setIsRecording(false)
+    onRecordingChange(false)
+    if (caloricProtocol && caloricProtocol.isProtocolActive) {
+      let status: CompletionStatus | undefined
+      if (caloricTimerInfo) {
+        status = computeCompletionStatus(caloricTimerInfo.elapsedSeconds, caloricTimerInfo.timing)
+      }
+      caloricProtocol.advanceStage(status)
+    }
+  }
+
+  const handleAddStage = () => {
+    if (!caloricProtocol) return
+    caloricProtocol.addStage({
+      label: `${newStageTemp}°C ${newStageEar.toUpperCase()}`,
+      temperature: newStageTemp,
+      ear: newStageEar,
+    })
+    setShowAddStage(false)
   }
 
   const handleResetToConfig = () => {
@@ -351,6 +428,131 @@ function ControlPanel({
               </div>
             </AccordionSection>
 
+            {/* === Tracking === */}
+            <AccordionSection id="tracking" icon={Target} title="Tracking" openSection={openSection} onToggle={toggleSection}>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                      <span>Circularidad mín</span>
+                      <span>{min_circularity.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.2" max="0.9" step="0.05"
+                      className="w-full"
+                      value={min_circularity}
+                      onChange={(e) => handleTrackingChange('min_circularity', parseFloat(e.target.value))}
+                      style={sliderStyle(min_circularity, 0.2, 0.9)}
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                      <span>Área mínima</span>
+                      <span>{min_area}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="10" max="200" step="5"
+                      className="w-full"
+                      value={min_area}
+                      onChange={(e) => handleTrackingChange('min_area', Number(e.target.value))}
+                      style={sliderStyle(min_area, 10, 200)}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-dark-400">Detección de parpadeo</span>
+                  <button
+                    className={`w-8 h-4 rounded-full transition-colors relative ${blink_detection ? 'bg-siev-500' : 'bg-dark-600'}`}
+                    onClick={() => handleTrackingChange('blink_detection', !blink_detection)}
+                  >
+                    <div className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition-transform ${blink_detection ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+
+                {blink_detection && (
+                  <div>
+                    <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                      <span>Sensibilidad parpadeo</span>
+                      <span>{blink_white_ratio.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.3" max="0.9" step="0.05"
+                      className="w-full"
+                      value={blink_white_ratio}
+                      onChange={(e) => handleTrackingChange('blink_white_ratio', parseFloat(e.target.value))}
+                      style={sliderStyle(blink_white_ratio, 0.3, 0.9)}
+                    />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                      <span>Tolerancia pérdida</span>
+                      <span>{lost_tolerance}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="2" max="30" step="1"
+                      className="w-full"
+                      value={lost_tolerance}
+                      onChange={(e) => handleTrackingChange('lost_tolerance', Number(e.target.value))}
+                      style={sliderStyle(lost_tolerance, 2, 30)}
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                      <span>Factor velocidad</span>
+                      <span>{velocity_margin_factor.toFixed(1)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.5" max="5" step="0.5"
+                      className="w-full"
+                      value={velocity_margin_factor}
+                      onChange={(e) => handleTrackingChange('velocity_margin_factor', parseFloat(e.target.value))}
+                      style={sliderStyle(velocity_margin_factor, 0.5, 5)}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                      <span>Aspect ratio mín</span>
+                      <span>{aspect_ratio_min.toFixed(1)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0.1" max="1" step="0.1"
+                      className="w-full"
+                      value={aspect_ratio_min}
+                      onChange={(e) => handleTrackingChange('aspect_ratio_min', parseFloat(e.target.value))}
+                      style={sliderStyle(aspect_ratio_min, 0.1, 1)}
+                    />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-[10px] text-dark-400 mb-1">
+                      <span>Aspect ratio máx</span>
+                      <span>{aspect_ratio_max.toFixed(1)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1" max="5" step="0.1"
+                      className="w-full"
+                      value={aspect_ratio_max}
+                      onChange={(e) => handleTrackingChange('aspect_ratio_max', parseFloat(e.target.value))}
+                      style={sliderStyle(aspect_ratio_max, 1, 5)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </AccordionSection>
+
             {/* === ROI Ojo Derecho (solo sin YOLO) === */}
             {!use_yolo && (
               <AccordionSection id="roi-right" icon={Eye} title="ROI Ojo Derecho" badge={{ label: 'OD', color: '#ef4444' }} openSection={openSection} onToggle={toggleSection}>
@@ -511,23 +713,208 @@ function ControlPanel({
         <button
           className={`btn ${isRecording ? 'btn-danger' : 'btn-primary'} col-span-2`}
           onClick={isRecording ? handleStopRecording : handleStartRecording}
-          disabled={!isCapturing}
+          disabled={!isCapturing || (!isCalibrated && !isRecording)}
+          title={!isCalibrated && !isRecording ? 'Se requiere calibración antes de iniciar' : undefined}
         >
           <Circle className={`w-3 h-3 ${isRecording ? 'fill-current animate-pulse' : ''}`} />
-          {isRecording ? 'DETENER PRUEBA' : 'INICIAR PRUEBA'}
+          {isRecording ? 'DETENER PRUEBA' : !isCalibrated ? 'REQUIERE CALIBRACIÓN' : 'INICIAR PRUEBA'}
         </button>
 
-        <button
-          className="btn btn-secondary w-full col-span-2"
-          onClick={onCalibrate}
-          disabled={!isCapturing || isRecording}
-        >
-          <Crosshair className="w-3 h-3" />
-          CALIBRAR
-        </button>
+        <div className="col-span-2 flex gap-1.5 relative">
+          <button
+            className={`btn btn-secondary flex-1 transition-all ${showBypass ? 'rounded-r-none' : ''}`}
+            onClick={onCalibrate}
+            disabled={!isCapturing || isRecording}
+            onMouseMove={(e) => {
+              if (isCalibrated || isRecording || !isCapturing) return
+              const rect = e.currentTarget.getBoundingClientRect()
+              const nearRightEdge = e.clientX > rect.right - 20
+              if (nearRightEdge && !bypassTimerRef.current) {
+                bypassTimerRef.current = setTimeout(() => setShowBypass(true), 5000)
+              } else if (!nearRightEdge && bypassTimerRef.current) {
+                clearTimeout(bypassTimerRef.current)
+                bypassTimerRef.current = null
+              }
+            }}
+            onMouseLeave={() => {
+              if (bypassTimerRef.current) {
+                clearTimeout(bypassTimerRef.current)
+                bypassTimerRef.current = null
+              }
+            }}
+          >
+            <Crosshair className="w-3 h-3" />
+            CALIBRAR
+          </button>
+          {showBypass && !isCalibrated && (
+            <button
+              className="btn bg-red-600 hover:bg-red-700 text-white rounded-l-none px-2 animate-in slide-in-from-right-2 duration-200"
+              onClick={() => {
+                onBypassCalibration()
+                setShowBypass(false)
+              }}
+              title="Saltar calibración"
+            >
+              <ShieldOff className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="border-t border-dark-800 my-1" />
+
+      {/* Caloric Protocol Stages */}
+      {caloricProtocol && caloricProtocol.stages.length > 0 && (
+        <div className="mb-2">
+          <SectionTitle icon={Thermometer} title="Irrigaciones" />
+          <div className="px-1 space-y-1">
+            {caloricProtocol.stages.map((stage, i) => {
+              const cs = stage.completionStatus
+              const canRedo = stage.status === 'completed' && cs && cs !== 'completada'
+
+              return (
+                <div
+                  key={i}
+                  onClick={() => {
+                    if (isRecording) return
+                    if (stage.status === 'completed' && cs === 'completada' && onReviewSession) {
+                      onReviewSession()
+                    } else if (stage.status === 'pending') {
+                      caloricProtocol.goToStage(i)
+                    }
+                  }}
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors ${
+                    stage.status === 'active'
+                      ? 'bg-green-500/15 border border-green-500/30'
+                      : stage.status === 'completed' && cs === 'completada'
+                      ? 'bg-dark-800/50 border border-dark-700/50 cursor-pointer hover:bg-dark-700/50'
+                      : stage.status === 'completed'
+                      ? 'bg-dark-800/50 border border-dark-700/50'
+                      : 'bg-dark-800/30 border border-transparent cursor-pointer hover:bg-dark-800/60'
+                  } ${isRecording ? 'pointer-events-none' : ''}`}
+                >
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold shrink-0 ${
+                    stage.status === 'active'
+                      ? 'bg-green-500 text-white'
+                      : cs === 'completada'
+                      ? 'bg-green-600 text-white'
+                      : cs === 'sin_ofi'
+                      ? 'bg-yellow-500 text-white'
+                      : cs === 'incompleta'
+                      ? 'bg-orange-500 text-white'
+                      : cs === 'fallida'
+                      ? 'bg-red-500 text-white'
+                      : 'bg-dark-700 text-dark-400'
+                  }`}>
+                    {cs === 'completada' ? <Check className="w-2.5 h-2.5" />
+                      : cs === 'sin_ofi' ? <Check className="w-2.5 h-2.5" />
+                      : cs === 'incompleta' ? <AlertTriangle className="w-2.5 h-2.5" />
+                      : cs === 'fallida' ? <X className="w-2.5 h-2.5" />
+                      : i + 1}
+                  </span>
+                  <span className={`font-medium ${
+                    stage.status === 'active'
+                      ? 'text-green-400'
+                      : stage.status === 'completed'
+                      ? 'text-dark-400'
+                      : 'text-dark-300'
+                  }`}>
+                    {stage.irrigation.temperature}°C {stage.irrigation.ear.toUpperCase()}
+                  </span>
+                  {stage.status === 'active' && (
+                    <span className="ml-auto text-[9px] text-green-400 font-bold uppercase">Activa</span>
+                  )}
+                  {cs === 'completada' && (
+                    <span className="ml-auto text-[9px] text-green-500">Completada</span>
+                  )}
+                  {cs === 'sin_ofi' && (
+                    <span className="ml-auto text-[9px] text-yellow-400">Sin OFI</span>
+                  )}
+                  {cs === 'incompleta' && (
+                    <span className="ml-auto text-[9px] text-orange-400">Incompleta</span>
+                  )}
+                  {cs === 'fallida' && (
+                    <span className="ml-auto text-[9px] text-red-400">Fallida</span>
+                  )}
+                  {canRedo && onRedoStage && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onRedoStage(i) }}
+                      className="ml-1 p-0.5 rounded hover:bg-dark-600 text-dark-400 hover:text-white transition-colors"
+                      title="Rehacer irrigación"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+
+            {caloricProtocol.isProtocolComplete && (
+              <div className="flex items-center gap-2 px-2 py-2 rounded bg-siev-500/10 border border-siev-500/20 text-xs text-siev-400 font-bold">
+                <Check className="w-3.5 h-3.5" />
+                Protocolo Completado
+              </div>
+            )}
+
+            {/* Add stage button / form */}
+            {!showAddStage ? (
+              <button
+                onClick={() => setShowAddStage(true)}
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded text-xs text-dark-400 hover:text-white hover:bg-dark-800 transition-colors w-full"
+              >
+                <Plus className="w-3 h-3" />
+                Agregar irrigación
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 p-1.5 rounded bg-dark-800 border border-dark-700">
+                {/* Temperature spinner */}
+                <div className="flex items-center bg-dark-700 rounded border border-dark-600 select-none">
+                  <button
+                    className="px-1 py-0.5 text-dark-400 hover:text-white transition-colors"
+                    onClick={() => setNewStageTemp(prev => Math.max(1, prev - 1))}
+                    onMouseDown={() => startHold(-1)}
+                    onMouseUp={clearHold}
+                    onMouseLeave={clearHold}
+                  >
+                    <Minus className="w-2.5 h-2.5" />
+                  </button>
+                  <span className="text-[10px] text-white font-bold w-8 text-center tabular-nums">{newStageTemp}°</span>
+                  <button
+                    className="px-1 py-0.5 text-dark-400 hover:text-white transition-colors"
+                    onClick={() => setNewStageTemp(prev => Math.min(55, prev + 1))}
+                    onMouseDown={() => startHold(1)}
+                    onMouseUp={clearHold}
+                    onMouseLeave={clearHold}
+                  >
+                    <Plus className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+                <select
+                  value={newStageEar}
+                  onChange={(e) => setNewStageEar(e.target.value as 'od' | 'oi')}
+                  className="bg-dark-700 text-white text-[10px] rounded px-1.5 py-1 border border-dark-600 outline-none"
+                >
+                  <option value="od">OD</option>
+                  <option value="oi">OI</option>
+                </select>
+                <button
+                  onClick={handleAddStage}
+                  className="p-1 rounded bg-siev-500 hover:bg-siev-600 text-white transition-colors"
+                >
+                  <Check className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => setShowAddStage(false)}
+                  className="p-1 rounded hover:bg-dark-600 text-dark-400 hover:text-white transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="border-t border-dark-800 my-1" />
+        </div>
+      )}
 
       {/* Stimulus Control (Only if test type matches) */}
       {currentTestType && ['calibration_gaze', 'saccades', 'pursuit', 'optokinetic', 'gaze'].includes(currentTestType) && (

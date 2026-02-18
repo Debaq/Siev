@@ -120,6 +120,33 @@ pub struct PreviousSessionData {
 }
 
 // ============================================
+// SPV Report Data (for report charts)
+// ============================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SPVReportTimePoint {
+    pub time: f64,
+    pub spv: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SPVReportData {
+    pub timeline: Vec<SPVReportTimePoint>,
+    pub overall_spv: f64,
+    pub beat_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SaccadeMarkerForReport {
+    pub start_time: f64,
+    pub end_time: f64,
+    pub amplitude: f64,
+    pub peak_velocity: f64,
+    pub duration_ms: f64,
+    pub direction: String,
+}
+
+// ============================================
 // Main VNG Report Data DTO
 // ============================================
 
@@ -134,6 +161,10 @@ pub struct VNGReportData {
     pub okn: Option<OKNTestResult>,
     pub positional: Option<PositionalTestResult>,
     pub caloric: Option<CaloricTestResult>,
+
+    // SPV and raw saccade data for report charts
+    pub spv_data: Option<SPVReportData>,
+    pub raw_saccades: Option<Vec<SaccadeMarkerForReport>>,
 
     // Historical comparison (optional)
     pub previous_session: Option<PreviousSessionData>,
@@ -152,6 +183,8 @@ impl VNGReportData {
             okn: None,
             positional: None,
             caloric: None,
+            spv_data: None,
+            raw_saccades: None,
             previous_session: None,
             reference_values: Some(ReferenceValueSet::default()),
         }
@@ -180,6 +213,7 @@ pub struct VNGReportConfig {
     pub include_graphs: bool,
     pub compare_with_previous: bool,
     pub diagram_style: String,
+    pub analysis_method: String,
 }
 
 impl Default for VNGReportConfig {
@@ -203,6 +237,7 @@ impl Default for VNGReportConfig {
             include_graphs: true,
             compare_with_previous: false,
             diagram_style: "claussen".into(),
+            analysis_method: "both".into(),
         }
     }
 }

@@ -136,7 +136,7 @@ do_build() {
     cd "$SCRIPT_DIR/src-tauri"
     cargo build --release
 
-    if ! cargo tauri build; then
+    if ! NO_STRIP=true cargo tauri build; then
         echo -e "${YELLOW}  El bundling falló (común en Arch sin fuse2/appimagetool).${NC}"
         echo -e "${GREEN}  El binario fue compilado correctamente.${NC}"
     fi

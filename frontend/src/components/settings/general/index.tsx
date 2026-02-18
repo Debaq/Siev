@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileText, Users, LayoutGrid, Database, ShieldAlert } from 'lucide-react';
 import { SettingsTabs, TabDefinition } from '../SettingsTabs';
 import { InstitutionTab } from './InstitutionTab';
@@ -10,6 +10,7 @@ import { MaintenanceTab } from './MaintenanceTab';
 interface GeneralSettingsProps {
     config: any;
     updateConfig: (path: string, value: any) => void;
+    initialTab?: string;
 }
 
 const GENERAL_TABS: TabDefinition[] = [
@@ -20,17 +21,21 @@ const GENERAL_TABS: TabDefinition[] = [
     { id: 'maintenance', label: 'Mantenimiento', icon: ShieldAlert },
 ];
 
-export const GeneralSettings: React.FC<GeneralSettingsProps> = ({ config, updateConfig }) => {
-    const [activeTab, setActiveTab] = useState('institution');
+export const GeneralSettings: React.FC<GeneralSettingsProps> = ({ config, updateConfig, initialTab }) => {
+    const [activeTab, setActiveTab] = useState(initialTab ?? 'institution');
+
+    useEffect(() => {
+        if (initialTab) setActiveTab(initialTab);
+    }, [initialTab]);
 
     return (
         <div className="flex flex-col h-full">
-            <SettingsTabs 
-                tabs={GENERAL_TABS} 
-                activeTabId={activeTab} 
-                onTabChange={setActiveTab} 
+            <SettingsTabs
+                tabs={GENERAL_TABS}
+                activeTabId={activeTab}
+                onTabChange={setActiveTab}
             />
-            
+
             <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
                 {activeTab === 'institution' && (
                     <InstitutionTab config={config} updateConfig={updateConfig} />

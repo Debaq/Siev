@@ -2,7 +2,7 @@ use nalgebra::Vector2;
 use serde::{Deserialize, Serialize};
 use super::kalman::{KalmanFilter, KalmanConfig};
 
-// Data structures for communication with Frontend/Python
+// Data structures for communication with Frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawEyeData {
     pub left_eye: Option<[f64; 2]>,
@@ -121,7 +121,7 @@ impl EyeProcessor {
         self.last_timestamp = Some(current_time);
 
         if !self.filtering_enabled {
-            // Return raw or Python-processed data directly
+            // Return raw or pre-processed data directly
             let (l, r) = if let Some(p) = data.processed {
                 (p.left_eye, p.right_eye)
             } else {

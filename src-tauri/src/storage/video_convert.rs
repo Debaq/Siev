@@ -65,6 +65,24 @@ pub fn convert_h264_to_mp4(
     Ok(())
 }
 
+/// Count the number of video frames in a raw H.264 Annex B file.
+/// Counts NAL units of type 1 (non-IDR slice) and 5 (IDR slice).
+pub fn count_h264_frames(raw_path: &Path) -> usize {
+    if let Ok(data) = fs::read(raw_path) {
+        let nals = parse_annex_b_nals(&data);
+        nals.iter().filter(|nal| {
+            if !nal.is_empty() {
+                let nal_type = nal[0] & 0x1F;
+                nal_type == 1 || nal_type == 5 // non-IDR slice or IDR slice
+            } else {
+                false
+            }
+        }).count()
+    } else {
+        0
+    }
+}
+
 /// Parse Annex B NAL units from H.264 bitstream
 /// Finds 00 00 00 01 or 00 00 01 start code patterns
 fn parse_annex_b_nals(data: &[u8]) -> Vec<&[u8]> {

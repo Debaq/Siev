@@ -1,10 +1,14 @@
 import React from 'react';
 import { SmoothPursuitTestResult, PursuitPattern } from '../../../types/vng';
 import { REFERENCE_RANGES, isNormal, formatValue } from '../usePDFGeneration';
+import { PursuitGainDiagram } from '../charts/PursuitGainDiagram';
+import { EditableField } from '../shared/EditableField';
 
 interface PursuitSectionProps {
     data: SmoothPursuitTestResult;
     showGraphs?: boolean;
+    comment?: string;
+    onCommentChange?: (value: string) => void;
 }
 
 const patternDescriptions: Record<PursuitPattern, string> = {
@@ -14,7 +18,12 @@ const patternDescriptions: Record<PursuitPattern, string> = {
     'IV': 'Severamente afectado - Rastreo sacádico predominante'
 };
 
-export const PursuitSection: React.FC<PursuitSectionProps> = ({ data, showGraphs: _showGraphs }) => {
+export const PursuitSection: React.FC<PursuitSectionProps> = ({
+    data,
+    showGraphs,
+    comment,
+    onCommentChange,
+}) => {
     const refs = REFERENCE_RANGES.pursuit;
 
     const GainCell: React.FC<{ value: number }> = ({ value }) => {
@@ -105,6 +114,9 @@ export const PursuitSection: React.FC<PursuitSectionProps> = ({ data, showGraphs
                 Ganancia normal: {refs.gain.min}-{refs.gain.max}
             </div>
 
+            {/* Pursuit gain diagram */}
+            {showGraphs && <PursuitGainDiagram data={data} />}
+
             {/* Interpretation */}
             <div className={`mt-3 p-3 rounded ${data.is_normal ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
                 <span className="font-medium">Interpretación:</span>{' '}
@@ -117,6 +129,16 @@ export const PursuitSection: React.FC<PursuitSectionProps> = ({ data, showGraphs
                 <div className="mt-2 text-sm text-gray-600 italic">
                     Nota: {data.clinical_notes}
                 </div>
+            )}
+
+            {/* Evaluator comment */}
+            {onCommentChange && (
+                <EditableField
+                    value={comment || ''}
+                    onChange={onCommentChange}
+                    label="Observaciones del evaluador"
+                    placeholder="Escribir observaciones sobre rastreo..."
+                />
             )}
         </div>
     );

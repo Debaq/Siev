@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen, emit } from '@tauri-apps/api/event';
 import { Maximize2, X, Move, Monitor, AlertTriangle, Minimize2 } from 'lucide-react';
@@ -155,6 +155,56 @@ export const ExternalDisplayPage: React.FC = () => {
         return size_inches * effectivePPI;
     }, [stimulusState.screenConfig.distance_cm, stimulusState.screenConfig.pixel_density]);
 
+    // Calcular el ángulo máximo representable por la pantalla actual
+    const screenLimitInfo = useMemo(() => {
+        const { distance_cm, pixel_density } = stimulusState.screenConfig;
+        const ppi = pixel_density || 96;
+        const dist = distance_cm || 60;
+        const sw = window.innerWidth;
+        const sh = window.innerHeight;
+
+        // Inversa de degToPx: halfPx → grados
+        const pxToDeg = (halfPx: number) => {
+            const inches = halfPx / ppi;
+            const cm = inches * 2.54;
+            return Math.atan(cm / dist) * (180 / Math.PI);
+        };
+
+        const maxH = pxToDeg(sw / 2);
+        const maxV = pxToDeg(sh / 2);
+
+        // Ángulos requeridos por el estímulo activo
+        let requiredH = 0;
+        let requiredV = 0;
+        const cfg = stimulusState.config;
+        if (cfg) {
+            const p = cfg.params as any;
+            switch (cfg.test) {
+                case 'saccades':
+                    requiredH = p.max_amplitude || 30;
+                    break;
+                case 'pursuit':
+                    requiredH = p.amplitudes?.[0] || 20;
+                    break;
+                case 'calibration':
+                    requiredH = p.horizontal_fov || 20;
+                    requiredV = p.vertical_fov || 10;
+                    break;
+                case 'gaze': {
+                    const pts = p.points || [];
+                    requiredH = Math.max(...pts.map((pt: any) => Math.abs(pt.x)), 0);
+                    requiredV = Math.max(...pts.map((pt: any) => Math.abs(pt.y)), 0);
+                    break;
+                }
+            }
+        }
+
+        const exceedsH = requiredH > maxH;
+        const exceedsV = requiredV > maxV;
+
+        return { maxH, maxV, requiredH, requiredV, exceedsH, exceedsV, exceeds: exceedsH || exceedsV };
+    }, [stimulusState.config, stimulusState.screenConfig.distance_cm, stimulusState.screenConfig.pixel_density]);
+
     // --- RENDERERS ---
 
     // 1. WINDOWED MODE (The "Original" Look)
@@ -268,11 +318,28 @@ export const ExternalDisplayPage: React.FC = () => {
 
     return (
         <div className="h-screen w-screen bg-black overflow-hidden relative cursor-none">
-            {/* Safety Warning */}
+            {/* Safety Warning - not fullscreen */}
             {!isFullscreen && (
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-red-500/90 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-3 backdrop-blur pointer-events-auto cursor-pointer" onClick={handleToggleFullscreen}>
                     <AlertTriangle className="w-4 h-4" />
                     <span className="text-sm font-bold">Haga clic aquí para Pantalla Completa</span>
+                </div>
+            )}
+
+            {/* Advertencia: estímulo excede pantalla */}
+            {screenLimitInfo.exceeds && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-50 bg-amber-600/90 text-white px-5 py-2.5 rounded-xl shadow-lg flex items-center gap-3 backdrop-blur max-w-lg">
+                    <AlertTriangle className="w-5 h-5 shrink-0" />
+                    <div className="text-xs leading-snug">
+                        <span className="font-bold">Pantalla insuficiente:</span>{' '}
+                        {screenLimitInfo.exceedsH && (
+                            <span>Horizontal requiere {screenLimitInfo.requiredH.toFixed(0)}° pero máximo representable es {screenLimitInfo.maxH.toFixed(1)}°. </span>
+                        )}
+                        {screenLimitInfo.exceedsV && (
+                            <span>Vertical requiere {screenLimitInfo.requiredV.toFixed(0)}° pero máximo representable es {screenLimitInfo.maxV.toFixed(1)}°. </span>
+                        )}
+                        <span className="opacity-80">Reduzca los ángulos o aumente la distancia al paciente.</span>
+                    </div>
                 </div>
             )}
 

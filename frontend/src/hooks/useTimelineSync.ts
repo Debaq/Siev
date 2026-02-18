@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 
 export function useTimelineSync(duration: number) {
     const [currentTime, setCurrentTime] = useState(0)
@@ -6,13 +6,30 @@ export function useTimelineSync(duration: number) {
     const [playbackRate, setPlaybackRateState] = useState(1)
     const [zoomRange, setZoomRange] = useState<[number, number] | null>(null)
     const videoRef = useRef<HTMLVideoElement>(null)
+    const currentTimeRef = useRef(0)
+    const rafId = useRef<number | null>(null)
 
     const onVideoTimeUpdate = useCallback((time: number) => {
-        setCurrentTime(time)
+        currentTimeRef.current = time
+        if (rafId.current === null) {
+            rafId.current = requestAnimationFrame(() => {
+                setCurrentTime(currentTimeRef.current)
+                rafId.current = null
+            })
+        }
+    }, [])
+
+    useEffect(() => {
+        return () => {
+            if (rafId.current !== null) {
+                cancelAnimationFrame(rafId.current)
+            }
+        }
     }, [])
 
     const seekTo = useCallback((time: number) => {
         const clampedTime = Math.max(0, Math.min(time, duration))
+        currentTimeRef.current = clampedTime
         setCurrentTime(clampedTime)
         if (videoRef.current) {
             videoRef.current.currentTime = clampedTime
@@ -40,6 +57,7 @@ export function useTimelineSync(duration: number) {
 
     return {
         currentTime,
+        currentTimeRef,
         isPlaying,
         playbackRate,
         zoomRange,

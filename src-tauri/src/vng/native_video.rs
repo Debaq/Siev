@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, Mutex, atomic::{AtomicBool, AtomicU32, Ordering}};
 use std::thread;
 use std::io::Cursor;
 use nokhwa::pixel_format::LumaFormat;
@@ -247,6 +247,36 @@ pub struct NativeVideoManager {
     // Capture dimensions (for video recorder initialization)
     capture_width: Arc<Mutex<u32>>,
     capture_height: Arc<Mutex<u32>>,
+    // Combined ROI image dimensions (actual output frame size)
+    combined_w: Arc<AtomicU32>,
+    combined_h: Arc<AtomicU32>,
+    // Tracking parameters (configurable from UI)
+    min_circularity: Arc<Mutex<f32>>,
+    min_area: Arc<Mutex<u32>>,
+    max_area_ratio: Arc<Mutex<f32>>,
+    blink_detection: Arc<AtomicBool>,
+    blink_white_ratio: Arc<Mutex<f32>>,
+    lost_tolerance: Arc<Mutex<u32>>,
+    velocity_margin_factor: Arc<Mutex<f32>>,
+    aspect_ratio_min: Arc<Mutex<f32>>,
+    aspect_ratio_max: Arc<Mutex<f32>>,
+}
+
+/// Detección individual de YOLO26
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+struct YoloDetection {
+    bbox: [u32; 4],   // [x1, y1, x2, y2] coordenadas originales
+    confidence: f32,
+    class_id: u32,     // 0=eye, 1=pupil
+}
+
+/// Resultado de inferencia YOLO26 con detecciones de ojos y pupilas
+struct Yolo26Result {
+    eye_right: Option<[u32; 4]>,
+    eye_left: Option<[u32; 4]>,
+    pupil_right: Option<(f32, f32)>,  // centro (x,y)
+    pupil_left: Option<(f32, f32)>,
 }
 
 impl NativeVideoManager {
@@ -276,6 +306,17 @@ impl NativeVideoManager {
             active_video_recorder: Arc::new(Mutex::new(None)),
             capture_width: Arc::new(Mutex::new(0)),
             capture_height: Arc::new(Mutex::new(0)),
+            combined_w: Arc::new(AtomicU32::new(0)),
+            combined_h: Arc::new(AtomicU32::new(0)),
+            min_circularity: Arc::new(Mutex::new(0.55)),
+            min_area: Arc::new(Mutex::new(30)),
+            max_area_ratio: Arc::new(Mutex::new(0.6)),
+            blink_detection: Arc::new(AtomicBool::new(true)),
+            blink_white_ratio: Arc::new(Mutex::new(0.60)),
+            lost_tolerance: Arc::new(Mutex::new(5)),
+            velocity_margin_factor: Arc::new(Mutex::new(2.0)),
+            aspect_ratio_min: Arc::new(Mutex::new(0.4)),
+            aspect_ratio_max: Arc::new(Mutex::new(2.5)),
         }
     }
 
@@ -379,6 +420,58 @@ impl NativeVideoManager {
         self.smooth_sigma.lock().map(|s| *s).unwrap_or(2.5)
     }
 
+    pub fn set_min_circularity(&self, value: f32) {
+        if let Ok(mut v) = self.min_circularity.lock() {
+            *v = value.clamp(0.2, 0.9);
+        }
+    }
+
+    pub fn set_min_area(&self, value: u32) {
+        if let Ok(mut v) = self.min_area.lock() {
+            *v = value.clamp(10, 200);
+        }
+    }
+
+    pub fn set_max_area_ratio(&self, value: f32) {
+        if let Ok(mut v) = self.max_area_ratio.lock() {
+            *v = value.clamp(0.2, 0.9);
+        }
+    }
+
+    pub fn set_blink_detection(&self, enabled: bool) {
+        self.blink_detection.store(enabled, Ordering::SeqCst);
+    }
+
+    pub fn set_blink_white_ratio(&self, value: f32) {
+        if let Ok(mut v) = self.blink_white_ratio.lock() {
+            *v = value.clamp(0.3, 0.9);
+        }
+    }
+
+    pub fn set_lost_tolerance(&self, value: u32) {
+        if let Ok(mut v) = self.lost_tolerance.lock() {
+            *v = value.clamp(2, 30);
+        }
+    }
+
+    pub fn set_velocity_margin_factor(&self, value: f32) {
+        if let Ok(mut v) = self.velocity_margin_factor.lock() {
+            *v = value.clamp(0.5, 5.0);
+        }
+    }
+
+    pub fn set_aspect_ratio_min(&self, value: f32) {
+        if let Ok(mut v) = self.aspect_ratio_min.lock() {
+            *v = value.clamp(0.1, 1.0);
+        }
+    }
+
+    pub fn set_aspect_ratio_max(&self, value: f32) {
+        if let Ok(mut v) = self.aspect_ratio_max.lock() {
+            *v = value.clamp(1.0, 5.0);
+        }
+    }
+
     pub fn start_capture(&self, camera_id: u32, width: u32, height: u32, fps: u32, model_path: String) -> Result<(), String> {
         // Usar compare_exchange para evitar múltiples llamadas concurrentes
         if self.starting.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
@@ -417,6 +510,17 @@ impl NativeVideoManager {
         let video_recorder_ref = self.active_video_recorder.clone();
         let capture_w_ref = self.capture_width.clone();
         let capture_h_ref = self.capture_height.clone();
+        let combined_w_ref = self.combined_w.clone();
+        let combined_h_ref = self.combined_h.clone();
+        let min_circularity_ref = self.min_circularity.clone();
+        let min_area_ref = self.min_area.clone();
+        let max_area_ratio_ref = self.max_area_ratio.clone();
+        let blink_detection_ref = self.blink_detection.clone();
+        let blink_white_ratio_ref = self.blink_white_ratio.clone();
+        let lost_tolerance_ref = self.lost_tolerance.clone();
+        let velocity_margin_factor_ref = self.velocity_margin_factor.clone();
+        let aspect_ratio_min_ref = self.aspect_ratio_min.clone();
+        let aspect_ratio_max_ref = self.aspect_ratio_max.clone();
 
         thread::spawn(move || {
             // Abrir cámara con fallback de formatos
@@ -562,16 +666,25 @@ impl NativeVideoManager {
             let mut scratch_gray_left = GrayImage::new(1, 1);
             let mut scratch_thresh_left = GrayImage::new(1, 1);
 
-            // Cajas de detección YOLO (coordenadas en la imagen combinada)
+            // Cajas de detección YOLO26 (coordenadas en la imagen combinada)
             // [x1, y1, x2, y2] para cada ojo en la imagen combinada
             let mut yolo_box_right: Option<[u32; 4]> = None;
             let mut yolo_box_left: Option<[u32; 4]> = None;
+            // Hints de pupila YOLO26 (centro x,y para seed del tracker)
+            let mut _yolo_pupil_hint_right: Option<(f32, f32)> = None;
+            let mut _yolo_pupil_hint_left: Option<(f32, f32)> = None;
 
             // Variables de estado persistente para matemáticas refinadas
             let mut last_threshold_right = 40u8;
             let mut last_threshold_left = 40u8;
             let mut last_pupil_right: Option<RustPupilResult> = None;
             let mut last_pupil_left: Option<RustPupilResult> = None;
+            let mut velocity_right: (f32, f32) = (0.0, 0.0);
+            let mut velocity_left: (f32, f32) = (0.0, 0.0);
+            let mut lost_count_right: u32 = 0;
+            let mut lost_count_left: u32 = 0;
+            let mut blink_start_right: Option<std::time::Instant> = None;
+            let mut blink_start_left: Option<std::time::Instant> = None;
 
             println!("[SIEV] Iniciando bucle de captura...");
 
@@ -627,6 +740,15 @@ impl NativeVideoManager {
                 let smooth_sigma = *smooth_ref.lock().unwrap();
                 let brightness_val = *brightness_ref.lock().unwrap();
                 let contrast_val = *contrast_ref.lock().unwrap();
+                let min_circularity_val = *min_circularity_ref.lock().unwrap();
+                let min_area_val = *min_area_ref.lock().unwrap();
+                let max_area_ratio_val = *max_area_ratio_ref.lock().unwrap();
+                let blink_detection_val = blink_detection_ref.load(Ordering::SeqCst);
+                let blink_white_ratio_val = *blink_white_ratio_ref.lock().unwrap();
+                let lost_tolerance_val = *lost_tolerance_ref.lock().unwrap();
+                let velocity_margin_factor_val = *velocity_margin_factor_ref.lock().unwrap();
+                let aspect_ratio_min_val = *aspect_ratio_min_ref.lock().unwrap();
+                let aspect_ratio_max_val = *aspect_ratio_max_ref.lock().unwrap();
 
                 // ===== PASO 1: Extraer ROIs de ambos ojos =====
                 let roi_nose = (w as f32 * nose_w) as u32;
@@ -661,6 +783,10 @@ impl NativeVideoManager {
                 let combined_width = roi_right_w + roi_left_w;
                 let combined_height = roi_right_h.max(roi_left_h);
                 let mut combined = GrayImage::new(combined_width, combined_height);
+
+                // Almacenar dimensiones combinadas para el video recorder
+                combined_w_ref.store(combined_width, Ordering::Relaxed);
+                combined_h_ref.store(combined_height, Ordering::Relaxed);
 
                 // Optimización: Copia por bloques (memcpy) por cada fila
                 let img_stride = w as usize;
@@ -707,12 +833,11 @@ impl NativeVideoManager {
                 if use_yolo {
                     if let Some(ref mut sess) = session {
                         if frame_count % yolo_freq as u64 == 0 {
-                            match Self::run_yolo_inference(sess, &combined) {
-                                Some((box_r, box_l)) => {
-                                    yolo_box_right = Some(box_r);
-                                    yolo_box_left = Some(box_l);
-                                }
-                                None => {}
+                            if let Some(result) = Self::run_yolo_inference(sess, &combined) {
+                                yolo_box_right = result.eye_right;
+                                yolo_box_left = result.eye_left;
+                                _yolo_pupil_hint_right = result.pupil_right;
+                                _yolo_pupil_hint_left = result.pupil_left;
                             }
                         }
                     }
@@ -746,7 +871,7 @@ impl NativeVideoManager {
                     [x1, y1, x2.max(x1 + 1), y2.max(y1 + 1)]
                 };
 
-                // ===== PASO 5: Detectar pupilas con Matemáticas Refinadas =====
+                // ===== PASO 5: Detectar pupilas con Predicción + Validación =====
                 let pupil_right = Self::detect_pupil_math_refined(
                     &combined,
                     search_box_right,
@@ -755,10 +880,61 @@ impl NativeVideoManager {
                     erodes[0],
                     smooth_sigma,
                     last_pupil_right,
+                    velocity_right,
                     &mut scratch_gray_right,
-                    &mut scratch_thresh_right
+                    &mut scratch_thresh_right,
+                    min_circularity_val,
+                    min_area_val,
+                    max_area_ratio_val,
+                    blink_detection_val,
+                    blink_white_ratio_val,
+                    velocity_margin_factor_val,
+                    aspect_ratio_min_val,
+                    aspect_ratio_max_val,
                 );
-                last_pupil_right = pupil_right;
+                // Actualizar estado de tracking (ojo derecho)
+                if let Some(ref pr) = pupil_right {
+                    if pr.confidence == -1.0 {
+                        // Parpadeo detectado: congelar estado
+                        if blink_start_right.is_none() {
+                            blink_start_right = Some(std::time::Instant::now());
+                        } else if blink_start_right.unwrap().elapsed().as_millis() > 500 {
+                            // Parpadeo muy largo -> reset
+                            last_pupil_right = None;
+                            velocity_right = (0.0, 0.0);
+                            blink_start_right = None;
+                        }
+                        // No degradar velocidad ni incrementar lost_count
+                    } else if pr.found {
+                        blink_start_right = None;
+                        if let Some(ref prev) = last_pupil_right {
+                            if prev.found {
+                                let nvx = pr.center_x - prev.center_x;
+                                let nvy = pr.center_y - prev.center_y;
+                                velocity_right.0 = velocity_right.0 * 0.5 + nvx * 0.5;
+                                velocity_right.1 = velocity_right.1 * 0.5 + nvy * 0.5;
+                            }
+                        }
+                        // B5: Suavizado temporal del radio
+                        let mut smoothed_pr = *pr;
+                        if let Some(ref prev) = last_pupil_right {
+                            if prev.found {
+                                smoothed_pr.radius = prev.radius * 0.7 + pr.radius * 0.3;
+                            }
+                        }
+                        last_pupil_right = Some(smoothed_pr);
+                        lost_count_right = 0;
+                    } else {
+                        blink_start_right = None;
+                        velocity_right.0 *= 0.8;
+                        velocity_right.1 *= 0.8;
+                        lost_count_right += 1;
+                        if lost_count_right > lost_tolerance_val {
+                            last_pupil_right = None;
+                            velocity_right = (0.0, 0.0);
+                        }
+                    }
+                }
 
                 let pupil_left = Self::detect_pupil_math_refined(
                     &combined,
@@ -768,10 +944,59 @@ impl NativeVideoManager {
                     erodes[1],
                     smooth_sigma,
                     last_pupil_left,
+                    velocity_left,
                     &mut scratch_gray_left,
-                    &mut scratch_thresh_left
+                    &mut scratch_thresh_left,
+                    min_circularity_val,
+                    min_area_val,
+                    max_area_ratio_val,
+                    blink_detection_val,
+                    blink_white_ratio_val,
+                    velocity_margin_factor_val,
+                    aspect_ratio_min_val,
+                    aspect_ratio_max_val,
                 );
-                last_pupil_left = pupil_left;
+                // Actualizar estado de tracking (ojo izquierdo)
+                if let Some(ref pl) = pupil_left {
+                    if pl.confidence == -1.0 {
+                        // Parpadeo detectado: congelar estado
+                        if blink_start_left.is_none() {
+                            blink_start_left = Some(std::time::Instant::now());
+                        } else if blink_start_left.unwrap().elapsed().as_millis() > 500 {
+                            last_pupil_left = None;
+                            velocity_left = (0.0, 0.0);
+                            blink_start_left = None;
+                        }
+                    } else if pl.found {
+                        blink_start_left = None;
+                        if let Some(ref prev) = last_pupil_left {
+                            if prev.found {
+                                let nvx = pl.center_x - prev.center_x;
+                                let nvy = pl.center_y - prev.center_y;
+                                velocity_left.0 = velocity_left.0 * 0.5 + nvx * 0.5;
+                                velocity_left.1 = velocity_left.1 * 0.5 + nvy * 0.5;
+                            }
+                        }
+                        // B5: Suavizado temporal del radio
+                        let mut smoothed_pl = *pl;
+                        if let Some(ref prev) = last_pupil_left {
+                            if prev.found {
+                                smoothed_pl.radius = prev.radius * 0.7 + pl.radius * 0.3;
+                            }
+                        }
+                        last_pupil_left = Some(smoothed_pl);
+                        lost_count_left = 0;
+                    } else {
+                        blink_start_left = None;
+                        velocity_left.0 *= 0.8;
+                        velocity_left.1 *= 0.8;
+                        lost_count_left += 1;
+                        if lost_count_left > lost_tolerance_val {
+                            last_pupil_left = None;
+                            velocity_left = (0.0, 0.0);
+                        }
+                    }
+                }
 
                 // Convertir coordenadas
                 let mut pupil_pos: [Option<[f64; 2]>; 2] = [None, None];
@@ -908,8 +1133,8 @@ impl NativeVideoManager {
         Ok(())
     }
 
-    /// Ejecuta inferencia YOLO y retorna las cajas de ambos ojos
-    fn run_yolo_inference(session: &mut Session, img: &GrayImage) -> Option<([u32; 4], [u32; 4])> {
+    /// Ejecuta inferencia YOLO26 y retorna detecciones de ojos y pupilas
+    fn run_yolo_inference(session: &mut Session, img: &GrayImage) -> Option<Yolo26Result> {
         let (orig_w, orig_h) = (img.width() as f32, img.height() as f32);
 
         // Letterboxing: mantener proporción y añadir padding gris (114,114,114)
@@ -966,52 +1191,109 @@ impl NativeVideoManager {
             None => return None
         };
 
-        // Parsear detecciones
-        let mut detections = Vec::new();
-        let num_boxes = output.shape()[2];
+        // Validar shape YOLO26: [1, 300, 6]
+        let shape = output.shape();
+        if shape.len() != 3 || shape[2] != 6 {
+            eprintln!("[YOLO26] Shape inesperado: {:?} (esperado [1, 300, 6])", shape);
+            return None;
+        }
+
+        let num_boxes = shape[1];
+        let scale_inv = 1.0 / scale;
+        let pad_xf = pad_x as f32;
+        let pad_yf = pad_y as f32;
+
+        // Parsear detecciones YOLO26: [x1, y1, x2, y2, confidence, class_id]
+        let mut eye_detections: Vec<YoloDetection> = Vec::new();
+        let mut pupil_detections: Vec<YoloDetection> = Vec::new();
 
         for i in 0..num_boxes {
-            let score = output[[0, 4, i]];
-            if score > 0.25 {
-                let cx_lb = output[[0, 0, i]];
-                let cy_lb = output[[0, 1, i]];
-                let bw_lb = output[[0, 2, i]];
-                let bh_lb = output[[0, 3, i]];
+            let confidence = output[[0, i, 4]];
+            if confidence < 0.25 {
+                continue;
+            }
 
-                let scale = (640.0 / orig_w).min(640.0 / orig_h);
-                let pad_x = (640.0 - orig_w * scale) / 2.0;
-                let pad_y = (640.0 - orig_h * scale) / 2.0;
+            let class_id = output[[0, i, 5]] as u32;
 
-                let cx = (cx_lb - pad_x) / scale;
-                let cy = (cy_lb - pad_y) / scale;
-                let bw = bw_lb / scale;
-                let bh = bh_lb / scale;
+            // Convertir de letterbox a coordenadas originales (xyxy directo)
+            let x1 = ((output[[0, i, 0]] - pad_xf) * scale_inv).max(0.0).min(orig_w) as u32;
+            let y1 = ((output[[0, i, 1]] - pad_yf) * scale_inv).max(0.0).min(orig_h) as u32;
+            let x2 = ((output[[0, i, 2]] - pad_xf) * scale_inv).max(0.0).min(orig_w) as u32;
+            let y2 = ((output[[0, i, 3]] - pad_yf) * scale_inv).max(0.0).min(orig_h) as u32;
 
-                detections.push((cx, cy, bw, bh, score));
+            let det = YoloDetection {
+                bbox: [x1, y1, x2, y2],
+                confidence,
+                class_id,
+            };
+
+            match class_id {
+                0 => eye_detections.push(det),
+                1 => pupil_detections.push(det),
+                _ => {}
             }
         }
 
-        detections.sort_by(|a, b| b.4.partial_cmp(&a.4).unwrap());
+        // Ojos: top-2 por confianza, luego ordenar izq→der
+        eye_detections.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
+        eye_detections.truncate(2);
+        eye_detections.sort_by(|a, b| a.bbox[0].cmp(&b.bbox[0]));
 
-        if detections.len() >= 2 {
-            let mut top2: Vec<_> = detections.into_iter().take(2).collect();
-            top2.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-
-            let padding_x = 20.0;
-            let padding_y = 40.0;
-
-            let to_box = |d: &(f32, f32, f32, f32, f32)| -> [u32; 4] {
-                let x1 = ((d.0 - d.2 / 2.0) - padding_x).max(0.0) as u32;
-                let y1 = ((d.1 - d.3 / 2.0) - padding_y).max(0.0) as u32;
-                let x2 = ((d.0 + d.2 / 2.0) + padding_x).min(orig_w) as u32;
-                let y2 = ((d.1 + d.3 / 2.0) + padding_y).min(orig_h) as u32;
-                [x1, y1, x2, y2]
-            };
-
-            return Some((to_box(&top2[0]), to_box(&top2[1])));
+        if eye_detections.len() < 2 {
+            return None;
         }
 
-        None
+        // Aplicar padding: 20px horizontal, 40px vertical
+        let pad_eye = |det: &YoloDetection| -> [u32; 4] {
+            [
+                det.bbox[0].saturating_sub(20),
+                det.bbox[1].saturating_sub(40),
+                (det.bbox[2] + 20).min(orig_w as u32),
+                (det.bbox[3] + 40).min(orig_h as u32),
+            ]
+        };
+
+        let eye_right_box = pad_eye(&eye_detections[0]);
+        let eye_left_box = pad_eye(&eye_detections[1]);
+
+        // Centros de los ojos (sin padding) para asociar pupilas
+        let eye_right_cx = (eye_detections[0].bbox[0] + eye_detections[0].bbox[2]) as f32 / 2.0;
+        let eye_right_cy = (eye_detections[0].bbox[1] + eye_detections[0].bbox[3]) as f32 / 2.0;
+        let eye_left_cx = (eye_detections[1].bbox[0] + eye_detections[1].bbox[2]) as f32 / 2.0;
+        let eye_left_cy = (eye_detections[1].bbox[1] + eye_detections[1].bbox[3]) as f32 / 2.0;
+
+        // Asociar pupilas al ojo más cercano
+        let mut pupil_right: Option<(f32, f32)> = None;
+        let mut pupil_left: Option<(f32, f32)> = None;
+        let mut best_conf_right: f32 = 0.0;
+        let mut best_conf_left: f32 = 0.0;
+
+        for p in &pupil_detections {
+            let pcx = (p.bbox[0] + p.bbox[2]) as f32 / 2.0;
+            let pcy = (p.bbox[1] + p.bbox[3]) as f32 / 2.0;
+
+            let dist_right = (pcx - eye_right_cx).powi(2) + (pcy - eye_right_cy).powi(2);
+            let dist_left = (pcx - eye_left_cx).powi(2) + (pcy - eye_left_cy).powi(2);
+
+            if dist_right < dist_left {
+                if p.confidence > best_conf_right {
+                    best_conf_right = p.confidence;
+                    pupil_right = Some((pcx, pcy));
+                }
+            } else {
+                if p.confidence > best_conf_left {
+                    best_conf_left = p.confidence;
+                    pupil_left = Some((pcx, pcy));
+                }
+            }
+        }
+
+        Some(Yolo26Result {
+            eye_right: Some(eye_right_box),
+            eye_left: Some(eye_left_box),
+            pupil_right,
+            pupil_left,
+        })
     }
 
     /// Detector de pupila optimizado con Precisión Sub-píxel, Tracking y Centroide Ponderado
@@ -1023,25 +1305,39 @@ impl NativeVideoManager {
         erode_iter: u8,
         smooth_sigma: f32,
         prev_pupil: Option<RustPupilResult>,
+        velocity: (f32, f32),
         scratch_gray: &mut GrayImage,
-        scratch_thresh: &mut GrayImage
+        scratch_thresh: &mut GrayImage,
+        min_circularity: f32,
+        min_area_param: u32,
+        max_area_ratio: f32,
+        blink_detection: bool,
+        blink_white_ratio: f32,
+        velocity_margin_factor: f32,
+        aspect_ratio_min: f32,
+        aspect_ratio_max: f32,
     ) -> Option<RustPupilResult> {
         let (x1, y1, x2, y2) = (roi[0], roi[1], roi[2], roi[3]);
         let full_rw = x2 - x1;
         let full_rh = y2 - y1;
 
-        // --- MEJORA 1: ROI DINÁMICO (Tracking) ---
+        // --- B4: ROI DINÁMICO CON PREDICCIÓN DE VELOCIDAD (adaptativa) ---
         let (search_x, search_y, search_w, search_h, offset_x, offset_y) = if let Some(prev) = prev_pupil {
             if prev.found {
-                let margin = (prev.radius * 2.5) as u32;
-                let px = (prev.center_x - x1 as f32) as i32;
-                let py = (prev.center_y - y1 as f32) as i32;
-                
+                let speed = (velocity.0 * velocity.0 + velocity.1 * velocity.1).sqrt();
+                let base_margin = prev.radius * 2.0 + speed * velocity_margin_factor;
+                let margin = base_margin.max(prev.radius * 2.5) as u32;
+                // Predecir posición usando velocidad estimada
+                let predicted_x = prev.center_x + velocity.0;
+                let predicted_y = prev.center_y + velocity.1;
+                let px = (predicted_x - x1 as f32) as i32;
+                let py = (predicted_y - y1 as f32) as i32;
+
                 let sx = (px - margin as i32).max(0) as u32;
                 let sy = (py - margin as i32).max(0) as u32;
-                let sw = (margin * 2).min(full_rw - sx);
-                let sh = (margin * 2).min(full_rh - sy);
-                
+                let sw = (margin * 2).min(full_rw.saturating_sub(sx));
+                let sh = (margin * 2).min(full_rh.saturating_sub(sy));
+
                 if sw < 10 || sh < 10 {
                     (0, 0, full_rw, full_rh, 0, 0)
                 } else {
@@ -1070,7 +1366,7 @@ impl NativeVideoManager {
             let src_end = src_start + search_w as usize;
             let dst_start = y as usize * dst_stride;
             let dst_end = dst_start + search_w as usize;
-            
+
             if src_end <= src_raw.len() && dst_end <= dst_raw.len() {
                 dst_raw[dst_start..dst_end].copy_from_slice(&src_raw[src_start..src_end]);
             }
@@ -1078,14 +1374,14 @@ impl NativeVideoManager {
 
         let blurred = gaussian_blur_f32(scratch_gray, smooth_sigma);
 
-        // --- MEJORA 2: UMBRAL ESTABILIZADO (Histéresis) ---
+        // --- UMBRAL ESTABILIZADO (Histéresis) ---
         let current_thresh_val = if manual_threshold == 0 {
             let mut hist = [0u32; 256];
-            let skip = if search_w > 100 { 2 } else { 1 }; 
+            let skip = if search_w > 100 { 2 } else { 1 };
             for (i, p) in blurred.pixels().enumerate() {
                 if i % skip == 0 { hist[p.0[0] as usize] += 1; }
             }
-            
+
             let target = ((search_w * search_h) / (skip as u32 * skip as u32)) as f32 * 0.15;
             let mut acc = 0u32;
             let mut raw_val = 50u8;
@@ -1110,7 +1406,21 @@ impl NativeVideoManager {
             scratch_thresh.put_pixel(x, y, Luma([val]));
         }
 
-        close_mut(scratch_thresh, Norm::LInf, 2); 
+        // B1: Detección de parpadeo (antes de morphology)
+        if blink_detection {
+            let total_pixels = (search_w * search_h) as f32;
+            if total_pixels > 0.0 {
+                let white_count = scratch_thresh.pixels().filter(|p| p.0[0] > 128).count() as f32;
+                let white_ratio = white_count / total_pixels;
+                if white_ratio > blink_white_ratio || white_ratio < 0.01 {
+                    return Some(RustPupilResult {
+                        center_x: 0.0, center_y: 0.0, radius: 0.0, confidence: -1.0, found: false
+                    });
+                }
+            }
+        }
+
+        close_mut(scratch_thresh, Norm::LInf, 2);
         for _ in 0..erode_iter {
             erode_mut(scratch_thresh, Norm::LInf, 1);
         }
@@ -1118,8 +1428,8 @@ impl NativeVideoManager {
         let contours = find_contours::<i32>(scratch_thresh);
         if contours.is_empty() { return Some(RustPupilResult { center_x: 0.0, center_y: 0.0, radius: 0.0, confidence: 0.0, found: false }); }
 
-        let max_area = (full_rw * full_rh) as f32 * 0.6;
-        let min_area = 30.0;
+        let max_area = (full_rw * full_rh) as f32 * max_area_ratio;
+        let min_area = min_area_param as f32;
         let mut best_pupil: Option<RustPupilResult> = None;
         let mut max_score = 0.0;
 
@@ -1133,18 +1443,28 @@ impl NativeVideoManager {
                 if p.y > max_bcy { max_bcy = p.y; }
             }
 
-            // --- MEJORA 3: CENTROIDE PONDERADO (Weighted Moments) ---
+            // B3: Filtro de aspect ratio del bounding box
+            let bb_w = (max_bcx - min_bcx + 1) as f32;
+            let bb_h = (max_bcy - min_bcy + 1) as f32;
+            if bb_h > 0.0 {
+                let aspect = bb_w / bb_h;
+                if aspect < aspect_ratio_min || aspect > aspect_ratio_max { continue; }
+            }
+
+            // Centroide ponderado (Weighted Moments) + B2: validación de intensidad
             let mut m00 = 0.0;
             let mut m10_w = 0.0;
             let mut m01_w = 0.0;
             let mut weight_sum = 0.0;
+            let mut sum_raw_intensity = 0.0f32;
 
             for y in min_bcy.max(0)..=max_bcy.min(search_h as i32 - 1) {
                 for x in min_bcx.max(0)..=max_bcx.min(search_w as i32 - 1) {
                     if scratch_thresh.get_pixel(x as u32, y as u32).0[0] > 128 {
                         m00 += 1.0;
                         let intensity = blurred.get_pixel(x as u32, y as u32).0[0] as f32;
-                        let weight = (255.0 - intensity).powi(2); 
+                        sum_raw_intensity += intensity;
+                        let weight = (255.0 - intensity).powi(2);
                         m10_w += x as f32 * weight;
                         m01_w += y as f32 * weight;
                         weight_sum += weight;
@@ -1155,26 +1475,82 @@ impl NativeVideoManager {
             let area = m00;
             if area < min_area || area > max_area { continue; }
 
+            // B2: Validación de intensidad media
+            let mean_intensity = if m00 > 0.0 { sum_raw_intensity / m00 } else { 255.0 };
+            if mean_intensity > current_thresh_val as f32 * 1.5 { continue; }
+            let darkness_factor = 1.0 - (mean_intensity / 255.0);
+
+            // B3: Filtro de extent (ratio área/bounding box)
+            let extent = area / (bb_w * bb_h);
+            if extent < 0.4 { continue; }
+
             let perimeter_val = perimeter(&contour.points);
             if perimeter_val == 0.0 { continue; }
             let circularity = (4.0 * std::f32::consts::PI * area) / (perimeter_val.powi(2) as f32);
-            if circularity < 0.55 { continue; }
+            if circularity < min_circularity { continue; }
 
-            let score = area * circularity; 
+            // Calcular centroide antes del score (necesario para proximidad)
+            let center_x = if weight_sum > 0.0 { m10_w / weight_sum } else { 0.0 };
+            let center_y = if weight_sum > 0.0 { m01_w / weight_sum } else { 0.0 };
+
+            // Coordenadas absolutas del centroide
+            let abs_cx = x1 as f32 + offset_x as f32 + center_x;
+            let abs_cy = y1 as f32 + offset_y as f32 + center_y;
+
+            // Exclusión de bordes del ROI completo (la pupila nunca estará pegada al borde)
+            let edge_margin = 3.0_f32;
+            if abs_cx - (x1 as f32) < edge_margin || (x2 as f32) - abs_cx < edge_margin ||
+               abs_cy - (y1 as f32) < edge_margin || (y2 as f32) - abs_cy < edge_margin {
+                continue;
+            }
+
+            // Bonus de proximidad: preferir candidatos cerca de la posición predicha
+            let proximity_bonus = if let Some(prev) = prev_pupil {
+                if prev.found {
+                    let pred_x = prev.center_x + velocity.0;
+                    let pred_y = prev.center_y + velocity.1;
+                    let dx = abs_cx - pred_x;
+                    let dy = abs_cy - pred_y;
+                    let dist_sq = dx * dx + dy * dy;
+                    let sigma = (prev.radius * 2.5).max(15.0);
+                    (-dist_sq / (2.0 * sigma * sigma)).exp()
+                } else {
+                    1.0
+                }
+            } else {
+                1.0
+            };
+
+            let score = area * circularity * darkness_factor * (0.3 + 0.7 * proximity_bonus);
 
             if score > max_score {
-                let center_x = if weight_sum > 0.0 { m10_w / weight_sum } else { 0.0 };
-                let center_y = if weight_sum > 0.0 { m01_w / weight_sum } else { 0.0 };
                 let radius = (area / std::f32::consts::PI).sqrt();
 
                 max_score = score;
                 best_pupil = Some(RustPupilResult {
-                    center_x: x1 as f32 + offset_x as f32 + center_x,
-                    center_y: y1 as f32 + offset_y as f32 + center_y,
+                    center_x: abs_cx,
+                    center_y: abs_cy,
                     radius,
                     confidence: circularity.min(1.0),
                     found: true,
                 });
+            }
+        }
+
+        // Gate de distancia máxima: rechazar saltos físicamente imposibles
+        if let (Some(ref best), Some(prev)) = (&best_pupil, prev_pupil) {
+            if best.found && prev.found {
+                let pred_x = prev.center_x + velocity.0;
+                let pred_y = prev.center_y + velocity.1;
+                let dx = best.center_x - pred_x;
+                let dy = best.center_y - pred_y;
+                let dist = (dx * dx + dy * dy).sqrt();
+                let max_jump = (prev.radius * 5.0).max(40.0);
+                if dist > max_jump {
+                    return Some(RustPupilResult {
+                        center_x: 0.0, center_y: 0.0, radius: 0.0, confidence: 0.0, found: false
+                    });
+                }
             }
         }
 
@@ -1285,6 +1661,12 @@ impl NativeVideoManager {
     pub fn get_capture_dimensions(&self) -> (u32, u32) {
         let w = *self.capture_width.lock().unwrap();
         let h = *self.capture_height.lock().unwrap();
+        (w, h)
+    }
+
+    pub fn get_combined_dimensions(&self) -> (u32, u32) {
+        let w = self.combined_w.load(Ordering::Relaxed);
+        let h = self.combined_h.load(Ordering::Relaxed);
         (w, h)
     }
 

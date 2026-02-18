@@ -10,7 +10,10 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
         static_posturography: false,
         imu_posturography: false,
         vemp: false,
-        point_projector: false
+        point_projector: false,
+        audiometria: false,
+        otoscopia: false,
+        impedanciometria: false
     },
     general: {
         institution: {
@@ -32,59 +35,17 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
             resolution_width: 960,
             resolution_height: 540,
             fps: 60,
-            exposure: -21,
-            contrast: 50,
-            brightness: -21,
-            flip_horizontal: false,
-            flip_vertical: false,
-            video_quality: 80,
-            video_scale: 0.75
         },
         algorithm: {
-            primary: 'yolo',
-            threshold: 40,
-            threshold_left: 40,
-            threshold_right: 40,
-            erode_left: 0,
-            erode_right: 0,
-            min_pupil_size: 10,
-            roi_enabled: true,
+            primary: 'yolo26',
             yolo_frequency: 4,
             yolo_confidence: 0.5,
-            nose_width: 0.25,
-            eye_height: 0.25,
-            smooth: 2.5,
-            use_yolo: false,
-            show_debug: false,
-            manual_roi_right: { top: 0.1, bottom: 0.9, nasal: 0.9, temporal: 0.1 },
-            manual_roi_left: { top: 0.1, bottom: 0.9, nasal: 0.1, temporal: 0.9 }
-        },
-        pupil_detection: {
-            mode: 'legacy',
-            search_window_multiplier: 3.0,
-            dark_threshold_percent: 20,
-            starburst_rays: 16,
-            starburst_min_gradient: 30,
-            fallback_threshold: 5,
-            min_confidence_for_lock: 0.5,
-            revalidation_interval: 30,
-            legacy: {
-                blur_enabled: true,
-                blur_kernel: 5,
-                clahe_enabled: true,
-                clahe_clip_limit: 2.0,
-                clahe_grid_size: 8,
-                morph_enabled: true,
-                morph_close_iterations: 1,
-                morph_dilate_iterations: 1
-            }
+            yolo_pupil_confidence: 0.3,
         },
         hardware: {
             serial_port: "/dev/ttyUSB0",
             baudrate: 115200,
-            ir_led_intensity: 2, // 40%
-            fixation_led_enabled: false,
-            fixation_led_auto_off: 30
+            ir_led_intensity: 2,
         },
         calibration: {
             pattern_type: '5_points',
@@ -111,7 +72,52 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
             include_raw_data: false,
             include_graphs: true,
             compare_with_previous: false,
-            diagram_style: 'claussen'
+            diagram_style: 'claussen',
+            analysis_method: 'both'
+        },
+        tests: {
+            caloric: {
+                protocols: [
+                    {
+                        id: 'bitermal-alternada',
+                        name: 'Bitérmal Alternada',
+                        comment: '',
+                        is_base: true,
+                        irrigations: [
+                            { label: '44°C OD', temperature: 44, ear: 'od' },
+                            { label: '44°C OI', temperature: 44, ear: 'oi' },
+                            { label: '30°C OD', temperature: 30, ear: 'od' },
+                            { label: '30°C OI', temperature: 30, ear: 'oi' },
+                        ],
+                        timing: {
+                            delay: 0,
+                            irrigation_duration: 30,
+                            rest_time: 300,
+                            total_duration: 180,
+                            torok: { start_time: 90, duration: 30 },
+                            ofi: { start_time: 130, duration: 10, fixation_led: 'both' },
+                        },
+                    },
+                    {
+                        id: 'monotermal-caliente',
+                        name: 'Monotérmal Caliente',
+                        comment: '',
+                        is_base: true,
+                        irrigations: [
+                            { label: '44°C OD', temperature: 44, ear: 'od' },
+                            { label: '44°C OI', temperature: 44, ear: 'oi' },
+                        ],
+                        timing: {
+                            delay: 0,
+                            irrigation_duration: 30,
+                            rest_time: 300,
+                            total_duration: 180,
+                            torok: { start_time: 90, duration: 30 },
+                            ofi: { start_time: 130, duration: 10, fixation_led: 'both' },
+                        },
+                    },
+                ],
+            },
         }
     },
     stimulus_screen: {
@@ -127,7 +133,158 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
             is_calibrated: false,
             pixel_density: 0
         }
-    }
+    },
+    audiometria: {
+        report: {
+            template: 'standard',
+            sections: [
+                { id: 'header', label: 'Encabezado', enabled: true, order: 0 },
+                { id: 'patient', label: 'Datos del Paciente', enabled: true, order: 1 },
+                { id: 'tonal', label: 'Audiometría Tonal', enabled: true, order: 2 },
+                { id: 'vocal', label: 'Audiometría Vocal', enabled: true, order: 3 },
+                { id: 'supraliminar', label: 'Pruebas Supraliminares', enabled: false, order: 4 },
+                { id: 'summary', label: 'Resumen Clínico', enabled: true, order: 5 },
+                { id: 'signature', label: 'Firma', enabled: true, order: 6 },
+            ],
+            export_format: 'pdf',
+            include_logo: true,
+            include_audiogram: true,
+            include_speech_curve: true,
+        },
+        tests: {
+            tonal_liminar: true,
+            vocal: true,
+            supraliminar: false,
+            altas_frecuencias: false,
+        },
+        references: {
+            normative: 'iso_7029',
+            normal_threshold_db: 25,
+        },
+        frequencies: {
+            standard: [250, 500, 1000, 2000, 4000, 8000],
+            extended: [125, 250, 500, 750, 1000, 1500, 2000, 3000, 4000, 6000, 8000],
+            high_frequency: [8000, 9000, 10000, 11200, 12500, 14000, 16000],
+            default_range: 'standard',
+        },
+    },
+    otoscopia: {
+        report: {
+            template: 'standard',
+            sections: [
+                { id: 'header', label: 'Encabezado', enabled: true, order: 0 },
+                { id: 'patient', label: 'Datos del Paciente', enabled: true, order: 1 },
+                { id: 'od', label: 'Oído Derecho', enabled: true, order: 2 },
+                { id: 'oi', label: 'Oído Izquierdo', enabled: true, order: 3 },
+                { id: 'images', label: 'Imágenes', enabled: true, order: 4 },
+                { id: 'summary', label: 'Resumen Clínico', enabled: true, order: 5 },
+                { id: 'signature', label: 'Firma', enabled: true, order: 6 },
+            ],
+            export_format: 'pdf',
+            include_logo: true,
+            include_images: true,
+        },
+        findings: {
+            findings: [
+                { id: 'normal', label: 'Membrana timpánica normal', category: 'normal', enabled: true },
+                { id: 'translucida', label: 'Membrana translúcida', category: 'normal', enabled: true },
+                { id: 'opaca', label: 'Membrana opaca', category: 'patologico', enabled: true },
+                { id: 'retraccion', label: 'Retracción timpánica', category: 'patologico', enabled: true },
+                { id: 'perforacion', label: 'Perforación', category: 'patologico', enabled: true },
+                { id: 'otorrea', label: 'Otorrea', category: 'patologico', enabled: true },
+                { id: 'miringoesclerosis', label: 'Miringoesclerosis', category: 'patologico', enabled: true },
+                { id: 'colesteatoma', label: 'Colesteatoma', category: 'patologico', enabled: true },
+                { id: 'cerumen', label: 'Tapón de cerumen', category: 'patologico', enabled: true },
+                { id: 'exostosis', label: 'Exostosis', category: 'patologico', enabled: true },
+            ],
+        },
+        regions: {
+            regions: [
+                { id: 'pars_tensa', label: 'Pars tensa', enabled: true },
+                { id: 'pars_flaccida', label: 'Pars flácida', enabled: true },
+                { id: 'umbo', label: 'Umbo', enabled: true },
+                { id: 'mango_martillo', label: 'Mango del martillo', enabled: true },
+                { id: 'triangulo_luminoso', label: 'Triángulo luminoso', enabled: true },
+                { id: 'annulus', label: 'Annulus', enabled: true },
+                { id: 'cuadrante_anterosuperior', label: 'Cuadrante anterosuperior', enabled: true },
+                { id: 'cuadrante_anteroinferior', label: 'Cuadrante anteroinferior', enabled: true },
+                { id: 'cuadrante_posterosuperior', label: 'Cuadrante posterosuperior', enabled: true },
+                { id: 'cuadrante_posteroinferior', label: 'Cuadrante posteroinferior', enabled: true },
+            ],
+        },
+        images: {
+            capture_enabled: false,
+            reference_images_enabled: true,
+        },
+    },
+    postural: {
+        timing: {
+            position_durations: {},
+            auto_advance: false,
+            countdown_sound: true,
+        },
+        visualization: {
+            show_3d_head: true,
+            show_target_orientation: true,
+            head_model: 'ellipsoid',
+        },
+        symptoms: {
+            scale: { type: 'vas_0_10' },
+            symptoms: [
+                { id: 'vertigo', label: 'Vértigo', enabled: true },
+                { id: 'nausea', label: 'Náusea', enabled: true },
+                { id: 'vomito', label: 'Vómito', enabled: true },
+                { id: 'inestabilidad', label: 'Inestabilidad', enabled: false },
+                { id: 'cefalea', label: 'Cefalea', enabled: false },
+            ],
+        },
+        enabled_tests: [
+            'vppb_dix_hallpike_right', 'vppb_dix_hallpike_left',
+            'vppb_supine_roll_right', 'vppb_supine_roll_left',
+            'vppb_bow_lean',
+            'vppb_epley_right', 'vppb_epley_left',
+            'vppb_semont_right', 'vppb_semont_left',
+            'vppb_bbq_right', 'vppb_bbq_left',
+            'vppb_gufoni_right', 'vppb_gufoni_left',
+        ],
+    },
+    impedanciometria: {
+        report: {
+            template: 'standard',
+            sections: [
+                { id: 'header', label: 'Encabezado', enabled: true, order: 0 },
+                { id: 'patient', label: 'Datos del Paciente', enabled: true, order: 1 },
+                { id: 'timpanograma', label: 'Timpanograma', enabled: true, order: 2 },
+                { id: 'reflejos', label: 'Reflejos Estapediales', enabled: true, order: 3 },
+                { id: 'clasificacion', label: 'Clasificación', enabled: true, order: 4 },
+                { id: 'summary', label: 'Resumen Clínico', enabled: true, order: 5 },
+                { id: 'signature', label: 'Firma', enabled: true, order: 6 },
+            ],
+            export_format: 'pdf',
+            include_logo: true,
+            include_tympanogram: true,
+            include_reflex_table: true,
+        },
+        tests: {
+            timpanograma: true,
+            reflejo_ipsilateral: true,
+            reflejo_contralateral: true,
+            decay: false,
+            funcion_tubarica: false,
+        },
+        references: {
+            normative: 'jerger_1970',
+        },
+        classification: {
+            jerger_types: [
+                { id: 'A', label: 'Tipo A', description: 'Normal', compliance_min: 0.3, compliance_max: 1.75, pressure_min: -100, pressure_max: 50, enabled: true },
+                { id: 'As', label: 'Tipo As', description: 'Rigidez (otoesclerosis)', compliance_min: 0.0, compliance_max: 0.3, pressure_min: -100, pressure_max: 50, enabled: true },
+                { id: 'Ad', label: 'Tipo Ad', description: 'Hipercompliance (disrupción osicular)', compliance_min: 1.75, compliance_max: 5.0, pressure_min: -100, pressure_max: 50, enabled: true },
+                { id: 'B', label: 'Tipo B', description: 'Plano (efusión del oído medio)', compliance_min: 0.0, compliance_max: 0.2, pressure_min: -400, pressure_max: 400, enabled: true },
+                { id: 'C', label: 'Tipo C', description: 'Presión negativa (disfunción tubárica)', compliance_min: 0.3, compliance_max: 1.75, pressure_min: -400, pressure_max: -100, enabled: true },
+            ],
+        },
+    },
 };
 
 export function useSettingsConfig(sendToWs?: (msg: any) => void) {
@@ -203,7 +360,7 @@ export function useSettingsConfig(sendToWs?: (msg: any) => void) {
             const configStr = JSON.stringify(configToSave);
             await setSetting('app_config', configStr);
             
-            // 2. Sync with Python Backend via WebSocket (if function provided)
+            // 2. Sync with Backend via WebSocket (if function provided)
             if (sendToWs) {
                 await syncWithWebSocket(configToSave, sendToWs);
             }
@@ -281,47 +438,14 @@ export function useSettingsConfig(sendToWs?: (msg: any) => void) {
 }
 
 // Helper: Sync via WebSocket
+// No envía camera_setup aquí — la cámara solo se inicia
+// explícitamente al entrar a una prueba (start_capture en App.tsx).
 export async function syncWithWebSocket(
-    config: AppConfig,
-    send: (msg: any) => void
+    _config: AppConfig,
+    _send: (msg: any) => void
 ) {
-    // 1. Sync Video/Camera Config
-    send({
-        type: 'set_config',
-        key: 'camera_setup',
-        value: {
-            camera_id: config.vng.camera.camera_id,
-            width: config.vng.camera.resolution_width,
-            height: config.vng.camera.resolution_height,
-            fps: config.vng.camera.fps,
-            video_quality: config.vng.camera.video_quality,
-            video_scale: config.vng.camera.video_scale
-        }
-    });
-
-    // 2. Sync Pupil Detection Config
-    const pc = config.vng.pupil_detection;
-    send({
-        type: 'set_pupil_config',
-        params: {
-            mode: pc.mode,
-            search_window_multiplier: pc.search_window_multiplier,
-            dark_threshold_percent: pc.dark_threshold_percent,
-            starburst_rays: pc.starburst_rays,
-            starburst_min_gradient: pc.starburst_min_gradient,
-            fallback_threshold: pc.fallback_threshold,
-            min_confidence_for_lock: pc.min_confidence_for_lock,
-            revalidation_interval: pc.revalidation_interval,
-            legacy_blur_enabled: pc.legacy.blur_enabled,
-            legacy_blur_kernel: pc.legacy.blur_kernel,
-            legacy_clahe_enabled: pc.legacy.clahe_enabled,
-            legacy_clahe_clip_limit: pc.legacy.clahe_clip_limit,
-            legacy_clahe_grid_size: pc.legacy.clahe_grid_size,
-            legacy_morph_enabled: pc.legacy.morph_enabled,
-            legacy_morph_close_iterations: pc.legacy.morph_close_iterations,
-            legacy_morph_dilate_iterations: pc.legacy.morph_dilate_iterations
-        }
-    });
+    // Reservado para futuras sincronizaciones que no involucren hardware.
+    // camera_setup se eliminó porque reiniciaba la cámara en cada guardado de config.
 }
 
 // Helper: Deep merge

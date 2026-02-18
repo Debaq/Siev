@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, User, Trash2 } from 'lucide-react'
 import { useTauriDb, Specialist } from '../hooks/useTauriDb'
+import ConfirmDialog from './ConfirmDialog'
 
 interface UserSelectionScreenProps {
   onSelect: (specialist: Specialist) => void
@@ -12,6 +13,7 @@ export default function UserSelectionScreen({ onSelect }: UserSelectionScreenPro
   const [isAdding, setIsAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [isDeletingMode, setIsDeletingMode] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<{ message: string; action: () => void } | null>(null)
 
   useEffect(() => {
     loadSpecialists()
@@ -34,12 +36,15 @@ export default function UserSelectionScreen({ onSelect }: UserSelectionScreenPro
     }
   }
 
-  const handleDelete = async (id: number, e: React.MouseEvent) => {
+  const handleDelete = (id: number, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (confirm('¿Eliminar perfil de especialista?')) {
+    setConfirmAction({
+      message: '¿Eliminar perfil de especialista?',
+      action: async () => {
         const success = await deleteSpecialist(id)
         if (success) loadSpecialists()
-    }
+      }
+    })
   }
 
   return (
@@ -104,6 +109,15 @@ export default function UserSelectionScreen({ onSelect }: UserSelectionScreenPro
             </button>
         </div>
       </div>
+
+      {/* Confirm Dialog */}
+      {confirmAction && (
+        <ConfirmDialog
+          message={confirmAction.message}
+          onConfirm={() => { confirmAction.action(); setConfirmAction(null) }}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
 
       {/* Add Modal */}
       {isAdding && (

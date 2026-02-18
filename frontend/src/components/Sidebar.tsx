@@ -1,4 +1,4 @@
-import { Users, Settings, LogOut } from 'lucide-react'
+import { Users, Settings, LogOut, Ear, RotateCcw } from 'lucide-react'
 
 interface MenuItemProps {
   view: string
@@ -33,25 +33,36 @@ function MenuItem({ view, icon, label, isActive, onNavigate }: MenuItemProps) {
 }
 
 interface SidebarProps {
-  activeView: 'capture' | 'patients' | 'settings' | 'test_selection' | 'onboarding' | 'user_selection' | 'session_review'
-  onNavigate: (view: 'capture' | 'patients' | 'settings') => void
+  activeView: 'capture' | 'patients' | 'settings' | 'test_selection' | 'onboarding' | 'user_selection' | 'session_review' | 'report' | 'audiometry' | 'postural'
+  onNavigate: (view: 'capture' | 'patients' | 'settings' | 'audiometry' | 'postural') => void
   onLogout: () => void
   activeSpecialist: { name: string } | null
+  hasActiveTest?: boolean
+  hasAudioTest?: boolean
+  hasPosturalTest?: boolean
 }
 
-function Sidebar({ activeView, onNavigate, onLogout, activeSpecialist }: SidebarProps) {
+function Sidebar({ activeView, onNavigate, onLogout, activeSpecialist, hasActiveTest, hasAudioTest, hasPosturalTest }: SidebarProps) {
   const isCaptureActive = activeView === 'capture' || activeView === 'test_selection'
 
   return (
     <div className="w-16 bg-dark-950 border-r border-dark-800 flex flex-col items-center py-2 shrink-0 z-40 pt-4">
       <div className="flex-1 w-full space-y-1">
         <MenuItem view="patients" icon={Users} label="Pacientes" isActive={activeView === 'patients'} onNavigate={onNavigate} />
-        <MenuItem view="capture" icon="/mod_vng.png" label="VNG" isActive={isCaptureActive} onNavigate={onNavigate} />
+        {hasActiveTest && !hasAudioTest && !hasPosturalTest && (
+          <MenuItem view="capture" icon="/mod_vng.png" label="VNG" isActive={isCaptureActive} onNavigate={onNavigate} />
+        )}
+        {hasAudioTest && (
+          <MenuItem view="audiometry" icon={Ear} label="Audio" isActive={activeView === 'audiometry'} onNavigate={onNavigate} />
+        )}
+        {hasPosturalTest && (
+          <MenuItem view="postural" icon={RotateCcw} label="VPPB" isActive={activeView === 'postural'} onNavigate={onNavigate} />
+        )}
         <MenuItem view="settings" icon={Settings} label="Ajustes" isActive={activeView === 'settings'} onNavigate={onNavigate} />
       </div>
 
       <div className="w-full mt-auto mb-2 flex justify-center">
-        <button 
+        <button
             onClick={onLogout}
             className="w-10 h-10 rounded-full bg-dark-800 hover:bg-dark-700 border border-dark-700 flex items-center justify-center transition-all group relative"
             title={`Sesión: ${activeSpecialist?.name || 'Desconocido'}`}
@@ -61,7 +72,7 @@ function Sidebar({ activeView, onNavigate, onLogout, activeSpecialist }: Sidebar
                   {activeSpecialist.name.substring(0, 2).toUpperCase()}
               </span>
           ) : <LogOut className="w-4 h-4 text-dark-400" />}
-          
+
           <LogOut className="w-4 h-4 text-red-400 absolute hidden group-hover:block animate-in fade-in zoom-in duration-200" />
         </button>
       </div>

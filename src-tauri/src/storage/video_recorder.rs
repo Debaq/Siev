@@ -60,16 +60,25 @@ impl VideoRecorder {
             while let Ok(cmd) = rx.recv() {
                 match cmd {
                     VideoCommand::Frame(gray) => {
-                        // Copy gray pixels into Y plane, handling possible dimension mismatch
+                        // Copy gray pixels into Y plane, centered within the encoder resolution
                         let gray_raw = gray.as_raw();
                         let gray_w = gray.width() as usize;
                         let gray_h = gray.height() as usize;
 
-                        for row in 0..enc_h.min(gray_h) {
+                        // Clear Y plane (black background)
+                        y_plane.fill(0);
+
+                        // Center the frame within the encoder resolution
+                        let x_off = (enc_w.saturating_sub(gray_w)) / 2;
+                        let y_off = (enc_h.saturating_sub(gray_h)) / 2;
+                        let copy_w = gray_w.min(enc_w);
+                        let copy_h = gray_h.min(enc_h);
+
+                        for row in 0..copy_h {
                             let src_start = row * gray_w;
-                            let src_end = src_start + enc_w.min(gray_w);
-                            let dst_start = row * enc_w;
-                            let dst_end = dst_start + enc_w.min(gray_w);
+                            let src_end = src_start + copy_w;
+                            let dst_start = (y_off + row) * enc_w + x_off;
+                            let dst_end = dst_start + copy_w;
                             if src_end <= gray_raw.len() && dst_end <= y_plane.len() {
                                 y_plane[dst_start..dst_end].copy_from_slice(&gray_raw[src_start..src_end]);
                             }

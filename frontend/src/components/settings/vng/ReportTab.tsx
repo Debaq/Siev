@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Layout, Image, GitCompare, PieChart } from 'lucide-react';
+import { FileText, Layout, Image, GitCompare, PieChart, BarChart3 } from 'lucide-react';
 import { SettingsSection } from '../shared/SettingsSection';
 import { SettingsField } from '../shared/SettingsField';
 import { SettingsToggle } from '../shared/SettingsToggle';
@@ -173,6 +173,30 @@ export const ReportTab: React.FC<ReportTabProps> = ({ config, updateConfig }) =>
                 {/* Diagram Preview */}
                 <div className="p-3 bg-dark-800/50 rounded-lg border border-dark-700 mt-3">
                     <DiagramPreview style={report.diagram_style} />
+                </div>
+            </SettingsSection>
+
+            {/* Analysis Method */}
+            <SettingsSection
+                title="Método de Análisis"
+                description="Seleccione qué tipo de análisis incluir en el informe de sacadas/nistagmo."
+                icon={<BarChart3 className="w-4 h-4 text-teal-500" />}
+            >
+                <SettingsField label="Método">
+                    <select
+                        className="select h-9 py-1 text-sm"
+                        value={report.analysis_method || 'both'}
+                        onChange={e => updateConfig('vng.report.analysis_method', e.target.value)}
+                    >
+                        <option value="saccades">Solo Sacadas</option>
+                        <option value="spv">Solo VCL (Velocidad de Componente Lento)</option>
+                        <option value="both">Ambos (Sacadas + VCL)</option>
+                    </select>
+                </SettingsField>
+                <div className="text-xs text-dark-400 mt-2">
+                    {report.analysis_method === 'saccades' && 'El informe mostrará solo resultados basados en sacadas detectadas.'}
+                    {report.analysis_method === 'spv' && 'El informe mostrará solo resultados basados en velocidad de componente lento (SPV/nistagmo).'}
+                    {(!report.analysis_method || report.analysis_method === 'both') && 'El informe incluirá ambos análisis: sacadas detectadas y velocidad de componente lento.'}
                 </div>
             </SettingsSection>
 

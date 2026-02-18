@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import ReactECharts from 'echarts-for-react'
-import type { EChartsOption } from 'echarts'
+import uPlot from 'uplot'
 import { Eye, Activity, ChevronLeft, ChevronRight, LucideIcon } from 'lucide-react'
 import { invoke } from '@tauri-apps/api/core'
 import { useWebSocket } from '../contexts/WebSocketContext'
+import UPlotChart from './charts/UPlotChart'
 
 interface EyeDataPanelProps {
   isCapturing: boolean
@@ -28,6 +28,7 @@ interface ChartSectionProps {
   onResetCalibration?: () => void
   useRustFilter: boolean
   onToggleFilter: () => void
+  overlayMessage?: string | null
 }
 
 // 5 minutos a 30fps = 9000 puntos, con margen
@@ -90,124 +91,71 @@ function ChartSection({
   isCalibrated,
   onResetCalibration,
   useRustFilter,
-  onToggleFilter
+  onToggleFilter,
+  overlayMessage
 }: ChartSectionProps) {
-  const chartRef = useRef<ReactECharts>(null)
+  const displayThreshold = 1000
 
-  // Memoize style and opts to avoid unnecessary re-renders of the ECharts component
-  const chartStyle = useMemo(() => ({ width: '100%', height: '100%' }), [])
-  const chartOpts = useMemo(() => ({ renderer: 'canvas' as const }), [])
+  const uplotData = useMemo<uPlot.AlignedData>(() => {
+    if (data.length === 0) return [[], [], []] as unknown as uPlot.AlignedData
 
-  // Preparar datos para ECharts con downsampling para visualización
-  const chartOption = useMemo<EChartsOption>(() => {
-    const displayThreshold = 1000 // Máximo puntos a renderizar
+    const series1Raw = data.map(d => (d[dataKeys[0]] as number | null) ?? 0)
+    const series2Raw = data.map(d => (d[dataKeys[1]] as number | null) ?? 0)
 
-    const series1Raw = data.map(d => d[dataKeys[0]] as number | null)
-    const series2Raw = data.map(d => d[dataKeys[1]] as number | null)
-
-    // Solo aplicar downsampling si hay muchos puntos
     const series1 = data.length > displayThreshold
-      ? downsampleLTTB(series1Raw.map(v => v ?? 0), displayThreshold)
+      ? downsampleLTTB(series1Raw, displayThreshold)
       : series1Raw
     const series2 = data.length > displayThreshold
-      ? downsampleLTTB(series2Raw.map(v => v ?? 0), displayThreshold)
+      ? downsampleLTTB(series2Raw, displayThreshold)
       : series2Raw
 
-    return {
-      animation: false,
-      grid: {
-        left: 35,
-        right: 10,
-        top: 10,
-        bottom: 40
+    // Timestamps como índices (equiespaciados)
+    const timestamps = Array.from({ length: series1.length }, (_, i) => i)
+
+    return [timestamps, series1, series2]
+  }, [data, dataKeys])
+
+  const options = useMemo((): Omit<uPlot.Options, 'width' | 'height'> => ({
+    cursor: {
+      drag: { x: true, y: false, setScale: true },
+      show: true,
+    },
+    select: { show: false, left: 0, top: 0, width: 0, height: 0 },
+    legend: { show: false },
+    padding: [8, 8, 0, 0],
+    axes: [
+      {
+        show: false, // X axis hidden (index-based)
       },
-      xAxis: {
-        type: 'category',
-        show: false,
-        data: Array.from({ length: series1.length }, (_, i) => i)
+      {
+        stroke: '#475569',
+        grid: { stroke: '#1e293b', dash: [2, 4] },
+        ticks: { show: false },
+        font: '8px system-ui',
+        size: 35,
+        gap: 2,
       },
-      yAxis: {
-        type: 'value',
-        axisLine: { show: false },
-        axisTick: { show: false },
-        splitLine: {
-          lineStyle: { color: '#1e293b', opacity: 0.4 }
-        },
-        axisLabel: {
-          fontSize: 8,
-          color: '#475569'
-        }
+    ],
+    scales: {
+      x: { auto: true },
+      y: { auto: true },
+    },
+    series: [
+      {}, // x-axis timestamps
+      {
+        label: 'OD',
+        stroke: color1,
+        width: 1.5,
+        points: { show: false },
       },
-      dataZoom: [
-        {
-          type: 'inside',
-          xAxisIndex: 0,
-          start: 0,
-          end: 100,
-          zoomOnMouseWheel: true,
-          moveOnMouseMove: true
-        },
-        {
-          type: 'slider',
-          xAxisIndex: 0,
-          start: 0,
-          end: 100,
-          height: 20,
-          bottom: 5,
-          borderColor: '#1e293b',
-          backgroundColor: '#020617',
-          fillerColor: 'rgba(14, 165, 233, 0.2)',
-          handleStyle: { color: '#0ea5e9' },
-          textStyle: { color: '#475569', fontSize: 8 },
-          dataBackground: {
-            lineStyle: { color: '#1e293b' },
-            areaStyle: { color: '#1e293b' }
-          }
-        }
-      ],
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: '#020617',
-        borderColor: '#1e293b',
-        textStyle: { fontSize: 9, color: '#fff' },
-        axisPointer: { type: 'cross' }
+      {
+        label: 'OI',
+        stroke: color2,
+        width: 1.5,
+        points: { show: false },
       },
-      legend: {
-        show: true,
-        bottom: 22,
-        itemWidth: 12,
-        itemHeight: 6,
-        textStyle: { fontSize: 9, color: '#94a3b8' },
-        data: ['OD', 'OI']
-      },
-      series: [
-        {
-          name: 'OD',
-          type: 'line',
-          data: series1,
-          showSymbol: false,
-          lineStyle: { width: 1.5, color: color1 },
-          itemStyle: { color: color1 },
-          connectNulls: true,
-          sampling: 'lttb',
-          large: true,
-          largeThreshold: 500
-        },
-        {
-          name: 'OI',
-          type: 'line',
-          data: series2,
-          showSymbol: false,
-          lineStyle: { width: 1.5, color: color2 },
-          itemStyle: { color: color2 },
-          connectNulls: true,
-          sampling: 'lttb',
-          large: true,
-          largeThreshold: 500
-        }
-      ]
-    }
-  }, [data, dataKeys, color1, color2])
+    ],
+  }), [color1, color2])
 
   return (
     <div className="flex flex-col h-full bg-dark-900/50 border border-dark-800 rounded overflow-hidden min-w-0">
@@ -243,19 +191,25 @@ function ChartSection({
           )}
         </div>
       </div>
-      <div className="flex-1 min-h-0">
-        <ReactECharts
-          ref={chartRef}
-          option={chartOption}
-          style={chartStyle}
-          opts={chartOpts}
-          notMerge={true}
-          lazyUpdate={false}
+      <div className="flex-1 min-h-0 relative">
+        <UPlotChart
+          options={options}
+          data={uplotData}
         />
+        {overlayMessage && (
+          <div className="absolute inset-0 flex items-center justify-center bg-dark-900/80 z-10">
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-4 h-4 border-2 border-siev-400 border-t-transparent rounded-full animate-spin" />
+              <span className="text-[11px] text-siev-300 font-medium">{overlayMessage}</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
 }
+
+const INITIAL_DELAY_MS = 3000
 
 function EyeDataPanel({ isCapturing }: EyeDataPanelProps) {
   const { addListener, removeListener } = useWebSocket()
@@ -263,6 +217,7 @@ function EyeDataPanel({ isCapturing }: EyeDataPanelProps) {
   const [isCalibrated, setIsCalibrated] = useState(false)
   const isCalibratedRef = useRef(false)
   const [useRustFilter, setUseRustFilter] = useState(true)
+  const [initializing, setInitializing] = useState(false)
 
   const [splitRatio, setSplitRatio] = useState(0.5)
   const [isResizing, setIsResizing] = useState(false)
@@ -272,6 +227,23 @@ function EyeDataPanel({ isCapturing }: EyeDataPanelProps) {
   useEffect(() => {
     isCalibratedRef.current = isCalibrated
   }, [isCalibrated])
+
+  // Initial delay when capture starts — gives time for camera detection
+  useEffect(() => {
+    if (isCapturing) {
+      setInitializing(true)
+      const timer = setTimeout(() => setInitializing(false), INITIAL_DELAY_MS)
+      return () => clearTimeout(timer)
+    } else {
+      setInitializing(false)
+    }
+  }, [isCapturing])
+
+  // Track initializing state with a ref so the WS handler always has the current value
+  const initializingRef = useRef(false)
+  useEffect(() => {
+    initializingRef.current = initializing
+  }, [initializing])
 
   // Handle new eye data from WebSocket with batching
   useEffect(() => {
@@ -293,11 +265,20 @@ function EyeDataPanel({ isCapturing }: EyeDataPanelProps) {
     }, 100)
 
     const handleData = (data: any) => {
+      // Ignorar datos durante el delay inicial (detección de cámara)
+      if (initializingRef.current) return
+
       const wsEyeData = data as {
         left: number[] | null
         right: number[] | null
         timestamp: number
         is_calibrated: boolean
+      }
+
+      // Detectar fin de calibración: transición a calibrado → limpiar datos
+      if (wsEyeData.is_calibrated && !isCalibratedRef.current) {
+        setHistory([])
+        pendingPoints = []
       }
 
       if (wsEyeData.is_calibrated !== isCalibratedRef.current) {
@@ -383,6 +364,7 @@ function EyeDataPanel({ isCapturing }: EyeDataPanelProps) {
             onResetCalibration={handleResetCalibration}
             useRustFilter={useRustFilter}
             onToggleFilter={toggleRustFilter}
+            overlayMessage={initializing ? 'Inicializando cámara...' : null}
           />
         </div>
       )}
@@ -424,6 +406,7 @@ function EyeDataPanel({ isCapturing }: EyeDataPanelProps) {
             onResetCalibration={handleResetCalibration}
             useRustFilter={useRustFilter}
             onToggleFilter={toggleRustFilter}
+            overlayMessage={initializing ? 'Inicializando cámara...' : null}
           />
         </div>
       )}

@@ -216,6 +216,8 @@ export default function SessionReviewView({ recordingId, onBack, onViewReport }:
                             currentTimeRef={currentTimeRef}
                             overallSPV={payload.overall_spv}
                             onSeek={seekTo}
+                            zoomRange={zoomRange}
+                            onZoomChange={handleZoomChange}
                         />
                         <SaccadeAnalysisChart
                             saccades={payload.saccades}

@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { User, Trash2, UserPlus } from 'lucide-react';
 import { SettingsSection } from '../shared/SettingsSection';
 import { useTauriDb, Specialist } from '../../../hooks/useTauriDb';
+import ConfirmDialog from '../../ConfirmDialog';
 
 export const TeamTab: React.FC = () => {
     const [specialists, setSpecialists] = useState<Specialist[]>([]);
     const [newName, setNewName] = useState('');
+    const [confirmAction, setConfirmAction] = useState<{ message: string; action: () => void } | null>(null);
     const { getSpecialists, createSpecialist, deleteSpecialist } = useTauriDb();
 
     useEffect(() => {
@@ -24,17 +26,27 @@ export const TeamTab: React.FC = () => {
         fetchSpecialists();
     };
 
-    const handleDelete = async (id: number) => {
-        if (confirm('¿Eliminar especialista?')) {
-            await deleteSpecialist(id);
-            fetchSpecialists();
-        }
+    const handleDelete = (id: number) => {
+        setConfirmAction({
+            message: '¿Eliminar especialista?',
+            action: async () => {
+                await deleteSpecialist(id);
+                fetchSpecialists();
+            }
+        });
     };
 
     return (
         <div className="space-y-6 animate-fade-in">
-            <SettingsSection 
-                title="Equipo de Especialistas" 
+            {confirmAction && (
+                <ConfirmDialog
+                    message={confirmAction.message}
+                    onConfirm={() => { confirmAction.action(); setConfirmAction(null); }}
+                    onCancel={() => setConfirmAction(null)}
+                />
+            )}
+            <SettingsSection
+                title="Equipo de Especialistas"
                 description="Gestione los profesionales que realizan las pruebas y firman los reportes."
             >
                 <div className="bg-dark-800 rounded-lg border border-dark-700 overflow-hidden">

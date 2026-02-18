@@ -1,89 +1,103 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+import { RefreshCw } from 'lucide-react';
 import { VNGReportData } from '../../../types/vng';
+import { generateAutoSummary } from '../utils/generateSummary';
+import { EditableField } from '../shared/EditableField';
 
 interface SummarySectionProps {
     reportData: VNGReportData;
+    findings?: string;
+    conclusion?: string;
+    recommendations?: string;
+    onFindingsChange?: (value: string) => void;
+    onConclusionChange?: (value: string) => void;
+    onRecommendationsChange?: (value: string) => void;
 }
 
-export const SummarySection: React.FC<SummarySectionProps> = ({ reportData }) => {
-    const { saccades, pursuit, positional, caloric } = reportData;
+export const SummarySection: React.FC<SummarySectionProps> = ({
+    reportData,
+    findings: findingsOverride,
+    conclusion: conclusionOverride,
+    recommendations: recommendationsOverride,
+    onFindingsChange,
+    onConclusionChange,
+    onRecommendationsChange,
+}) => {
+    const auto = useRef(generateAutoSummary(reportData));
+    const initialized = useRef(false);
 
-    // Collect findings
-    const findings: string[] = [];
-    const abnormalFindings: string[] = [];
+    // Pre-fill empty editable fields with auto-generated text
+    useEffect(() => {
+        if (initialized.current) return;
+        initialized.current = true;
+        const a = auto.current;
 
-    // Saccades
-    if (saccades) {
-        if (saccades.is_normal) {
-            findings.push('Sacadas dentro de límites normales');
-        } else {
-            abnormalFindings.push('Alteraciones en sacadas');
-            if (saccades.abnormality_notes) {
-                abnormalFindings.push(saccades.abnormality_notes);
+        if (onFindingsChange && !findingsOverride) {
+            const allFindings = [
+                ...a.findings.map(f => `[Normal] ${f}`),
+                ...a.abnormalFindings.map(f => `[Anormal] ${f}`),
+            ];
+            if (allFindings.length > 0) {
+                onFindingsChange(allFindings.join('\n'));
             }
         }
-    }
-
-    // Pursuit
-    if (pursuit) {
-        if (pursuit.is_normal) {
-            findings.push(`Rastreo normal (Patrón ${pursuit.pattern})`);
-        } else {
-            abnormalFindings.push(`Rastreo alterado (Patrón ${pursuit.pattern})`);
+        if (onConclusionChange && !conclusionOverride) {
+            onConclusionChange(a.conclusion);
         }
-    }
-
-    // Positional
-    if (positional) {
-        if (positional.spontaneous_dark || positional.spontaneous_fixation) {
-            const spv = positional.spontaneous_dark?.spv || positional.spontaneous_fixation?.spv || 0;
-            if (spv > 3) {
-                abnormalFindings.push(`Nistagmo espontáneo presente (${spv.toFixed(1)}°/s)`);
+        if (onRecommendationsChange && !recommendationsOverride) {
+            if (a.recommendations.length > 0) {
+                onRecommendationsChange(a.recommendations.join('\n'));
             }
         }
+    }, [reportData]);
 
-        if (positional.dix_hallpike) {
-            if (positional.dix_hallpike.left.bppv_suspected || positional.dix_hallpike.right.bppv_suspected) {
-                const side = positional.dix_hallpike.left.bppv_suspected ? 'izquierdo' : 'derecho';
-                const canal = positional.dix_hallpike.left.bppv_suspected
-                    ? positional.dix_hallpike.left.affected_canal
-                    : positional.dix_hallpike.right.affected_canal;
-                abnormalFindings.push(`VPPB sospechado (lado ${side}, canal ${canal})`);
-            } else {
-                findings.push('Dix-Hallpike negativo bilateral');
-            }
-        }
+    const handleRegenFindings = () => {
+        const a = generateAutoSummary(reportData);
+        auto.current = a;
+        const allFindings = [
+            ...a.findings.map(f => `[Normal] ${f}`),
+            ...a.abnormalFindings.map(f => `[Anormal] ${f}`),
+        ];
+        onFindingsChange?.(allFindings.join('\n'));
+    };
 
-        if (positional.fixation_index !== undefined) {
-            if (positional.fixation_index < 60) {
-                abnormalFindings.push(`Índice de fijación disminuido (${positional.fixation_index.toFixed(1)}%)`);
-            }
-        }
-    }
+    const handleRegenConclusion = () => {
+        const a = generateAutoSummary(reportData);
+        auto.current = a;
+        onConclusionChange?.(a.conclusion);
+    };
 
-    // Caloric
-    if (caloric) {
-        const { jongkees, interpretation } = caloric;
+    const handleRegenRecommendations = () => {
+        const a = generateAutoSummary(reportData);
+        auto.current = a;
+        onRecommendationsChange?.(a.recommendations.join('\n'));
+    };
 
-        if (interpretation.vestibular_function === 'normal') {
-            findings.push('Función vestibular calórica bilateral normal');
-        } else {
-            if (jongkees.uw_significant) {
-                const side = jongkees.unilateral_weakness_percent > 0 ? 'derecha' : 'izquierda';
-                abnormalFindings.push(`Paresia canalicular ${side} (UW ${Math.abs(jongkees.unilateral_weakness_percent).toFixed(1)}%)`);
-            }
-            if (jongkees.dp_significant) {
-                const dir = jongkees.directional_preponderance_percent > 0 ? 'derecha' : 'izquierda';
-                abnormalFindings.push(`Preponderancia direccional ${dir} (DP ${Math.abs(jongkees.directional_preponderance_percent).toFixed(1)}%)`);
-            }
-            if (interpretation.vestibular_function === 'bilateral_weakness') {
-                abnormalFindings.push('Hipofunción vestibular bilateral');
-            }
-        }
-    }
+    // Determine display values: editable override > auto-generated
+    const a = auto.current;
+    const displayFindings = findingsOverride || [
+        ...a.findings.map(f => `[Normal] ${f}`),
+        ...a.abnormalFindings.map(f => `[Anormal] ${f}`),
+    ].join('\n');
 
-    // Determine overall conclusion
-    const hasAbnormalities = abnormalFindings.length > 0;
+    const displayConclusion = conclusionOverride || a.conclusion;
+    const displayRecommendations = recommendationsOverride || a.recommendations.join('\n');
+
+    const hasAbnormalities = a.abnormalFindings.length > 0;
+    const isEditable = !!onFindingsChange;
+
+    const RegenButton: React.FC<{ onClick: () => void }> = ({ onClick }) => {
+        if (!isEditable) return null;
+        return (
+            <button
+                onClick={onClick}
+                className="ml-2 p-1 text-gray-400 hover:text-blue-500 transition-colors"
+                title="Regenerar sugerencia"
+            >
+                <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+        );
+    };
 
     return (
         <div className="mb-6">
@@ -91,70 +105,75 @@ export const SummarySection: React.FC<SummarySectionProps> = ({ reportData }) =>
                 Resumen Clínico
             </h2>
 
-            {/* Normal Findings */}
-            {findings.length > 0 && (
-                <div className="mb-4">
-                    <h3 className="text-sm font-medium text-green-700 mb-2">Hallazgos Normales</h3>
-                    <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
-                        {findings.map((finding, idx) => (
-                            <li key={idx}>{finding}</li>
-                        ))}
-                    </ul>
+            {/* Findings */}
+            <div className="mb-4">
+                <div className="flex items-center">
+                    <h3 className="text-sm font-medium text-gray-700">Hallazgos</h3>
+                    <RegenButton onClick={handleRegenFindings} />
                 </div>
-            )}
-
-            {/* Abnormal Findings */}
-            {abnormalFindings.length > 0 && (
-                <div className="mb-4">
-                    <h3 className="text-sm font-medium text-red-700 mb-2">Hallazgos Anormales</h3>
-                    <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
-                        {abnormalFindings.map((finding, idx) => (
-                            <li key={idx} className="text-red-800">{finding}</li>
-                        ))}
-                    </ul>
-                </div>
-            )}
+                {isEditable ? (
+                    <EditableField
+                        value={displayFindings}
+                        onChange={onFindingsChange!}
+                        placeholder="Describir hallazgos..."
+                    />
+                ) : (
+                    <div className="mt-1">
+                        {a.findings.length > 0 && (
+                            <div className="mb-2">
+                                <span className="text-xs font-medium text-green-700">Normales:</span>
+                                <ul className="list-disc list-inside text-sm text-gray-700 space-y-1 mt-1">
+                                    {a.findings.map((f, i) => <li key={i}>{f}</li>)}
+                                </ul>
+                            </div>
+                        )}
+                        {a.abnormalFindings.length > 0 && (
+                            <div>
+                                <span className="text-xs font-medium text-red-700">Anormales:</span>
+                                <ul className="list-disc list-inside text-sm text-red-800 space-y-1 mt-1">
+                                    {a.abnormalFindings.map((f, i) => <li key={i}>{f}</li>)}
+                                </ul>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
 
             {/* Conclusion */}
-            <div className={`p-4 rounded-lg ${hasAbnormalities ? 'bg-amber-50 border border-amber-200' : 'bg-green-50 border border-green-200'}`}>
-                <h3 className="text-sm font-semibold text-gray-800 mb-2">Conclusión</h3>
-                <p className="text-sm text-gray-700">
-                    {hasAbnormalities ? (
-                        <>
-                            El estudio VNG revela <span className="font-medium">alteraciones</span> que sugieren
-                            {caloric?.interpretation.vestibular_function === 'unilateral_weakness' && (
-                                ` patología vestibular periférica ${caloric.interpretation.affected_side === 'left' ? 'izquierda' : 'derecha'}`
-                            )}
-                            {caloric?.interpretation.vestibular_function === 'bilateral_weakness' && (
-                                ' afectación vestibular bilateral'
-                            )}
-                            {positional?.dix_hallpike?.left.bppv_suspected || positional?.dix_hallpike?.right.bppv_suspected ? (
-                                ' vértigo posicional paroxístico benigno (VPPB)'
-                            ) : ''}
-                            . Se recomienda correlación clínica y seguimiento.
-                        </>
-                    ) : (
-                        <>
-                            El estudio VNG se encuentra <span className="font-medium">dentro de límites normales</span>.
-                            No se evidencian signos de patología vestibular periférica ni central en el momento del estudio.
-                        </>
-                    )}
-                </p>
+            <div className={`mb-4 p-4 rounded-lg ${hasAbnormalities ? 'bg-amber-50 border border-amber-200' : 'bg-green-50 border border-green-200'}`}>
+                <div className="flex items-center">
+                    <h3 className="text-sm font-semibold text-gray-800">Conclusión</h3>
+                    <RegenButton onClick={handleRegenConclusion} />
+                </div>
+                {isEditable ? (
+                    <EditableField
+                        value={displayConclusion}
+                        onChange={onConclusionChange!}
+                        placeholder="Escribir conclusión..."
+                    />
+                ) : (
+                    <p className="text-sm text-gray-700 mt-1">{displayConclusion}</p>
+                )}
             </div>
 
             {/* Recommendations */}
-            {hasAbnormalities && (
-                <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                    <h3 className="text-sm font-medium text-blue-800 mb-2">Recomendaciones</h3>
-                    <ul className="list-disc list-inside text-sm text-blue-700 space-y-1">
-                        {caloric?.interpretation.vestibular_function !== 'normal' && (
-                            <li>Considerar estudio audiológico completo</li>
-                        )}
-                        {positional?.dix_hallpike?.left.bppv_suspected || positional?.dix_hallpike?.right.bppv_suspected ? (
-                            <li>Maniobras de reposicionamiento canalicular (Epley/Semont)</li>
-                        ) : null}
-                        <li>Control evolutivo según evolución clínica</li>
-                    </ul>
+            {(hasAbnormalities || displayRecommendations) && (
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <div className="flex items-center">
+                        <h3 className="text-sm font-medium text-blue-800">Recomendaciones</h3>
+                        <RegenButton onClick={handleRegenRecommendations} />
+                    </div>
+                    {isEditable ? (
+                        <EditableField
+                            value={displayRecommendations}
+                            onChange={onRecommendationsChange!}
+                            placeholder="Escribir recomendaciones..."
+                        />
+                    ) : (
+                        <ul className="list-disc list-inside text-sm text-blue-700 space-y-1 mt-1">
+                            {a.recommendations.map((r, i) => <li key={i}>{r}</li>)}
+                        </ul>
+                    )}
                 </div>
             )}
         </div>

@@ -3,7 +3,6 @@ import { useWebSocket as useWebSocketHook } from '../hooks/useWebSocket';
 
 interface WebSocketContextType {
     connected: boolean;
-    pythonStatus: boolean;
     hardwareStatus: boolean;
     cameras: any[];
     resolutions: string[];

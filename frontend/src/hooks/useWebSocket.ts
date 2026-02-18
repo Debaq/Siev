@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 export interface EyeData {
     left: [number, number] | null;
@@ -18,7 +19,6 @@ export type WsMessage =
     | { type: 'eye_data'; left: [number, number] | null; right: [number, number] | null; timestamp: number; is_calibrated: boolean }
     | { type: 'video_frame'; data: string }
     | { type: 'imu_data'; yaw: number; pitch: number; roll: number }
-    | { type: 'status'; python_connected: boolean; hardware_connected: boolean }
     | { type: 'error'; source: string; message: string }
     | { type: 'cameras_list'; cameras: any[] }
     | { type: 'resolutions_list'; resolutions: string[]; camera_id: number }
@@ -35,7 +35,6 @@ type ListenerCallback = (data: any) => void;
 export function useWebSocket() {
     // Low frequency state (UI Status)
     const [connected, setConnected] = useState(false);
-    const [pythonStatus, setPythonStatus] = useState(false);
     const [hardwareStatus, setHardwareStatus] = useState(false);
     const [cameras, setCameras] = useState<any[]>([]);
     const [resolutions, setResolutions] = useState<string[]>([]);
@@ -125,10 +124,6 @@ export function useWebSocket() {
                             };
                             listeners.current.imu_data.forEach(cb => cb(iData));
                             break;
-                        case 'status':
-                            setPythonStatus(msg.python_connected);
-                            setHardwareStatus(msg.hardware_connected);
-                            break;
                         case 'cameras_list':
                             setCameras(msg.cameras);
                             break;
@@ -172,6 +167,19 @@ export function useWebSocket() {
         };
     }, [connect]);
 
+    // Hardware/IMU status: listen for Tauri events from HardwareManager
+    useEffect(() => {
+        // Check initial state
+        invoke<boolean>('is_hardware_connected').then(setHardwareStatus).catch(() => {});
+
+        // Listen for status changes
+        const unlisten = listen<{ connected: boolean }>('hardware-status', (event) => {
+            setHardwareStatus(event.payload.connected);
+        });
+
+        return () => { unlisten.then(fn => fn()); };
+    }, []);
+
     const send = useCallback((msg: any) => {
         if (ws.current && ws.current.readyState === WebSocket.OPEN) {
             console.log('[WS] Sending:', msg);
@@ -183,7 +191,6 @@ export function useWebSocket() {
 
     return {
         connected,
-        pythonStatus,
         hardwareStatus,
         cameras,
         resolutions,

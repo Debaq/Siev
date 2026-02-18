@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Monitor, Move, Target, Eye, Activity, PlayCircle, Play, Square, Save, ExternalLink } from 'lucide-react';
+import { Monitor, Move, Target, Eye, PlayCircle, Play, Square, Save, ExternalLink } from 'lucide-react';
 import { VNGConfig, StimulusScreenConfig, StimulusDefaultParams } from '../../../types/config';
 import { emit } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
@@ -11,7 +11,6 @@ interface VisualStimuliTabProps {
 }
 
 const DEFAULT_PARAMS: StimulusDefaultParams = {
-    calibration: { type: 'points_9', duration: 1.5 },
     saccades: { min_amplitude: 5, max_amplitude: 30, min_interval: 1.5, max_interval: 2.5 },
     pursuit: { frequency: 0.2, amplitudes: [20] },
     opk: { velocity: 20, stripe_width_deg: 5, direction: 'left', fixation_enabled: false },
@@ -76,18 +75,7 @@ export const VisualStimuliTab: React.FC<VisualStimuliTabProps> = ({ stimulusConf
     const runStimulus = async (testType: string) => {
         let testConfig: any = null;
 
-        if (testType === 'calibration') {
-            testConfig = { 
-                test: 'calibration', 
-                params: {
-                    type: localDefaults.calibration.type,
-                    horizontal_fov: 20,
-                    vertical_fov: 10,
-                    duration_per_point: localDefaults.calibration.duration,
-                    auto_advance: true
-                }
-            };
-        } else if (testType === 'saccades') {
+        if (testType === 'saccades') {
             testConfig = {
                 test: 'saccades',
                 params: {
@@ -228,6 +216,22 @@ export const VisualStimuliTab: React.FC<VisualStimuliTabProps> = ({ stimulusConf
         </div>
     );
 
+    // Calcular ángulo máximo representable
+    const maxAngles = (() => {
+        const d = stimulusConfig?.display;
+        if (!d || !d.pixel_density || !d.distance_cm) return null;
+        const ppi = d.pixel_density;
+        const dist = d.distance_cm;
+        const pxToDeg = (halfPx: number) => {
+            const cm = (halfPx / ppi) * 2.54;
+            return Math.atan(cm / dist) * (180 / Math.PI);
+        };
+        return {
+            h: pxToDeg(d.resolution_width / 2),
+            v: pxToDeg(d.resolution_height / 2),
+        };
+    })();
+
     if (!isConfigured) {
         return (
             <div className="h-full flex flex-col items-center justify-center p-6 text-center">
@@ -265,6 +269,22 @@ export const VisualStimuliTab: React.FC<VisualStimuliTabProps> = ({ stimulusConf
                 </div>
             </div>
 
+            {/* Ángulo máximo representable */}
+            {maxAngles && (
+                <div className="bg-dark-900/50 border border-dark-800 rounded-xl p-4 mb-4 flex items-start gap-3">
+                    <Monitor className="w-5 h-5 text-siev-400 shrink-0 mt-0.5" />
+                    <div className="text-xs text-dark-400 leading-relaxed">
+                        <span className="text-dark-300 font-semibold">Ángulo máximo representable:</span>{' '}
+                        Horizontal <span className="text-white font-mono">{maxAngles.h.toFixed(1)}°</span>
+                        {' · '}
+                        Vertical <span className="text-white font-mono">{maxAngles.v.toFixed(1)}°</span>
+                        <span className="text-dark-500 ml-1">
+                            ({stimulusConfig.display.resolution_width}x{stimulusConfig.display.resolution_height} a {stimulusConfig.display.distance_cm}cm)
+                        </span>
+                    </div>
+                </div>
+            )}
+
             {/* Target Settings */}
             <ConfigSection title="Objetivo Visual (Target)" icon={Target} testId="target">
                 <InputField 
@@ -294,26 +314,6 @@ export const VisualStimuliTab: React.FC<VisualStimuliTabProps> = ({ stimulusConf
                     type="number" step="0.1" min={0.1} max={5}
                     value={localDefaults.target.size_deg} 
                     onChange={(v: number) => setLocalDefaults(prev => ({...prev, target: {...prev.target, size_deg: v}}))}
-                />
-            </ConfigSection>
-
-            {/* Calibration Settings */}
-            <ConfigSection title="Calibración" icon={Activity} testId="calibration">
-                <InputField 
-                    label="Patrón" 
-                    value={localDefaults.calibration.type} 
-                    onChange={(v: any) => setLocalDefaults(prev => ({...prev, calibration: {...prev.calibration, type: v}}))}
-                    options={[
-                        { value: 'points_5', label: '5 Puntos (Cruz)' },
-                        { value: 'points_7', label: '7 Puntos (+H)' },
-                        { value: 'points_9', label: '9 Puntos (Completo)' }
-                    ]}
-                />
-                <InputField 
-                    label="Duración por Punto (s)" 
-                    type="number" step="0.5" min={0.5} max={10}
-                    value={localDefaults.calibration.duration} 
-                    onChange={(v: number) => setLocalDefaults(prev => ({...prev, calibration: {...prev.calibration, duration: v}}))}
                 />
             </ConfigSection>
 

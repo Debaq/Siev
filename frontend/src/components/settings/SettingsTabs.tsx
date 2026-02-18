@@ -22,8 +22,8 @@ export const SettingsTabs: React.FC<SettingsTabsProps> = ({ tabs, activeTabId, o
                     onClick={() => onTabChange(tab.id)}
                     className={`
                         flex items-center gap-2 px-4 py-2 text-sm font-medium transition-all relative
-                        ${activeTabId === tab.id 
-                            ? 'text-siev-400' 
+                        ${activeTabId === tab.id
+                            ? 'text-siev-400'
                             : 'text-dark-400 hover:text-dark-200 hover:bg-dark-800/50'}
                     `}
                 >

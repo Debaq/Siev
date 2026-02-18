@@ -137,7 +137,7 @@ export function useTauriHardware(config?: any): UseTauriHardwareReturn {
         return
     }
 
-    // Map logic from Python backend to Serial commands
+    // Map logic to Serial commands
     // Left = 12, Right = 14
     const pin = led === 'left' ? '12' : '14'
     const state = action === 'on' ? 'ON' : 'OFF'

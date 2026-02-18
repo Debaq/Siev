@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { SettingsSection } from '../shared/SettingsSection';
 import { SettingsField } from '../shared/SettingsField';
-import { SettingsToggle } from '../shared/SettingsToggle';
 import { useWebSocket } from '../../../contexts/WebSocketContext';
 
 interface CameraTabProps {
@@ -11,21 +10,15 @@ interface CameraTabProps {
 }
 
 export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig }) => {
-    const { cameras, resolutions, resolutionsCameraId, send, pythonStatus } = useWebSocket();
+    const { cameras, resolutions, resolutionsCameraId, send, connected } = useWebSocket();
     const [applyingResolution, setApplyingResolution] = useState(false);
 
-    // Debug log
-    console.log('[CameraTab] Render - resolutions:', resolutions, 'pythonStatus:', pythonStatus);
-
-    // Fetch resolutions when camera changes or on initial load (only when Python is connected)
     useEffect(() => {
         const cameraId = config.vng?.camera?.camera_id;
-        console.log('[CameraTab] useEffect - cameraId:', cameraId, 'pythonStatus:', pythonStatus, 'resolutionsCameraId:', resolutionsCameraId);
-        if (pythonStatus && cameraId !== undefined && cameraId !== resolutionsCameraId) {
-            console.log('[CameraTab] Requesting resolutions for camera:', cameraId);
+        if (connected && cameraId !== undefined && cameraId !== resolutionsCameraId) {
             send({ type: 'list_resolutions', camera_id: cameraId });
         }
-    }, [config.vng?.camera?.camera_id, resolutionsCameraId, pythonStatus, send]);
+    }, [config.vng?.camera?.camera_id, resolutionsCameraId, connected, send]);
 
     const handleRefreshCameras = () => {
         send({ type: 'list_cameras' });
@@ -33,7 +26,6 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig }) =>
 
     const handleCameraChange = (newCameraId: number) => {
         updateConfig('vng.camera.camera_id', newCameraId);
-        // Request resolutions for the new camera
         send({ type: 'list_resolutions', camera_id: newCameraId });
     };
 
@@ -50,7 +42,6 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig }) =>
             updateConfig('vng.camera.fps', fps);
 
             setApplyingResolution(true);
-            // Send config via WebSocket with camera_id
             send({
                 type: 'set_config',
                 key: 'camera_setup',
@@ -65,8 +56,8 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig }) =>
 
     return (
         <div className="space-y-6 animate-fade-in">
-            <SettingsSection 
-                title="Captura de Video" 
+            <SettingsSection
+                title="Captura de Video"
                 description="Configure el dispositivo de entrada y los parámetros de captura para la oculografía."
             >
                 <SettingsField label="Dispositivo de Entrada">
@@ -119,92 +110,6 @@ export const CameraTab: React.FC<CameraTabProps> = ({ config, updateConfig }) =>
                         </button>
                     </div>
                 </SettingsField>
-
-                <div className="grid grid-cols-2 gap-4">
-                    <SettingsField label="Exposición (Manual)" description="Ajuste para compensar luz ambiente.">
-                        <input
-                            type="number" className="input h-9 text-sm"
-                            value={config.vng.camera.exposure}
-                            onChange={e => {
-                                const val = Number(e.target.value);
-                                updateConfig('vng.camera.exposure', val);
-                                send({ type: 'set_config', key: 'exposure', value: val });
-                            }}
-                        />
-                    </SettingsField>
-                    <SettingsField label="Contraste" description="Mejora la visibilidad de la pupila.">
-                        <input
-                            type="number" className="input h-9 text-sm"
-                            value={config.vng.camera.contrast}
-                            onChange={e => {
-                                const val = Number(e.target.value);
-                                updateConfig('vng.camera.contrast', val);
-                                send({ type: 'set_config', key: 'contrast', value: val });
-                            }}
-                        />
-                    </SettingsField>
-                </div>
-            </SettingsSection>
-
-            <SettingsSection title="Optimización de Transmisión">
-                <div className="grid grid-cols-2 gap-4">
-                    <SettingsField 
-                        label="Calidad de Video (JPEG)" 
-                        description={`Calidad: ${config.vng.camera.video_quality || 80}% - Menor calidad = Más rápido.`}
-                    >
-                        <input
-                            type="range" 
-                            min="10" max="100" step="5"
-                            className="range range-xs range-primary"
-                            value={config.vng.camera.video_quality || 80}
-                            onChange={e => {
-                                const val = Number(e.target.value);
-                                updateConfig('vng.camera.video_quality', val);
-                                // Send immediately for live preview effect
-                                send({ type: 'set_config', key: 'video_quality', value: val });
-                            }}
-                        />
-                    </SettingsField>
-                    <SettingsField 
-                        label="Escala de Video" 
-                        description={`Escala: ${((config.vng.camera.video_scale || 0.75) * 100).toFixed(0)}% - Tamaño de imagen.`}
-                    >
-                        <input
-                            type="range" 
-                            min="0.1" max="1.0" step="0.05"
-                            className="range range-xs range-secondary"
-                            value={config.vng.camera.video_scale || 0.75}
-                            onChange={e => {
-                                const val = Number(e.target.value);
-                                updateConfig('vng.camera.video_scale', val);
-                                send({ type: 'set_config', key: 'video_scale', value: val });
-                            }}
-                        />
-                    </SettingsField>
-                </div>
-            </SettingsSection>
-
-            <SettingsSection title="Orientación y Transformación">
-                <div className="grid grid-cols-2 gap-3">
-                    <SettingsField label="Espejo Horizontal" inline>
-                        <SettingsToggle 
-                            checked={config.vng.camera.flip_horizontal}
-                            onChange={val => {
-                                updateConfig('vng.camera.flip_horizontal', val);
-                                send({ type: 'set_config', key: 'flip_h', value: val });
-                            }}
-                        />
-                    </SettingsField>
-                    <SettingsField label="Invertir Vertical" inline>
-                        <SettingsToggle 
-                            checked={config.vng.camera.flip_vertical}
-                            onChange={val => {
-                                updateConfig('vng.camera.flip_vertical', val);
-                                send({ type: 'set_config', key: 'flip_v', value: val });
-                            }}
-                        />
-                    </SettingsField>
-                </div>
             </SettingsSection>
         </div>
     );

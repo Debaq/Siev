@@ -1,8 +1,13 @@
 import React from 'react';
 import { PositionalTestResult, NystagmusData, DixHallpikeResult } from '../../../types/vng';
+import { NystagmusSummaryDiagram } from '../charts/NystagmusSummaryDiagram';
+import { EditableField } from '../shared/EditableField';
 
 interface PositionalSectionProps {
     data: PositionalTestResult;
+    showGraphs?: boolean;
+    comment?: string;
+    onCommentChange?: (value: string) => void;
 }
 
 const directionLabels: Record<string, string> = {
@@ -77,7 +82,12 @@ const DixHallpikeDisplay: React.FC<{ result: DixHallpikeResult; side: string }> 
     );
 };
 
-export const PositionalSection: React.FC<PositionalSectionProps> = ({ data }) => {
+export const PositionalSection: React.FC<PositionalSectionProps> = ({
+    data,
+    showGraphs,
+    comment,
+    onCommentChange,
+}) => {
     return (
         <div className="mb-6">
             <h2 className="text-base font-semibold text-gray-800 border-b border-gray-300 pb-2 mb-3">
@@ -142,6 +152,9 @@ export const PositionalSection: React.FC<PositionalSectionProps> = ({ data }) =>
                 </div>
             )}
 
+            {/* Nystagmus summary diagram */}
+            {showGraphs && <NystagmusSummaryDiagram data={data} />}
+
             {/* Dix-Hallpike */}
             {data.dix_hallpike && (
                 <div className="mb-4">
@@ -157,6 +170,16 @@ export const PositionalSection: React.FC<PositionalSectionProps> = ({ data }) =>
                 <div className="mt-3 text-sm text-gray-600 italic">
                     Nota: {data.clinical_notes}
                 </div>
+            )}
+
+            {/* Evaluator comment */}
+            {onCommentChange && (
+                <EditableField
+                    value={comment || ''}
+                    onChange={onCommentChange}
+                    label="Observaciones del evaluador"
+                    placeholder="Escribir observaciones sobre pruebas posicionales..."
+                />
             )}
         </div>
     );

@@ -26,6 +26,16 @@ export interface VideoSessionConfig {
     smooth: number;
     manual_roi_right: ManualEyeRoi;
     manual_roi_left: ManualEyeRoi;
+    // Tracking parameters
+    min_circularity: number;
+    min_area: number;
+    max_area_ratio: number;
+    blink_detection: boolean;
+    blink_white_ratio: number;
+    lost_tolerance: number;
+    velocity_margin_factor: number;
+    aspect_ratio_min: number;
+    aspect_ratio_max: number;
 }
 
 export interface SessionConfigState {
@@ -49,6 +59,15 @@ const DEFAULT_SESSION_CONFIG: VideoSessionConfig = {
     smooth: 2.5,
     manual_roi_right: { top: 0.1, bottom: 0.9, nasal: 0.9, temporal: 0.1 },
     manual_roi_left: { top: 0.1, bottom: 0.9, nasal: 0.1, temporal: 0.9 },
+    min_circularity: 0.55,
+    min_area: 30,
+    max_area_ratio: 0.6,
+    blink_detection: true,
+    blink_white_ratio: 0.60,
+    lost_tolerance: 5,
+    velocity_margin_factor: 2.0,
+    aspect_ratio_min: 0.4,
+    aspect_ratio_max: 2.5,
 };
 
 /**
@@ -96,6 +115,15 @@ export function useSessionConfig(
             smooth: algo.smooth ?? 2.5,
             manual_roi_right: algo.manual_roi_right ?? { top: 0.1, bottom: 0.9, nasal: 0.9, temporal: 0.1 },
             manual_roi_left: algo.manual_roi_left ?? { top: 0.1, bottom: 0.9, nasal: 0.1, temporal: 0.9 },
+            min_circularity: algo.min_circularity ?? 0.55,
+            min_area: algo.min_area ?? 30,
+            max_area_ratio: algo.max_area_ratio ?? 0.6,
+            blink_detection: algo.blink_detection ?? true,
+            blink_white_ratio: algo.blink_white_ratio ?? 0.60,
+            lost_tolerance: algo.lost_tolerance ?? 5,
+            velocity_margin_factor: algo.velocity_margin_factor ?? 2.0,
+            aspect_ratio_min: algo.aspect_ratio_min ?? 0.4,
+            aspect_ratio_max: algo.aspect_ratio_max ?? 2.5,
         };
 
         setBaseConfig(newBase);
@@ -123,6 +151,15 @@ export function useSessionConfig(
                 smooth: config.smooth,
                 manual_roi_right: config.manual_roi_right,
                 manual_roi_left: config.manual_roi_left,
+                min_circularity: config.min_circularity,
+                min_area: config.min_area,
+                max_area_ratio: config.max_area_ratio,
+                blink_detection: config.blink_detection,
+                blink_white_ratio: config.blink_white_ratio,
+                lost_tolerance: config.lost_tolerance,
+                velocity_margin_factor: config.velocity_margin_factor,
+                aspect_ratio_min: config.aspect_ratio_min,
+                aspect_ratio_max: config.aspect_ratio_max,
             }
         });
     }, [sendToWs, effectiveValues]);
@@ -167,6 +204,24 @@ export function useSessionConfig(
                 onPersistentUpdate('vng.algorithm.manual_roi_right', value);
             } else if (key === 'manual_roi_left') {
                 onPersistentUpdate('vng.algorithm.manual_roi_left', value);
+            } else if (key === 'min_circularity') {
+                onPersistentUpdate('vng.algorithm.min_circularity', value);
+            } else if (key === 'min_area') {
+                onPersistentUpdate('vng.algorithm.min_area', value);
+            } else if (key === 'max_area_ratio') {
+                onPersistentUpdate('vng.algorithm.max_area_ratio', value);
+            } else if (key === 'blink_detection') {
+                onPersistentUpdate('vng.algorithm.blink_detection', value);
+            } else if (key === 'blink_white_ratio') {
+                onPersistentUpdate('vng.algorithm.blink_white_ratio', value);
+            } else if (key === 'lost_tolerance') {
+                onPersistentUpdate('vng.algorithm.lost_tolerance', value);
+            } else if (key === 'velocity_margin_factor') {
+                onPersistentUpdate('vng.algorithm.velocity_margin_factor', value);
+            } else if (key === 'aspect_ratio_min') {
+                onPersistentUpdate('vng.algorithm.aspect_ratio_min', value);
+            } else if (key === 'aspect_ratio_max') {
+                onPersistentUpdate('vng.algorithm.aspect_ratio_max', value);
             }
         }
 

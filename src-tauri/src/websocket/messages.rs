@@ -18,10 +18,6 @@ pub enum WsMessage {
         pitch: f32,
         roll: f32,
     },
-    Status {
-        python_connected: bool,
-        hardware_connected: bool,
-    },
     Error {
         source: String,
         message: String,
@@ -60,7 +56,7 @@ pub enum WsMessage {
         cmd: String,
     },
     StartRecording {
-        session_id: i64,
+        recording_id: i64,
     },
     StopRecording,
     CalibrationData {

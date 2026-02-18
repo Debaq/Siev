@@ -2,11 +2,46 @@ import { Video, VideoOff } from 'lucide-react'
 import { useRef, useEffect, useState } from 'react'
 import { useWebSocket } from '../contexts/WebSocketContext'
 
-interface VideoFeedProps {
-  isCapturing: boolean
+interface CaloricTimerOverlay {
+  elapsedSeconds: number
+  totalDuration: number
+  phaseName: string
+  phaseKey: 'delay' | 'irrigation' | 'recording' | 'torok' | 'ofi'
 }
 
-function VideoFeed({ isCapturing }: VideoFeedProps) {
+interface VideoFeedProps {
+  isCapturing: boolean
+  patientName?: string | null
+  testType?: string | null
+  caloricStageLabel?: string | null
+  isRecording?: boolean
+  caloricTimer?: CaloricTimerOverlay | null
+}
+
+const TEST_LABELS: Record<string, string> = {
+  'spontaneous': 'Espontáneo',
+  'saccades': 'Sacadas',
+  'pursuit': 'Seguimiento',
+  'positional': 'Posicional',
+  'caloric': 'Calórico',
+  'optokinetic': 'Optocinético',
+}
+
+const phaseBgColors: Record<string, string> = {
+  delay: 'bg-dark-700/80',
+  recording: 'bg-red-600/70',
+  irrigation: 'bg-orange-600/70',
+  torok: 'bg-amber-500/70',
+  ofi: 'bg-green-500/70',
+}
+
+function formatOverlayTime(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = Math.floor(seconds % 60)
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+}
+
+function VideoFeed({ isCapturing, patientName, testType, caloricStageLabel, isRecording, caloricTimer }: VideoFeedProps) {
   const { addListener, removeListener } = useWebSocket()
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -195,7 +230,38 @@ function VideoFeed({ isCapturing }: VideoFeedProps) {
             {fps} FPS
           </span>
         </div>
+        {patientName && (
+          <div className="glass px-2 py-1 rounded">
+            <span className="text-xs text-white font-medium">{patientName}</span>
+          </div>
+        )}
+        {testType && (
+          <div className="glass px-2 py-1 rounded">
+            <span className="text-xs text-siev-400 font-medium">{TEST_LABELS[testType] || testType}</span>
+          </div>
+        )}
       </div>
+
+      {/* Caloric timer overlay - centered, large */}
+      {isRecording && caloricTimer && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className={`${phaseBgColors[caloricTimer.phaseKey] || 'bg-dark-700/80'} backdrop-blur-sm px-8 py-4 rounded-2xl shadow-2xl flex flex-col items-center gap-1`}>
+            <span className="text-[56px] font-mono font-black text-white tabular-nums leading-none drop-shadow-lg">
+              {formatOverlayTime(caloricTimer.elapsedSeconds)}
+            </span>
+            <span className="text-sm font-bold text-white/80 uppercase tracking-widest">
+              {caloricTimer.phaseName}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Caloric stage overlay - top right */}
+      {isRecording && caloricStageLabel && (
+        <div className="absolute top-2 right-2 bg-red-600/80 backdrop-blur-sm px-4 py-2 rounded-lg shadow-lg">
+          <span className="text-xl font-black text-white tracking-wide">{caloricStageLabel}</span>
+        </div>
+      )}
     </div>
   )
 }

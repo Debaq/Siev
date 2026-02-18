@@ -14,6 +14,8 @@ pub struct Patient {
     pub email: Option<String>,
     pub notes: Option<String>,
     pub created_at: NaiveDateTime,
+    #[sqlx(default)]
+    pub session_count: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -43,9 +45,23 @@ pub struct Session {
     pub specialist_id: Option<i64>,
     pub date: NaiveDateTime,
     pub description: Option<String>,
+    pub protocol_type: Option<String>,
+    pub protocol_config: Option<String>,
+    #[sqlx(default)]
+    pub recording_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Recording {
+    pub id: i64,
+    pub session_id: i64,
+    pub test_type: String,
+    pub label: Option<String>,
+    pub date: NaiveDateTime,
     pub duration_seconds: i64,
     pub video_path: Option<String>,
     pub data_path: Option<String>,
+    pub sort_order: i64,
 }
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]

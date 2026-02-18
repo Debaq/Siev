@@ -1,6 +1,8 @@
-import { useMemo, useEffect, useRef, type MutableRefObject } from 'react'
-import ReactECharts from 'echarts-for-react'
+import { useMemo, useEffect, useRef, useCallback, type MutableRefObject } from 'react'
+import uPlot from 'uplot'
 import type { NystagmusBeatMarker } from '../../types/review'
+import UPlotChart from '../charts/UPlotChart'
+import { DARK_THEME, darkAxis, darkXAxis } from '../charts/uplot-theme'
 
 interface NystagmusBeatChartProps {
     beats: NystagmusBeatMarker[]
@@ -9,8 +11,13 @@ interface NystagmusBeatChartProps {
     onSeek: (time: number) => void
 }
 
-export default function NystagmusBeatChart({ beats, currentTime, currentTimeRef, onSeek }: NystagmusBeatChartProps) {
-    const chartRef = useRef<ReactECharts>(null)
+export default function NystagmusBeatChart({ beats, currentTime, currentTimeRef: _, onSeek }: NystagmusBeatChartProps) {
+    const chartInstanceRef = useRef<uPlot | null>(null)
+    const currentTimeInternalRef = useRef(currentTime)
+    currentTimeInternalRef.current = currentTime
+
+    const beatsRef = useRef(beats)
+    beatsRef.current = beats
 
     const stats = useMemo(() => {
         if (beats.length === 0) return null
@@ -26,144 +33,120 @@ export default function NystagmusBeatChart({ beats, currentTime, currentTimeRef,
         }
     }, [beats])
 
-    const option = useMemo(() => {
-        // Render beats as custom rectangles showing slow and fast phases
-        const slowPhaseData = beats.map((b, i) => ({
-            value: [b.slow_start, i, b.slow_end, i + 0.8, b.spv],
-            itemStyle: { color: 'rgba(14, 165, 233, 0.4)' },
-        }))
-
-        const fastPhaseData = beats.map((b, i) => ({
-            value: [b.slow_end, i, b.fast_end, i + 0.8, b.spv],
-            itemStyle: { color: 'rgba(244, 63, 94, 0.5)' },
-        }))
-
-        const maxTime = beats.length > 0
-            ? Math.max(...beats.map(b => b.fast_end)) * 1.1
-            : 10
-
-        return {
-            backgroundColor: 'transparent',
-            grid: { left: 50, right: 20, top: 25, bottom: 30 },
-            xAxis: {
-                type: 'value',
-                name: 'Tiempo (s)',
-                nameTextStyle: { color: '#6b7280', fontSize: 10 },
-                max: maxTime,
-                axisLine: { lineStyle: { color: '#374151' } },
-                axisLabel: { color: '#9ca3af', fontSize: 10 },
-                splitLine: { lineStyle: { color: '#1f2937', type: 'dashed' } },
-            },
-            yAxis: {
-                type: 'value',
-                name: 'Batido #',
-                nameTextStyle: { color: '#6b7280', fontSize: 10 },
-                axisLine: { lineStyle: { color: '#374151' } },
-                axisLabel: { color: '#9ca3af', fontSize: 10, formatter: (v: number) => Math.floor(v).toString() },
-                splitLine: { show: false },
-                max: Math.min(beats.length + 1, 30),
-            },
-            tooltip: {
-                trigger: 'item',
-                backgroundColor: '#1f2937',
-                borderColor: '#374151',
-                textStyle: { color: '#e5e7eb', fontSize: 11 },
-            },
-            series: [
-                {
-                    name: 'Fase Lenta',
-                    type: 'custom',
-                    renderItem: (_params: any, api: any) => {
-                        const start = api.coord([api.value(0), api.value(1)])
-                        const end = api.coord([api.value(2), api.value(3)])
-                        return {
-                            type: 'rect',
-                            shape: {
-                                x: start[0],
-                                y: start[1],
-                                width: end[0] - start[0],
-                                height: end[1] - start[1],
-                            },
-                            style: api.style(),
-                        }
-                    },
-                    data: slowPhaseData,
-                    encode: { x: [0, 2], y: [1, 3] },
-                },
-                {
-                    name: 'Fase Rapida',
-                    type: 'custom',
-                    renderItem: (_params: any, api: any) => {
-                        const start = api.coord([api.value(0), api.value(1)])
-                        const end = api.coord([api.value(2), api.value(3)])
-                        return {
-                            type: 'rect',
-                            shape: {
-                                x: start[0],
-                                y: start[1],
-                                width: Math.max(end[0] - start[0], 2),
-                                height: end[1] - start[1],
-                            },
-                            style: api.style(),
-                        }
-                    },
-                    data: fastPhaseData,
-                    encode: { x: [0, 2], y: [1, 3] },
-                },
-                // Auxiliary line series for the time cursor markLine
-                {
-                    name: '_cursor',
-                    type: 'line',
-                    data: [],
-                    silent: true,
-                    symbol: 'none',
-                    lineStyle: { width: 0 },
-                    markLine: {
-                        silent: true,
-                        symbol: 'none',
-                        lineStyle: { color: '#0ea5e9', width: 1, type: 'solid' },
-                        data: [{ xAxis: currentTimeRef.current }],
-                        label: { show: false },
-                    },
-                },
-            ],
-        }
+    const maxTime = useMemo(() => {
+        return beats.length > 0 ? Math.max(...beats.map(b => b.fast_end)) * 1.1 : 10
     }, [beats])
 
-    // Imperatively update cursor markLine
+    const maxBeat = useMemo(() => Math.min(beats.length + 1, 30), [beats.length])
+
+    // We need a dummy series so uPlot creates the axes/scales
+    const uplotData = useMemo<uPlot.AlignedData>(() => {
+        // Minimal data just to define the x range
+        return [[0, maxTime], [0, 0]] as uPlot.AlignedData
+    }, [maxTime])
+
+    // Redraw when currentTime changes
     useEffect(() => {
-        const instance = chartRef.current?.getEchartsInstance()
-        if (!instance) return
-        instance.setOption({
-            series: [{}, {}, {
-                markLine: {
-                    silent: true,
-                    symbol: 'none',
-                    lineStyle: { color: '#0ea5e9', width: 1, type: 'solid' },
-                    data: [{ xAxis: currentTime }],
-                    label: { show: false },
-                },
-            }],
-        })
+        const u = chartInstanceRef.current
+        if (u) u.redraw(false, false)
     }, [currentTime])
 
-    // Click-to-seek anywhere on the chart grid via zrender
+    // Redraw when beats change (the draw hook reads from ref)
     useEffect(() => {
-        const instance = chartRef.current?.getEchartsInstance()
-        if (!instance) return
-        const zr = instance.getZr()
-        const handler = (e: any) => {
-            const pointInPixel = [e.offsetX, e.offsetY]
-            if (instance.containPixel('grid', pointInPixel)) {
-                const coordX = instance.convertFromPixel({ seriesIndex: 0 }, pointInPixel)[0]
-                if (typeof coordX === 'number' && isFinite(coordX)) {
-                    onSeek(coordX)
-                }
-            }
-        }
-        zr.on('click', handler)
-        return () => { zr.off('click', handler) }
+        const u = chartInstanceRef.current
+        if (u) u.redraw()
+    }, [beats])
+
+    const onCreateChart = useCallback((u: uPlot) => {
+        chartInstanceRef.current = u
+
+        // Click-to-seek
+        u.over.addEventListener('click', (e) => {
+            const left = e.clientX - u.over.getBoundingClientRect().left
+            const timeVal = u.posToVal(left, 'x')
+            if (isFinite(timeVal)) onSeek(timeVal)
+        })
+
+        // Double-click to reset zoom
+        u.over.addEventListener('dblclick', () => {
+            u.setScale('x', { min: u.data[0][0], max: u.data[0][u.data[0].length - 1] })
+        })
     }, [onSeek])
+
+    const options = useMemo((): Omit<uPlot.Options, 'width' | 'height'> => ({
+        cursor: {
+            drag: { x: true, y: false, setScale: true },
+            show: true,
+            y: false,
+        },
+        select: { show: false, left: 0, top: 0, width: 0, height: 0 },
+        legend: { show: false },
+        padding: [8, 10, 0, 0],
+        hooks: {
+            draw: [
+                (u: uPlot) => {
+                    const ctx = u.ctx
+                    const { left, top, width, height } = u.bbox
+
+                    ctx.save()
+
+                    // Draw beat rectangles
+                    for (let i = 0; i < beatsRef.current.length; i++) {
+                        const b = beatsRef.current[i]
+
+                        // Slow phase (cyan)
+                        const sx0 = u.valToPos(b.slow_start, 'x', true)
+                        const sx1 = u.valToPos(b.slow_end, 'x', true)
+                        const sy0 = u.valToPos(i, 'y', true)
+                        const sy1 = u.valToPos(i + 0.8, 'y', true)
+
+                        ctx.fillStyle = DARK_THEME.colors.slowPhase
+                        ctx.fillRect(sx0, sy0, sx1 - sx0, sy1 - sy0)
+
+                        // Fast phase (rose)
+                        const fx0 = u.valToPos(b.slow_end, 'x', true)
+                        const fx1 = u.valToPos(b.fast_end, 'x', true)
+
+                        ctx.fillStyle = DARK_THEME.colors.fastPhase
+                        ctx.fillRect(fx0, sy0, Math.max(fx1 - fx0, 2), sy1 - sy0)
+                    }
+
+                    // Time cursor line
+                    const cursorX = u.valToPos(currentTimeInternalRef.current, 'x', true)
+                    if (cursorX >= left && cursorX <= left + width) {
+                        ctx.strokeStyle = DARK_THEME.colors.cursor
+                        ctx.lineWidth = 1
+                        ctx.beginPath()
+                        ctx.moveTo(cursorX, top)
+                        ctx.lineTo(cursorX, top + height)
+                        ctx.stroke()
+                    }
+
+                    ctx.restore()
+                }
+            ],
+        },
+        axes: [
+            darkXAxis('Tiempo (s)'),
+            {
+                ...darkAxis('Batido #'),
+                values: (_u: uPlot, vals: number[]) => vals.map(v => Math.floor(v).toString()),
+            },
+        ],
+        scales: {
+            x: { auto: false, min: 0, max: maxTime, time: false },
+            y: { auto: false, min: 0, max: maxBeat },
+        },
+        series: [
+            {},
+            {
+                label: '_dummy',
+                stroke: 'transparent',
+                points: { show: false },
+                show: false,
+            },
+        ],
+    }), [maxTime, maxBeat])
 
     return (
         <div className="bg-dark-900/50 border border-dark-800 rounded-lg overflow-hidden">
@@ -178,12 +161,13 @@ export default function NystagmusBeatChart({ beats, currentTime, currentTimeRef,
                     </span>
                 </div>
             </div>
-            <ReactECharts
-                ref={chartRef}
-                option={option}
-                style={{ height: 250 }}
-                opts={{ renderer: 'canvas' }}
-            />
+            <div style={{ height: 250 }}>
+                <UPlotChart
+                    options={options}
+                    data={uplotData}
+                    onCreate={onCreateChart}
+                />
+            </div>
             {stats && (
                 <div className="px-3 py-1.5 border-t border-dark-800 flex items-center gap-4 text-[10px] text-dark-500">
                     <span>Batidos: <span className="text-dark-300">{stats.count}</span></span>

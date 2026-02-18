@@ -463,10 +463,16 @@ pub fn build_recording_review(
     // Load calibration (optional)
     let calibration = SievBundle::load_calibration(bundle_path).ok();
 
-    // Load eye data
+    // Load eye data, filtering out pre-calibration samples
     let data_path = bundle_path.join("data.bin");
     let raw_data = if data_path.exists() {
-        load_eye_data(&data_path)?
+        let all_data = load_eye_data(&data_path)?;
+        // Skip uncalibrated samples (first ~30 frames of auto-calibration)
+        // which have raw pixel coordinates instead of centered/degree values
+        match all_data.iter().position(|d| d.is_calibrated) {
+            Some(idx) => all_data[idx..].to_vec(),
+            None => all_data, // All uncalibrated (filtering disabled) — keep as-is
+        }
     } else {
         Vec::new()
     };
@@ -543,10 +549,14 @@ pub fn build_recalibrated_review(
     new_calibration: &CalibrationSnapshot,
     old_calibration: &CalibrationSnapshot,
 ) -> Result<SessionReviewPayload, String> {
-    // Load raw data
+    // Load raw data, filtering out pre-calibration samples
     let data_path = bundle_path.join("data.bin");
     let mut raw_data = if data_path.exists() {
-        load_eye_data(&data_path)?
+        let all_data = load_eye_data(&data_path)?;
+        match all_data.iter().position(|d| d.is_calibrated) {
+            Some(idx) => all_data[idx..].to_vec(),
+            None => all_data,
+        }
     } else {
         return Err("No data file found".to_string());
     };

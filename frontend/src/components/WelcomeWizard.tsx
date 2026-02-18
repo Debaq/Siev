@@ -70,7 +70,7 @@ export default function WelcomeWizard({ onComplete }: WelcomeWizardProps) {
                 flip_vertical: false
             },
             processing: {
-                algorithm: "yolo",
+                algorithm: "yolo26",
                 threshold: 40,
                 min_pupil_size: 10,
                 roi_enabled: true

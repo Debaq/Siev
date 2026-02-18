@@ -5,7 +5,7 @@ use tauri::Manager;
 use chrono::NaiveDateTime;
 use std::path::Path;
 use crate::storage::bundle::SievBundle;
-use super::models::{Patient, Session, CreatePatientDto, UpdatePatientDto, Specialist};
+use super::models::{Patient, Session, Recording, CreatePatientDto, UpdatePatientDto, Specialist};
 
 pub struct DatabaseService {
     pool: Pool<Sqlite>,
@@ -34,8 +34,17 @@ impl DatabaseService {
             .map_err(|e| e.to_string())?;
 
         let service = Self { pool };
+
+        // Enable foreign keys for CASCADE support
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&service.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
         service.init_schema().await?;
-        
+        service.migrate_v2_recordings().await?;
+        service.migrate_vng_test_results_schema().await?;
+
         Ok(service)
     }
 
@@ -61,11 +70,23 @@ impl DatabaseService {
                 specialist_id INTEGER,
                 date DATETIME DEFAULT CURRENT_TIMESTAMP,
                 description TEXT,
+                protocol_type TEXT,
+                protocol_config TEXT,
+                FOREIGN KEY(patient_id) REFERENCES patients(id),
+                FOREIGN KEY(specialist_id) REFERENCES specialists(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS recordings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                test_type TEXT NOT NULL,
+                label TEXT,
+                date DATETIME DEFAULT CURRENT_TIMESTAMP,
                 duration_seconds INTEGER DEFAULT 0,
                 video_path TEXT,
                 data_path TEXT,
-                FOREIGN KEY(patient_id) REFERENCES patients(id),
-                FOREIGN KEY(specialist_id) REFERENCES specialists(id)
+                sort_order INTEGER DEFAULT 0,
+                FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS settings (
@@ -82,12 +103,12 @@ impl DatabaseService {
             -- VNG Test Results
             CREATE TABLE IF NOT EXISTS vng_test_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id INTEGER NOT NULL,
+                recording_id INTEGER NOT NULL,
                 test_type TEXT NOT NULL,
                 results_json TEXT,
                 clinical_notes TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+                FOREIGN KEY(recording_id) REFERENCES recordings(id) ON DELETE CASCADE
             );
 
             -- VNG Reference Values
@@ -105,11 +126,11 @@ impl DatabaseService {
             -- VNG Reports
             CREATE TABLE IF NOT EXISTS vng_reports (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id INTEGER NOT NULL,
+                recording_id INTEGER NOT NULL,
                 pdf_path TEXT,
                 config_json TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+                FOREIGN KEY(recording_id) REFERENCES recordings(id) ON DELETE CASCADE
             );
             "#
         )
@@ -120,23 +141,183 @@ impl DatabaseService {
         Ok(())
     }
 
-    pub async fn reset_database(&self) -> Result<(), String> {
-        sqlx::query("DROP TABLE IF EXISTS sessions")
-            .execute(&self.pool)
-            .await
-            .map_err(|e| e.to_string())?;
-        
-        sqlx::query("DROP TABLE IF EXISTS patients")
-            .execute(&self.pool)
-            .await
-            .map_err(|e| e.to_string())?;
-            
-        sqlx::query("DROP TABLE IF EXISTS settings")
-            .execute(&self.pool)
+    /// Migrate old sessions (with video_path/data_path) to new session+recording model.
+    /// This handles existing databases that still have the old schema.
+    async fn migrate_v2_recordings(&self) -> Result<(), String> {
+        // Check if old schema exists (sessions table has video_path column)
+        let has_video_path: Option<(String,)> = sqlx::query_as(
+            "SELECT name FROM pragma_table_info('sessions') WHERE name = 'video_path'"
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if has_video_path.is_none() {
+            return Ok(()); // Already migrated or fresh DB
+        }
+
+        println!("[SIEV-DB] Migrating old sessions to session+recording model...");
+
+        // 1. Migrate old vng_test_results that still have session_id column
+        let has_old_fk: Option<(String,)> = sqlx::query_as(
+            "SELECT name FROM pragma_table_info('vng_test_results') WHERE name = 'session_id'"
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // 2. Create recordings from old sessions that have data
+        let old_sessions: Vec<(i64, Option<String>, Option<String>, Option<String>, String, i64)> = sqlx::query_as(
+            "SELECT id, description, video_path, data_path, date, duration_seconds FROM sessions WHERE video_path IS NOT NULL OR data_path IS NOT NULL"
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        for (session_id, description, video_path, data_path, date, duration_seconds) in &old_sessions {
+            // Check if recording already exists for this session
+            let existing: Option<(i64,)> = sqlx::query_as(
+                "SELECT id FROM recordings WHERE session_id = ?"
+            )
+            .bind(session_id)
+            .fetch_optional(&self.pool)
             .await
             .map_err(|e| e.to_string())?;
 
-        sqlx::query("DROP TABLE IF EXISTS specialists")
+            if existing.is_none() {
+                let test_type = description.as_deref().unwrap_or("unknown");
+                let recording_id = sqlx::query(
+                    "INSERT INTO recordings (session_id, test_type, label, date, duration_seconds, video_path, data_path, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, 0)"
+                )
+                .bind(session_id)
+                .bind(test_type)
+                .bind(description)
+                .bind(date)
+                .bind(duration_seconds)
+                .bind(video_path)
+                .bind(data_path)
+                .execute(&self.pool)
+                .await
+                .map_err(|e| e.to_string())?
+                .last_insert_rowid();
+
+                // Migrate vng_test_results from session_id to recording_id (if old column exists)
+                if has_old_fk.is_some() {
+                    let _ = sqlx::query(
+                        "UPDATE vng_test_results SET recording_id = ? WHERE session_id = ?"
+                    )
+                    .bind(recording_id)
+                    .bind(session_id)
+                    .execute(&self.pool)
+                    .await;
+                }
+
+                println!("[SIEV-DB] Migrated session {} -> recording {}", session_id, recording_id);
+            }
+        }
+
+        // 3. Remove old columns from sessions table using temp table approach
+        // SQLite doesn't support DROP COLUMN in older versions, so we use the temp table method
+        let _ = sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS sessions_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_id INTEGER NOT NULL,
+                specialist_id INTEGER,
+                date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                description TEXT,
+                protocol_type TEXT,
+                protocol_config TEXT,
+                FOREIGN KEY(patient_id) REFERENCES patients(id),
+                FOREIGN KEY(specialist_id) REFERENCES specialists(id)
+            );
+            INSERT OR IGNORE INTO sessions_new (id, patient_id, specialist_id, date, description)
+                SELECT id, patient_id, specialist_id, date, description FROM sessions;
+            DROP TABLE sessions;
+            ALTER TABLE sessions_new RENAME TO sessions;
+            "#
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("Migration error: {}", e))?;
+
+        println!("[SIEV-DB] Migration to v2 (session+recording) complete.");
+        Ok(())
+    }
+
+    /// Ensure vng_test_results has recording_id column (old DBs may still have session_id).
+    async fn migrate_vng_test_results_schema(&self) -> Result<(), String> {
+        let has_recording_id: Option<(String,)> = sqlx::query_as(
+            "SELECT name FROM pragma_table_info('vng_test_results') WHERE name = 'recording_id'"
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if has_recording_id.is_some() {
+            return Ok(()); // Already has the correct schema
+        }
+
+        // Check if the table even exists
+        let table_exists: Option<(String,)> = sqlx::query_as(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='vng_test_results'"
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if table_exists.is_none() {
+            return Ok(()); // Table doesn't exist yet, init_schema will create it
+        }
+
+        println!("[SIEV-DB] Migrating vng_test_results: session_id -> recording_id...");
+
+        // Recreate with correct schema, mapping session_id -> recording via lookup
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS vng_test_results_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                recording_id INTEGER NOT NULL,
+                test_type TEXT NOT NULL,
+                results_json TEXT,
+                clinical_notes TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(recording_id) REFERENCES recordings(id) ON DELETE CASCADE
+            )
+            "#
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("vng_test_results migration error: {}", e))?;
+
+        // Try to migrate existing data by matching session_id to recordings
+        let _ = sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO vng_test_results_new (id, recording_id, test_type, results_json, clinical_notes, created_at)
+            SELECT vtr.id, r.id, vtr.test_type, vtr.results_json, vtr.clinical_notes, vtr.created_at
+            FROM vng_test_results vtr
+            INNER JOIN recordings r ON r.session_id = vtr.session_id
+            "#
+        )
+        .execute(&self.pool)
+        .await;
+
+        sqlx::query("DROP TABLE vng_test_results")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("vng_test_results migration error: {}", e))?;
+
+        sqlx::query("ALTER TABLE vng_test_results_new RENAME TO vng_test_results")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| format!("vng_test_results migration error: {}", e))?;
+
+        println!("[SIEV-DB] vng_test_results migration complete.");
+        Ok(())
+    }
+
+    pub async fn reset_database(&self) -> Result<(), String> {
+        sqlx::query("DROP TABLE IF EXISTS vng_reports")
             .execute(&self.pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -151,7 +332,27 @@ impl DatabaseService {
             .await
             .map_err(|e| e.to_string())?;
 
-        sqlx::query("DROP TABLE IF EXISTS vng_reports")
+        sqlx::query("DROP TABLE IF EXISTS recordings")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query("DROP TABLE IF EXISTS sessions")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query("DROP TABLE IF EXISTS patients")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query("DROP TABLE IF EXISTS settings")
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        sqlx::query("DROP TABLE IF EXISTS specialists")
             .execute(&self.pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -222,9 +423,19 @@ impl DatabaseService {
     pub async fn get_patients(&self, search: Option<String>) -> Result<Vec<Patient>, String> {
         let query_str = if let Some(s) = search {
             let pattern = format!("%{}%", s);
-            format!("SELECT * FROM patients WHERE first_name LIKE '{}' OR last_name LIKE '{}' OR dni LIKE '{}' ORDER BY last_name", pattern, pattern, pattern)
+            format!(
+                "SELECT p.*, COALESCE(cnt.c, 0) AS session_count \
+                 FROM patients p LEFT JOIN (SELECT patient_id, COUNT(*) AS c FROM sessions GROUP BY patient_id) cnt \
+                 ON p.id = cnt.patient_id \
+                 WHERE p.first_name LIKE '{}' OR p.last_name LIKE '{}' OR p.dni LIKE '{}' \
+                 ORDER BY p.last_name",
+                pattern, pattern, pattern
+            )
         } else {
-            "SELECT * FROM patients ORDER BY last_name".to_string()
+            "SELECT p.*, COALESCE(cnt.c, 0) AS session_count \
+             FROM patients p LEFT JOIN (SELECT patient_id, COUNT(*) AS c FROM sessions GROUP BY patient_id) cnt \
+             ON p.id = cnt.patient_id \
+             ORDER BY p.last_name".to_string()
         };
 
         sqlx::query_as::<_, Patient>(&query_str)
@@ -329,21 +540,44 @@ impl DatabaseService {
         Ok(())
     }
 
+    pub async fn delete_session(&self, id: i64) -> Result<(), String> {
+        // CASCADE will delete recordings, which cascade to vng_test_results and vng_reports
+        sqlx::query("DELETE FROM sessions WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     // --- Sessions ---
 
-    pub async fn create_session(&self, patient_id: i64, specialist_id: Option<i64>, description: Option<String>) -> Result<Session, String> {
+    pub async fn create_session(
+        &self,
+        patient_id: i64,
+        specialist_id: Option<i64>,
+        description: Option<String>,
+        protocol_type: Option<String>,
+        protocol_config: Option<String>,
+    ) -> Result<Session, String> {
         let id = sqlx::query(
-            "INSERT INTO sessions (patient_id, specialist_id, description, date) VALUES (?, ?, ?, datetime('now'))"
+            "INSERT INTO sessions (patient_id, specialist_id, description, protocol_type, protocol_config, date) VALUES (?, ?, ?, ?, ?, datetime('now'))"
         )
         .bind(patient_id)
         .bind(specialist_id)
         .bind(description)
+        .bind(protocol_type)
+        .bind(protocol_config)
         .execute(&self.pool)
         .await
         .map_err(|e| e.to_string())?
         .last_insert_rowid();
 
-        sqlx::query_as::<_, Session>("SELECT * FROM sessions WHERE id = ?")
+        sqlx::query_as::<_, Session>(
+            "SELECT s.*, COALESCE(rc.c, 0) AS recording_count \
+             FROM sessions s LEFT JOIN (SELECT session_id, COUNT(*) AS c FROM recordings GROUP BY session_id) rc \
+             ON s.id = rc.session_id WHERE s.id = ?"
+        )
             .bind(id)
             .fetch_one(&self.pool)
             .await
@@ -351,7 +585,11 @@ impl DatabaseService {
     }
 
     pub async fn get_sessions(&self, patient_id: i64) -> Result<Vec<Session>, String> {
-        sqlx::query_as::<_, Session>("SELECT * FROM sessions WHERE patient_id = ? ORDER BY date DESC")
+        sqlx::query_as::<_, Session>(
+            "SELECT s.*, COALESCE(rc.c, 0) AS recording_count \
+             FROM sessions s LEFT JOIN (SELECT session_id, COUNT(*) AS c FROM recordings GROUP BY session_id) rc \
+             ON s.id = rc.session_id WHERE s.patient_id = ? ORDER BY s.date DESC"
+        )
             .bind(patient_id)
             .fetch_all(&self.pool)
             .await
@@ -359,16 +597,66 @@ impl DatabaseService {
     }
 
     pub async fn get_session_by_id(&self, id: i64) -> Result<Option<Session>, String> {
-        sqlx::query_as::<_, Session>("SELECT * FROM sessions WHERE id = ?")
+        sqlx::query_as::<_, Session>(
+            "SELECT s.*, COALESCE(rc.c, 0) AS recording_count \
+             FROM sessions s LEFT JOIN (SELECT session_id, COUNT(*) AS c FROM recordings GROUP BY session_id) rc \
+             ON s.id = rc.session_id WHERE s.id = ?"
+        )
             .bind(id)
             .fetch_optional(&self.pool)
             .await
             .map_err(|e| e.to_string())
     }
 
-    pub async fn update_session_paths(&self, id: i64, video_path: Option<String>, data_path: Option<String>) -> Result<(), String> {
+    // --- Recordings ---
+
+    pub async fn create_recording(
+        &self,
+        session_id: i64,
+        test_type: &str,
+        label: Option<&str>,
+        sort_order: i64,
+    ) -> Result<Recording, String> {
+        let id = sqlx::query(
+            "INSERT INTO recordings (session_id, test_type, label, sort_order, date) VALUES (?, ?, ?, ?, datetime('now'))"
+        )
+        .bind(session_id)
+        .bind(test_type)
+        .bind(label)
+        .bind(sort_order)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .last_insert_rowid();
+
+        sqlx::query_as::<_, Recording>("SELECT * FROM recordings WHERE id = ?")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn get_recordings(&self, session_id: i64) -> Result<Vec<Recording>, String> {
+        sqlx::query_as::<_, Recording>(
+            "SELECT * FROM recordings WHERE session_id = ? ORDER BY sort_order, date"
+        )
+            .bind(session_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn get_recording_by_id(&self, id: i64) -> Result<Option<Recording>, String> {
+        sqlx::query_as::<_, Recording>("SELECT * FROM recordings WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn update_recording_paths(&self, id: i64, video_path: Option<String>, data_path: Option<String>) -> Result<(), String> {
         sqlx::query(
-            "UPDATE sessions SET video_path = ?, data_path = ? WHERE id = ?"
+            "UPDATE recordings SET video_path = ?, data_path = ? WHERE id = ?"
         )
         .bind(video_path)
         .bind(data_path)
@@ -376,6 +664,25 @@ impl DatabaseService {
         .execute(&self.pool)
         .await
         .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub async fn update_recording_duration(&self, id: i64, duration_seconds: i64) -> Result<(), String> {
+        sqlx::query("UPDATE recordings SET duration_seconds = ? WHERE id = ?")
+            .bind(duration_seconds)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub async fn delete_recording(&self, id: i64) -> Result<(), String> {
+        sqlx::query("DELETE FROM recordings WHERE id = ?")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -419,20 +726,18 @@ impl DatabaseService {
     async fn sync_session_bundle(&self, bundle_path: &Path, manifest: crate::storage::bundle::SessionManifest) -> Result<(), String> {
         // 1. Find or create patient
         let patient_id = if let Some(dni) = &manifest.patient.dni {
-            // Try to find by DNI
             let p: Option<(i64,)> = sqlx::query_as("SELECT id FROM patients WHERE dni = ?")
                 .bind(dni)
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(|e| e.to_string())?;
-            
+
             if let Some((id,)) = p {
                 id
             } else {
                 self.create_patient_from_snapshot(&manifest.patient).await?
             }
         } else {
-            // Try to find by name
             let p: Option<(i64,)> = sqlx::query_as("SELECT id FROM patients WHERE first_name = ? AND last_name = ?")
                 .bind(&manifest.patient.first_name)
                 .bind(&manifest.patient.last_name)
@@ -447,26 +752,40 @@ impl DatabaseService {
             }
         };
 
-        // 2. Check if session exists (by data_path)
+        // 2. Check if recording exists (by data_path)
         let data_path = bundle_path.join("data.bin").to_string_lossy().to_string();
-        let session_exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM sessions WHERE data_path = ?")
+        let recording_exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM recordings WHERE data_path = ?")
             .bind(&data_path)
             .fetch_optional(&self.pool)
             .await
             .map_err(|e| e.to_string())?;
 
-        if session_exists.is_none() {
-            // Create session
+        if recording_exists.is_none() {
             let video_path = bundle_path.join("video").join("raw_capture.mp4").to_string_lossy().to_string();
             let date = chrono::DateTime::parse_from_rfc3339(&manifest.created_at)
                 .map(|dt| dt.naive_local())
                 .unwrap_or_else(|_| chrono::Utc::now().naive_utc());
 
-            sqlx::query(
-                "INSERT INTO sessions (patient_id, specialist_id, description, date, video_path, data_path) VALUES (?, ?, ?, ?, ?, ?)"
+            // Create session
+            let session_id = sqlx::query(
+                "INSERT INTO sessions (patient_id, specialist_id, description, protocol_type, date) VALUES (?, ?, ?, ?, ?)"
             )
             .bind(patient_id)
             .bind(manifest.specialist_id)
+            .bind(&manifest.description)
+            .bind(&manifest.test_type)
+            .bind(date)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| e.to_string())?
+            .last_insert_rowid();
+
+            // Create recording under session
+            sqlx::query(
+                "INSERT INTO recordings (session_id, test_type, label, date, video_path, data_path, sort_order) VALUES (?, ?, ?, ?, ?, ?, 0)"
+            )
+            .bind(session_id)
+            .bind(&manifest.test_type)
             .bind(&manifest.description)
             .bind(date)
             .bind(video_path)
@@ -504,15 +823,15 @@ impl DatabaseService {
 
     pub async fn save_vng_test_result(
         &self,
-        session_id: i64,
+        recording_id: i64,
         test_type: &str,
         results_json: &str,
         clinical_notes: Option<&str>,
     ) -> Result<i64, String> {
         let id = sqlx::query(
-            "INSERT INTO vng_test_results (session_id, test_type, results_json, clinical_notes) VALUES (?, ?, ?, ?)"
+            "INSERT INTO vng_test_results (recording_id, test_type, results_json, clinical_notes) VALUES (?, ?, ?, ?)"
         )
-        .bind(session_id)
+        .bind(recording_id)
         .bind(test_type)
         .bind(results_json)
         .bind(clinical_notes)
@@ -526,23 +845,23 @@ impl DatabaseService {
 
     pub async fn get_vng_test_results(
         &self,
-        session_id: i64,
+        recording_id: i64,
         test_type: Option<&str>,
     ) -> Result<Vec<(i64, String, String, Option<String>)>, String> {
         let results: Vec<(i64, String, String, Option<String>)> = if let Some(tt) = test_type {
             sqlx::query_as(
-                "SELECT id, test_type, results_json, clinical_notes FROM vng_test_results WHERE session_id = ? AND test_type = ? ORDER BY created_at DESC"
+                "SELECT id, test_type, results_json, clinical_notes FROM vng_test_results WHERE recording_id = ? AND test_type = ? ORDER BY created_at DESC"
             )
-            .bind(session_id)
+            .bind(recording_id)
             .bind(tt)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| e.to_string())?
         } else {
             sqlx::query_as(
-                "SELECT id, test_type, results_json, clinical_notes FROM vng_test_results WHERE session_id = ? ORDER BY created_at DESC"
+                "SELECT id, test_type, results_json, clinical_notes FROM vng_test_results WHERE recording_id = ? ORDER BY created_at DESC"
             )
-            .bind(session_id)
+            .bind(recording_id)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| e.to_string())?
@@ -591,14 +910,14 @@ impl DatabaseService {
 
     pub async fn save_vng_report(
         &self,
-        session_id: i64,
+        recording_id: i64,
         pdf_path: Option<&str>,
         config_json: &str,
     ) -> Result<i64, String> {
         let id = sqlx::query(
-            "INSERT INTO vng_reports (session_id, pdf_path, config_json) VALUES (?, ?, ?)"
+            "INSERT INTO vng_reports (recording_id, pdf_path, config_json) VALUES (?, ?, ?)"
         )
-        .bind(session_id)
+        .bind(recording_id)
         .bind(pdf_path)
         .bind(config_json)
         .execute(&self.pool)
@@ -609,13 +928,13 @@ impl DatabaseService {
         Ok(id)
     }
 
-    pub async fn get_previous_session(&self, patient_id: i64, before_session_id: i64) -> Result<Option<Session>, String> {
-        sqlx::query_as::<_, Session>(
-            "SELECT * FROM sessions WHERE patient_id = ? AND id < ? ORDER BY date DESC LIMIT 1"
+    /// Get all recordings with their file paths for a session (used when deleting)
+    pub async fn get_session_recordings_paths(&self, session_id: i64) -> Result<Vec<(i64, Option<String>, Option<String>)>, String> {
+        sqlx::query_as::<_, (i64, Option<String>, Option<String>)>(
+            "SELECT id, video_path, data_path FROM recordings WHERE session_id = ?"
         )
-        .bind(patient_id)
-        .bind(before_session_id)
-        .fetch_optional(&self.pool)
+        .bind(session_id)
+        .fetch_all(&self.pool)
         .await
         .map_err(|e| e.to_string())
     }

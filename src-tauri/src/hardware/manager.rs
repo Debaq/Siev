@@ -11,6 +11,7 @@ pub struct HardwareManager {
     is_connected: Arc<AtomicBool>,
     reader_thread_handle: Option<thread::JoinHandle<()>>,
     should_stop: Arc<AtomicBool>,
+    window: Option<Window>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -28,6 +29,13 @@ impl HardwareManager {
             is_connected: Arc::new(AtomicBool::new(false)),
             reader_thread_handle: None,
             should_stop: Arc::new(AtomicBool::new(false)),
+            window: None,
+        }
+    }
+
+    fn emit_status(&self, connected: bool) {
+        if let Some(ref w) = self.window {
+            let _ = w.emit("hardware-status", serde_json::json!({ "connected": connected }));
         }
     }
 
@@ -50,7 +58,7 @@ impl HardwareManager {
 
         // Clone port for reading thread
         let port_clone = port.try_clone().map_err(|e| e.to_string())?;
-        
+
         // Store port for writing
         {
             let mut guard = self.port.lock().unwrap();
@@ -59,11 +67,14 @@ impl HardwareManager {
 
         self.is_connected.store(true, Ordering::SeqCst);
         self.should_stop.store(false, Ordering::SeqCst);
+        self.window = Some(window.clone());
+        self.emit_status(true);
 
         // Start reader thread
         let is_connected = self.is_connected.clone();
         let should_stop = self.should_stop.clone();
-        
+        let status_window = window.clone();
+
         self.reader_thread_handle = Some(thread::spawn(move || {
             let mut reader = BufReader::new(port_clone);
             let mut buffer = String::new();
@@ -91,8 +102,9 @@ impl HardwareManager {
                     }
                 }
             }
-            
+
             is_connected.store(false, Ordering::SeqCst);
+            let _ = status_window.emit("hardware-status", serde_json::json!({ "connected": false }));
         }));
 
         Ok(())
@@ -104,7 +116,7 @@ impl HardwareManager {
 
     pub fn disconnect(&mut self) {
         self.should_stop.store(true, Ordering::SeqCst);
-        
+
         // Join reader thread
         if let Some(handle) = self.reader_thread_handle.take() {
             let _ = handle.join();
@@ -113,6 +125,7 @@ impl HardwareManager {
         let mut guard = self.port.lock().unwrap();
         *guard = None;
         self.is_connected.store(false, Ordering::SeqCst);
+        self.emit_status(false);
     }
 
     pub fn send_command(&self, cmd: &str) -> Result<(), String> {

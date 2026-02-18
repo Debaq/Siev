@@ -19,9 +19,21 @@ export interface Session {
   patient_id: number
   date: string
   description: string | null
+  protocol_type: string | null
+  protocol_config: string | null
+  recording_count: number
+}
+
+export interface Recording {
+  id: number
+  session_id: number
+  test_type: string
+  label: string | null
+  date: string
   duration_seconds: number
   video_path: string | null
   data_path: string | null
+  sort_order: number
 }
 
 export interface Specialist {
@@ -92,6 +104,16 @@ export function useTauriDb() {
     }
   }, [])
 
+  const deleteSession = useCallback(async (id: number): Promise<boolean> => {
+    try {
+      await invoke('delete_session', { id })
+      return true
+    } catch (err) {
+      console.error('Failed to delete session:', err)
+      return false
+    }
+  }, [])
+
   const getSessions = useCallback(async (patientId: number): Promise<Session[]> => {
     try {
       return await invoke<Session[]>('get_sessions', { patientId })
@@ -101,12 +123,62 @@ export function useTauriDb() {
     }
   }, [])
 
-  const createSession = useCallback(async (patientId: number, specialistId: number | null, description: string | null): Promise<Session | null> => {
+  const createSession = useCallback(async (
+    patientId: number,
+    specialistId: number | null,
+    description: string | null,
+    protocolType?: string | null,
+    protocolConfig?: string | null,
+  ): Promise<Session | null> => {
     try {
-      return await invoke<Session>('create_session', { patientId, specialistId, description })
+      return await invoke<Session>('create_session', {
+        patientId,
+        specialistId,
+        description,
+        protocolType: protocolType ?? null,
+        protocolConfig: protocolConfig ?? null,
+      })
     } catch (err) {
       console.error('Failed to create session:', err)
       return null
+    }
+  }, [])
+
+  const createRecording = useCallback(async (
+    sessionId: number,
+    testType: string,
+    label: string | null,
+    sortOrder?: number,
+  ): Promise<Recording | null> => {
+    try {
+      return await invoke<Recording>('create_recording', {
+        sessionId,
+        testType,
+        label,
+        sortOrder: sortOrder ?? 0,
+      })
+    } catch (err) {
+      console.error('Failed to create recording:', err)
+      return null
+    }
+  }, [])
+
+  const getRecordings = useCallback(async (sessionId: number): Promise<Recording[]> => {
+    try {
+      return await invoke<Recording[]>('get_recordings', { sessionId })
+    } catch (err) {
+      console.error('Failed to fetch recordings:', err)
+      return []
+    }
+  }, [])
+
+  const deleteRecording = useCallback(async (id: number): Promise<boolean> => {
+    try {
+      await invoke('delete_recording', { id })
+      return true
+    } catch (err) {
+      console.error('Failed to delete recording:', err)
+      return false
     }
   }, [])
 
@@ -164,8 +236,12 @@ export function useTauriDb() {
     createPatient,
     updatePatient,
     deletePatient,
+    deleteSession,
     getSessions,
     createSession,
+    createRecording,
+    getRecordings,
+    deleteRecording,
     getSetting,
     setSetting,
     getSpecialists,

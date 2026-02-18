@@ -1,14 +1,32 @@
 import React from 'react';
-import { SaccadeTestResult } from '../../../types/vng';
+import { SaccadeTestResult, SPVReportData, SaccadeMarkerReport } from '../../../types/vng';
 import { REFERENCE_RANGES, isNormal, formatValue } from '../usePDFGeneration';
+import { SaccadeScatterDiagram } from '../charts/SaccadeScatterDiagram';
+import { SPVTimelineDiagram } from '../charts/SPVTimelineDiagram';
+import { EditableField } from '../shared/EditableField';
 
 interface SaccadeSectionProps {
     data: SaccadeTestResult;
     showGraphs?: boolean;
+    analysisMethod?: 'saccades' | 'spv' | 'both';
+    spvData?: SPVReportData;
+    rawSaccades?: SaccadeMarkerReport[];
+    comment?: string;
+    onCommentChange?: (value: string) => void;
 }
 
-export const SaccadeSection: React.FC<SaccadeSectionProps> = ({ data, showGraphs: _showGraphs }) => {
+export const SaccadeSection: React.FC<SaccadeSectionProps> = ({
+    data,
+    showGraphs,
+    analysisMethod = 'both',
+    spvData,
+    rawSaccades,
+    comment,
+    onCommentChange,
+}) => {
     const refs = REFERENCE_RANGES.saccade;
+    const showSaccades = analysisMethod === 'saccades' || analysisMethod === 'both';
+    const showSPV = analysisMethod === 'spv' || analysisMethod === 'both';
 
     const MetricCell: React.FC<{ value: number; range: { min: number; max: number }; unit: string }> =
         ({ value, range, unit }) => {
@@ -26,55 +44,98 @@ export const SaccadeSection: React.FC<SaccadeSectionProps> = ({ data, showGraphs
                 Prueba de Sacadas
             </h2>
 
-            <div className="overflow-hidden rounded-lg border border-gray-200">
-                <table className="w-full text-sm">
-                    <thead className="bg-gray-100">
-                        <tr>
-                            <th className="px-3 py-2 text-left text-gray-700">Dirección</th>
-                            <th className="px-3 py-2 text-center text-gray-700">Latencia (ms)</th>
-                            <th className="px-3 py-2 text-center text-gray-700">Velocidad (°/s)</th>
-                            <th className="px-3 py-2 text-center text-gray-700">Precisión (%)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr className="border-t border-gray-200">
-                            <td className="px-3 py-2 font-medium">Izquierda</td>
-                            <MetricCell value={data.left.latency_ms} range={refs.latency} unit="ms" />
-                            <MetricCell value={data.left.peak_velocity} range={refs.velocity} unit="°/s" />
-                            <MetricCell value={data.left.accuracy_percent} range={refs.accuracy} unit="%" />
-                        </tr>
-                        <tr className="border-t border-gray-200 bg-gray-50">
-                            <td className="px-3 py-2 font-medium">Derecha</td>
-                            <MetricCell value={data.right.latency_ms} range={refs.latency} unit="ms" />
-                            <MetricCell value={data.right.peak_velocity} range={refs.velocity} unit="°/s" />
-                            <MetricCell value={data.right.accuracy_percent} range={refs.accuracy} unit="%" />
-                        </tr>
-                        {data.up && (
-                            <tr className="border-t border-gray-200">
-                                <td className="px-3 py-2 font-medium">Arriba</td>
-                                <MetricCell value={data.up.latency_ms} range={refs.latency} unit="ms" />
-                                <MetricCell value={data.up.peak_velocity} range={refs.velocity} unit="°/s" />
-                                <MetricCell value={data.up.accuracy_percent} range={refs.accuracy} unit="%" />
-                            </tr>
-                        )}
-                        {data.down && (
-                            <tr className="border-t border-gray-200 bg-gray-50">
-                                <td className="px-3 py-2 font-medium">Abajo</td>
-                                <MetricCell value={data.down.latency_ms} range={refs.latency} unit="ms" />
-                                <MetricCell value={data.down.peak_velocity} range={refs.velocity} unit="°/s" />
-                                <MetricCell value={data.down.accuracy_percent} range={refs.accuracy} unit="%" />
-                            </tr>
-                        )}
-                    </tbody>
-                </table>
-            </div>
+            {/* Saccade metrics table */}
+            {showSaccades && (
+                <>
+                    <div className="overflow-hidden rounded-lg border border-gray-200">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-100">
+                                <tr>
+                                    <th className="px-3 py-2 text-left text-gray-700">Dirección</th>
+                                    <th className="px-3 py-2 text-center text-gray-700">Latencia (ms)</th>
+                                    <th className="px-3 py-2 text-center text-gray-700">Velocidad (°/s)</th>
+                                    <th className="px-3 py-2 text-center text-gray-700">Precisión (%)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr className="border-t border-gray-200">
+                                    <td className="px-3 py-2 font-medium">Izquierda</td>
+                                    <MetricCell value={data.left.latency_ms} range={refs.latency} unit="ms" />
+                                    <MetricCell value={data.left.peak_velocity} range={refs.velocity} unit="°/s" />
+                                    <MetricCell value={data.left.accuracy_percent} range={refs.accuracy} unit="%" />
+                                </tr>
+                                <tr className="border-t border-gray-200 bg-gray-50">
+                                    <td className="px-3 py-2 font-medium">Derecha</td>
+                                    <MetricCell value={data.right.latency_ms} range={refs.latency} unit="ms" />
+                                    <MetricCell value={data.right.peak_velocity} range={refs.velocity} unit="°/s" />
+                                    <MetricCell value={data.right.accuracy_percent} range={refs.accuracy} unit="%" />
+                                </tr>
+                                {data.up && (
+                                    <tr className="border-t border-gray-200">
+                                        <td className="px-3 py-2 font-medium">Arriba</td>
+                                        <MetricCell value={data.up.latency_ms} range={refs.latency} unit="ms" />
+                                        <MetricCell value={data.up.peak_velocity} range={refs.velocity} unit="°/s" />
+                                        <MetricCell value={data.up.accuracy_percent} range={refs.accuracy} unit="%" />
+                                    </tr>
+                                )}
+                                {data.down && (
+                                    <tr className="border-t border-gray-200 bg-gray-50">
+                                        <td className="px-3 py-2 font-medium">Abajo</td>
+                                        <MetricCell value={data.down.latency_ms} range={refs.latency} unit="ms" />
+                                        <MetricCell value={data.down.peak_velocity} range={refs.velocity} unit="°/s" />
+                                        <MetricCell value={data.down.accuracy_percent} range={refs.accuracy} unit="%" />
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
 
-            {/* Reference values */}
-            <div className="mt-2 text-xs text-gray-500">
-                Valores normales: Latencia {refs.latency.min}-{refs.latency.max}ms,
-                Velocidad {refs.velocity.min}-{refs.velocity.max}°/s,
-                Precisión &gt;{refs.accuracy.min}%
-            </div>
+                    {/* Reference values */}
+                    <div className="mt-2 text-xs text-gray-500">
+                        Valores normales: Latencia {refs.latency.min}-{refs.latency.max}ms,
+                        Velocidad {refs.velocity.min}-{refs.velocity.max}°/s,
+                        Precisión &gt;{refs.accuracy.min}%
+                    </div>
+
+                    {/* Scatter diagram */}
+                    {showGraphs && rawSaccades && rawSaccades.length > 0 && (
+                        <SaccadeScatterDiagram saccades={rawSaccades} />
+                    )}
+                </>
+            )}
+
+            {/* SPV / VCL analysis */}
+            {showSPV && spvData && (
+                <div className={showSaccades ? 'mt-4' : ''}>
+                    <h3 className="text-sm font-medium text-gray-700 mb-2">
+                        Análisis de Velocidad de Componente Lento (VCL)
+                    </h3>
+                    <div className="overflow-hidden rounded-lg border border-gray-200">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-100">
+                                <tr>
+                                    <th className="px-3 py-2 text-left text-gray-700">Métrica</th>
+                                    <th className="px-3 py-2 text-center text-gray-700">Valor</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr className="border-t border-gray-200">
+                                    <td className="px-3 py-2">SPV Promedio</td>
+                                    <td className="px-3 py-2 text-center font-medium">{spvData.overall_spv.toFixed(1)}°/s</td>
+                                </tr>
+                                <tr className="border-t border-gray-200 bg-gray-50">
+                                    <td className="px-3 py-2">Batidos detectados</td>
+                                    <td className="px-3 py-2 text-center font-medium">{spvData.beat_count}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {showGraphs && spvData.timeline.length > 0 && (
+                        <SPVTimelineDiagram timeline={spvData.timeline} overallSPV={spvData.overall_spv} />
+                    )}
+                </div>
+            )}
 
             {/* Interpretation */}
             <div className={`mt-3 p-3 rounded ${data.is_normal ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
@@ -87,6 +148,16 @@ export const SaccadeSection: React.FC<SaccadeSectionProps> = ({ data, showGraphs
                 <div className="mt-2 text-sm text-gray-600 italic">
                     Nota: {data.clinical_notes}
                 </div>
+            )}
+
+            {/* Evaluator comment */}
+            {onCommentChange && (
+                <EditableField
+                    value={comment || ''}
+                    onChange={onCommentChange}
+                    label="Observaciones del evaluador"
+                    placeholder="Escribir observaciones sobre sacadas..."
+                />
             )}
         </div>
     );
