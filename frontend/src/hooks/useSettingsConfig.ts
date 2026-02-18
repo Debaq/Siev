@@ -219,7 +219,6 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
     },
     postural: {
         timing: {
-            position_durations: {},
             auto_advance: false,
             countdown_sound: true,
         },
@@ -247,6 +246,7 @@ export const DEFAULT_APP_CONFIG: AppConfig = {
             'vppb_bbq_right', 'vppb_bbq_left',
             'vppb_gufoni_right', 'vppb_gufoni_left',
         ],
+        custom_tests: [],
     },
     impedanciometria: {
         report: {

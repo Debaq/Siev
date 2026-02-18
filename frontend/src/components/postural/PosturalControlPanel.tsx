@@ -3,7 +3,7 @@ import {
     RotateCcw, Play, Pause, SkipForward, Square,
     ChevronDown, Activity, Eye, Crosshair, ClipboardList, Check, X, AlertTriangle
 } from 'lucide-react'
-import { PosturalTestDefinition, PosturalTimingConfig, PosturalSymptomsConfig } from '../../types/config'
+import { PosturalTestDefinition, PosturalSymptomsConfig } from '../../types/config'
 import { UsePosturalProtocolReturn, PosturalStage } from '../../hooks/usePosturalProtocol'
 import { UsePosturalTimerReturn } from '../../hooks/usePosturalTimer'
 import { UseImuDataReturn } from '../../hooks/useImuData'
@@ -49,9 +49,9 @@ interface PosturalControlPanelProps {
     protocol: UsePosturalProtocolReturn
     timer: UsePosturalTimerReturn
     imu: UseImuDataReturn
-    timingConfig?: PosturalTimingConfig
     symptomsConfig?: PosturalSymptomsConfig
     enabledTests: string[]
+    customTests?: PosturalTestDefinition[]
     onStartTest: (test: PosturalTestDefinition) => void
     onAdvance: () => void
     onSkip: () => void
@@ -85,6 +85,7 @@ export default function PosturalControlPanel({
     imu,
     symptomsConfig,
     enabledTests,
+    customTests,
     onStartTest,
     onAdvance,
     onSkip,
@@ -113,6 +114,7 @@ export default function PosturalControlPanel({
                 {!protocol.isActive && !protocol.isComplete ? (
                     <PosturalTestSelector
                         enabledTests={enabledTests}
+                        customTests={customTests}
                         onSelect={onStartTest}
                         onClose={() => {}}
                     />

@@ -151,7 +151,7 @@ function TestSelectionView({ onSelectTest, onBack, patientName, caloricProtocols
   const handleTestClick = (testId: string) => {
     if (testId === 'caloric' && caloricProtocols && caloricProtocols.length > 0) {
       setShowCaloricModal(true)
-    } else if (testId === 'positional' && appConfig?.modules?.imu_posturography) {
+    } else if (testId === 'positional') {
       setShowPositionalModal(true)
     } else {
       onSelectTest(testId)
@@ -318,6 +318,7 @@ function TestSelectionView({ onSelectTest, onBack, patientName, caloricProtocols
       {showPositionalModal && (
         <PositionalProtocolModal
           enabledTests={appConfig?.postural?.enabled_tests ?? []}
+          customTests={appConfig?.postural?.custom_tests ?? []}
           onSelect={(test) => {
             setShowPositionalModal(false)
             onSelectTest(test.id)

@@ -1,15 +1,16 @@
 import { useState, useEffect, useCallback } from 'react'
-import { GripHorizontal, Settings } from 'lucide-react'
+import { GripHorizontal } from 'lucide-react'
 import { PosturalTestDefinition, PosturalConfig } from '../../types/config'
 import { usePosturalProtocol } from '../../hooks/usePosturalProtocol'
 import { usePosturalTimer } from '../../hooks/usePosturalTimer'
 import { useImuData } from '../../hooks/useImuData'
 import VideoFeed from '../VideoFeed'
 import StatusBar from '../StatusBar'
-import HeadVisualization3D from './HeadVisualization3D'
+import OrientationGauges from '../settings/postural/OrientationGauges'
+import BodyPositionIcon from '../settings/postural/BodyPositionIcon'
+import EyeDataPanel from '../EyeDataPanel'
 import PosturalControlPanel from './PosturalControlPanel'
 import PosturalTimeline from './PosturalTimeline'
-import PosturalDataPanel from './PosturalDataPanel'
 
 interface PosturalViewProps {
     isCapturing: boolean
@@ -78,10 +79,10 @@ export default function PosturalView({
     }, [protocol.currentStageIndex, protocol.isActive])
 
     const handleStartTest = useCallback((test: PosturalTestDefinition) => {
-        protocol.startTest(test, posturalConfig.timing)
+        protocol.startTest(test)
         imu.calibrate()
         imu.clearHistory()
-    }, [posturalConfig.timing])
+    }, [])
 
     const handleAdvance = useCallback(() => {
         if (!protocol.isActive) return
@@ -155,21 +156,37 @@ export default function PosturalView({
                             />
                         </div>
 
-                        {/* 3D Head + Position Guide */}
+                        {/* Orientation Gauges + Position Guide */}
                         {posturalConfig.visualization.show_3d_head && (
-                            <div className="w-[300px] shrink-0 border-l border-dark-800 flex flex-col">
-                                <div className="flex-1 min-h-0">
-                                    <HeadVisualization3D
-                                        imuData={imu.current}
-                                        isCalibrated={imu.isCalibrated}
-                                        targetOrientation={targetOrientation}
-                                        showTarget={posturalConfig.visualization.show_target_orientation}
-                                        onCalibrate={imu.calibrate}
+                            <div className="w-[280px] shrink-0 border-l border-dark-800 flex flex-col bg-dark-900">
+                                <div className="flex-1 flex flex-col items-center justify-center p-3 gap-3 min-h-0">
+                                    {/* Body position pictogram */}
+                                    {currentStage?.position.body_position && (
+                                        <BodyPositionIcon position={currentStage.position.body_position} />
+                                    )}
+
+                                    {/* Orientation gauges with target markers */}
+                                    <OrientationGauges
+                                        yaw={imu.current?.calibrated.yaw ?? 0}
+                                        pitch={imu.current?.calibrated.pitch ?? 0}
+                                        roll={imu.current?.calibrated.roll ?? 0}
+                                        targetYaw={posturalConfig.visualization.show_target_orientation ? targetOrientation?.yaw : undefined}
+                                        targetPitch={posturalConfig.visualization.show_target_orientation ? targetOrientation?.pitch : undefined}
+                                        targetRoll={posturalConfig.visualization.show_target_orientation ? targetOrientation?.roll : undefined}
+                                        className="grid grid-cols-3 gap-2 w-full"
                                     />
+
+                                    {/* Calibration hint */}
+                                    {!imu.isCalibrated && protocol.isActive && (
+                                        <p className="text-[9px] text-yellow-500/70 text-center">
+                                            IMU sin calibrar — calibre desde el panel
+                                        </p>
+                                    )}
                                 </div>
+
                                 {/* Position guide text */}
                                 {currentStage && (
-                                    <div className="p-2 bg-dark-900 border-t border-dark-800">
+                                    <div className="p-2 border-t border-dark-800">
                                         <p className="text-[10px] text-orange-400 font-bold mb-0.5">
                                             {currentStage.position.label}
                                         </p>
@@ -203,14 +220,10 @@ export default function PosturalView({
                         <GripHorizontal className="w-3 h-3 text-dark-600" />
                     </div>
 
-                    {/* Data Panel */}
+                    {/* Eye Data Panel */}
                     <div style={{ height: dataPanelHeight }} className="bg-dark-900 flex flex-col shrink-0 transition-none">
-                        <div className="px-3 py-1 bg-dark-800 border-b border-dark-700 text-[10px] font-bold text-dark-400 uppercase tracking-wider flex items-center gap-2 select-none">
-                            <Settings className="w-3 h-3" />
-                            Seguimiento Cefálico
-                        </div>
                         <div className="flex-1 overflow-hidden">
-                            <PosturalDataPanel history={imu.history} />
+                            <EyeDataPanel isCapturing={isCapturing} />
                         </div>
                     </div>
                 </div>
@@ -225,9 +238,9 @@ export default function PosturalView({
                             protocol={protocol}
                             timer={timer}
                             imu={imu}
-                            timingConfig={posturalConfig.timing}
                             symptomsConfig={posturalConfig.symptoms}
                             enabledTests={posturalConfig.enabled_tests}
+                            customTests={posturalConfig.custom_tests}
                             onStartTest={handleStartTest}
                             onAdvance={handleAdvance}
                             onSkip={handleSkip}
@@ -241,7 +254,7 @@ export default function PosturalView({
             </div>
 
             <footer className="bg-dark-950 border-t border-dark-800 px-3 py-1 text-[10px] text-dark-600 flex justify-between items-center shrink-0 select-none">
-                <span>VPPB — Seguimiento Cefálico 3D + Eye Tracking</span>
+                <span>VPPB — Seguimiento Cefálico + Eye Tracking</span>
                 <span>SIEV v1.0.0</span>
             </footer>
         </div>

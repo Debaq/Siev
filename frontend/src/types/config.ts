@@ -295,11 +295,14 @@ export interface ImpedanciometriaConfig {
 
 // --- Postural / VPPB ---
 
+export type BodyPosition = 'seated' | 'supine' | 'side_right' | 'side_left' | 'prone'
+
 export interface PosturalPosition {
     id: string
     label: string
     description: string
     default_duration_seconds: number
+    body_position?: BodyPosition
     target_head_orientation?: { yaw?: number; pitch?: number; roll?: number }
 }
 
@@ -313,7 +316,6 @@ export interface PosturalTestDefinition {
 }
 
 export interface PosturalTimingConfig {
-    position_durations: Record<string, number>
     auto_advance: boolean
     countdown_sound: boolean
 }
@@ -349,6 +351,7 @@ export interface PosturalConfig {
     visualization: PosturalVisualizationConfig
     symptoms: PosturalSymptomsConfig
     enabled_tests: string[]
+    custom_tests: PosturalTestDefinition[]
 }
 
 export interface AppConfig {

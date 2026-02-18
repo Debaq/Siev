@@ -65,7 +65,7 @@ const MODULE_LIST: ModuleDefinition[] = [
         icon: RotateCcwIcon,
         imagePath: '/mod_imu.png',
         color: 'text-orange-400',
-        description: 'Diagnóstico y tratamiento de VPPB con seguimiento cefálico 3D.'
+        description: 'Diagnóstico y tratamiento de VPPB con seguimiento cefálico 3D.',
     },
     {
         id: 'vemp',

@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import {
     Eye, Target, MoveHorizontal, Activity, RotateCcw, Thermometer, PlayCircle,
     LucideIcon, ChevronDown, ChevronRight, Copy, Trash2, Plus, GripVertical,
-    Shield, ArrowLeft
+    Shield, ArrowLeft, Power, ExternalLink,
 } from 'lucide-react';
 import { SettingsSection } from '../shared/SettingsSection';
 import { SettingsField } from '../shared/SettingsField';
@@ -73,7 +73,7 @@ const VNG_TESTS: TestDefinition[] = [
         color: 'text-orange-400',
         bg: 'bg-orange-500/10',
         border: 'border-orange-500/20',
-        hasConfig: false,
+        hasConfig: true,
     },
     {
         id: 'caloric',
@@ -248,6 +248,7 @@ export const TestsTab: React.FC<TestsTabProps> = ({ config, updateConfig }) => {
     const [dragIndex, setDragIndex] = useState<number | null>(null);
 
     const protocols = config.vng.tests?.caloric?.protocols ?? [];
+    const imuEnabled = config.modules?.imu_posturography ?? false;
 
     const toggleTest = (id: string) => {
         setExpandedTest(prev => prev === id ? null : id);
@@ -547,7 +548,7 @@ export const TestsTab: React.FC<TestsTabProps> = ({ config, updateConfig }) => {
                                 )}
                             </button>
 
-                            {/* Protocol cards */}
+                            {/* Caloric protocol cards */}
                             {test.id === 'caloric' && isExpanded && (
                                 <div className="mt-3 ml-4 mr-1 grid grid-cols-1 gap-3 animate-fade-in">
                                     {protocols.map((protocol, pIdx) => (
@@ -597,6 +598,36 @@ export const TestsTab: React.FC<TestsTabProps> = ({ config, updateConfig }) => {
                                             </div>
                                         </div>
                                     ))}
+                                </div>
+                            )}
+
+                            {/* Positional — toggle + redirect */}
+                            {test.id === 'positional' && isExpanded && (
+                                <div className="mt-3 ml-4 mr-1 space-y-3 animate-fade-in">
+                                    <div className="flex items-center justify-between p-3 rounded-lg border border-dark-700/50 bg-dark-800/50">
+                                        <div className="flex items-center gap-2">
+                                            <Power size={14} className={imuEnabled ? 'text-green-400' : 'text-dark-500'} />
+                                            <span className="text-sm text-dark-200">Módulo VPPB / Posturografía</span>
+                                        </div>
+                                        <button
+                                            onClick={() => updateConfig('modules.imu_posturography', !imuEnabled)}
+                                            className={`relative w-10 h-5 rounded-full transition-colors ${
+                                                imuEnabled ? 'bg-green-600' : 'bg-dark-600'
+                                            }`}
+                                        >
+                                            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                                                imuEnabled ? 'left-5' : 'left-0.5'
+                                            }`} />
+                                        </button>
+                                    </div>
+                                    <div className="flex items-center gap-2 p-3 rounded-lg border border-dark-700/30 bg-dark-900/30 text-dark-400">
+                                        <ExternalLink size={14} className="shrink-0" />
+                                        <span className="text-xs">
+                                            Las pruebas posicionales se configuran en el módulo{' '}
+                                            <span className="text-orange-400 font-medium">Postural / VPPB</span>{' '}
+                                            en la barra lateral.
+                                        </span>
+                                    </div>
                                 </div>
                             )}
                         </div>

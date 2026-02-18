@@ -1,28 +1,30 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { X, RotateCcw, Check, Search, Zap, Unlock } from 'lucide-react'
 import { PosturalTestDefinition } from '../types/config'
-import {
-    VPPB_PROVOCATION_TESTS,
-    VPPB_LIBERATION_TESTS,
-    VPPB_REPOSITIONING_TESTS,
-} from '../data/vppbTests'
+import { getAllTestsByCategory } from '../data/vppbTests'
 
 interface PositionalProtocolModalProps {
     enabledTests: string[]
+    customTests?: PosturalTestDefinition[]
     onSelect: (test: PosturalTestDefinition) => void
     onCancel: () => void
 }
 
 type TabId = 'provocation' | 'liberation' | 'repositioning'
 
-const TABS: { id: TabId; label: string; icon: typeof Search; tests: PosturalTestDefinition[] }[] = [
-    { id: 'provocation', label: 'Provocaci\u00f3n', icon: Search, tests: VPPB_PROVOCATION_TESTS },
-    { id: 'liberation', label: 'Liberaci\u00f3n', icon: Zap, tests: VPPB_LIBERATION_TESTS },
-    { id: 'repositioning', label: 'Reposici\u00f3n', icon: Unlock, tests: VPPB_REPOSITIONING_TESTS },
-]
-
-function PositionalProtocolModal({ enabledTests, onSelect, onCancel }: PositionalProtocolModalProps) {
+function PositionalProtocolModal({ enabledTests, customTests = [], onSelect, onCancel }: PositionalProtocolModalProps) {
     const [activeTab, setActiveTab] = useState<TabId>('provocation')
+
+    const { provocation, liberation, repositioning } = useMemo(
+        () => getAllTestsByCategory(customTests),
+        [customTests]
+    )
+
+    const TABS: { id: TabId; label: string; icon: typeof Search; tests: PosturalTestDefinition[] }[] = [
+        { id: 'provocation', label: 'Provocaci\u00f3n', icon: Search, tests: provocation },
+        { id: 'liberation', label: 'Liberaci\u00f3n', icon: Zap, tests: liberation },
+        { id: 'repositioning', label: 'Reposici\u00f3n', icon: Unlock, tests: repositioning },
+    ]
 
     const currentTab = TABS.find(t => t.id === activeTab)!
     const filteredTests = currentTab.tests.filter(t => enabledTests.includes(t.id))

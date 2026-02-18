@@ -1,9 +1,11 @@
+import { useMemo } from 'react'
 import { RotateCcw, ArrowRight } from 'lucide-react'
 import { PosturalTestDefinition } from '../../types/config'
-import { VPPB_PROVOCATION_TESTS, VPPB_LIBERATION_TESTS, VPPB_REPOSITIONING_TESTS } from '../../data/vppbTests'
+import { getAllTestsByCategory } from '../../data/vppbTests'
 
 interface PosturalTestSelectorProps {
     enabledTests: string[]
+    customTests?: PosturalTestDefinition[]
     onSelect: (test: PosturalTestDefinition) => void
     onClose: () => void
 }
@@ -35,17 +37,22 @@ function TestCard({ test, onSelect }: { test: PosturalTestDefinition; onSelect: 
     )
 }
 
-export default function PosturalTestSelector({ enabledTests, onSelect }: PosturalTestSelectorProps) {
-    const provTests = VPPB_PROVOCATION_TESTS.filter(t => enabledTests.includes(t.id))
-    const libTests = VPPB_LIBERATION_TESTS.filter(t => enabledTests.includes(t.id))
-    const repoTests = VPPB_REPOSITIONING_TESTS.filter(t => enabledTests.includes(t.id))
+export default function PosturalTestSelector({ enabledTests, customTests = [], onSelect }: PosturalTestSelectorProps) {
+    const { provocation, liberation, repositioning } = useMemo(
+        () => getAllTestsByCategory(customTests),
+        [customTests]
+    )
+
+    const provTests = provocation.filter(t => enabledTests.includes(t.id))
+    const libTests = liberation.filter(t => enabledTests.includes(t.id))
+    const repoTests = repositioning.filter(t => enabledTests.includes(t.id))
 
     return (
         <div className="space-y-4">
             {provTests.length > 0 && (
                 <div>
                     <h3 className="text-[10px] font-bold text-dark-500 uppercase tracking-wider mb-2 px-1">
-                        Provocaci&oacute;n
+                        Provocación
                     </h3>
                     <div className="space-y-1.5">
                         {provTests.map(test => (
@@ -58,7 +65,7 @@ export default function PosturalTestSelector({ enabledTests, onSelect }: Postura
             {libTests.length > 0 && (
                 <div>
                     <h3 className="text-[10px] font-bold text-dark-500 uppercase tracking-wider mb-2 px-1">
-                        Liberaci&oacute;n
+                        Liberación
                     </h3>
                     <div className="space-y-1.5">
                         {libTests.map(test => (
@@ -71,7 +78,7 @@ export default function PosturalTestSelector({ enabledTests, onSelect }: Postura
             {repoTests.length > 0 && (
                 <div>
                     <h3 className="text-[10px] font-bold text-dark-500 uppercase tracking-wider mb-2 px-1">
-                        Reposici&oacute;n
+                        Reposición
                     </h3>
                     <div className="space-y-1.5">
                         {repoTests.map(test => (

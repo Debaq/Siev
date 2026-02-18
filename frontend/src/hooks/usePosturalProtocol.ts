@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
-import { PosturalTestDefinition, PosturalPosition, PosturalTimingConfig, SubjectiveSymptomRecord } from '../types/config'
+import { PosturalTestDefinition, PosturalPosition, SubjectiveSymptomRecord } from '../types/config'
 
 export type PosturalStageStatus = 'pending' | 'active' | 'completed' | 'skipped'
 
@@ -20,7 +20,7 @@ export interface UsePosturalProtocolReturn {
     isActive: boolean
     isComplete: boolean
     currentPositionLabel: string | null
-    startTest: (test: PosturalTestDefinition, timingConfig: PosturalTimingConfig) => void
+    startTest: (test: PosturalTestDefinition) => void
     advancePosition: () => void
     skipPosition: () => void
     goToStage: (index: number) => void
@@ -45,12 +45,12 @@ export function usePosturalProtocol(): UsePosturalProtocolReturn {
         return stage.position.label
     }, [stages, currentStageIndex])
 
-    const startTest = useCallback((testDef: PosturalTestDefinition, timingConfig: PosturalTimingConfig) => {
+    const startTest = useCallback((testDef: PosturalTestDefinition) => {
         setTest(testDef)
         const newStages: PosturalStage[] = testDef.positions.map((pos, i) => ({
             position: pos,
             status: i === 0 ? 'active' : 'pending',
-            duration: timingConfig.position_durations[pos.id] ?? pos.default_duration_seconds,
+            duration: pos.default_duration_seconds,
             symptoms: [],
         }))
         setStages(newStages)
