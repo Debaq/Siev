@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { FileDown, Loader2, AlertCircle, X, Plus, ChevronUp, ChevronDown } from 'lucide-react';
+import { FileDown, Printer, Loader2, AlertCircle, X, Plus, ChevronUp, ChevronDown } from 'lucide-react';
 import { VNGReportData, ReportSection as ReportSectionType } from '../../types/vng';
 import { VNGReportConfig } from '../../types/config';
 import { usePDFGeneration } from './usePDFGeneration';
@@ -183,7 +183,7 @@ export const ReportGenerator: React.FC<ReportGeneratorProps> = ({
     const [blocks, setBlocks] = useState<BlockItem[] | null>(null);
     const chartIdCounter = useRef(0);
     const reportRef = useRef<HTMLDivElement>(null);
-    const { generateFromSections, isGenerating, progress } = usePDFGeneration();
+    const { generateFromSections, printReport, isGenerating, progress } = usePDFGeneration();
     const {
         edits,
         setSectionComment,
@@ -244,9 +244,14 @@ export const ReportGenerator: React.FC<ReportGeneratorProps> = ({
         // Restaurar controles
         controls.forEach(el => el.style.display = '');
 
-        if (!result.success) {
-            setError(result.error || 'Error generating PDF');
+        if (!result.success && result.error) {
+            setError(result.error);
         }
+    };
+
+    const handlePrint = () => {
+        if (!reportRef.current) return;
+        printReport(reportRef.current);
     };
 
     const handleRemoveBlock = (blockId: string) => {
@@ -481,6 +486,14 @@ export const ReportGenerator: React.FC<ReportGeneratorProps> = ({
                 </div>
                 <div className="flex items-center gap-3">
                     <button
+                        onClick={handlePrint}
+                        disabled={isGenerating}
+                        className="flex items-center gap-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 disabled:opacity-50 rounded-lg transition-colors"
+                    >
+                        <Printer className="w-4 h-4" />
+                        <span>Imprimir</span>
+                    </button>
+                    <button
                         onClick={handleGeneratePDF}
                         disabled={isGenerating}
                         className="flex items-center gap-2 px-4 py-2 bg-siev-600 hover:bg-siev-700 disabled:opacity-50 rounded-lg transition-colors"
@@ -493,7 +506,7 @@ export const ReportGenerator: React.FC<ReportGeneratorProps> = ({
                         ) : (
                             <>
                                 <FileDown className="w-4 h-4" />
-                                <span>Descargar PDF</span>
+                                <span>Guardar PDF</span>
                             </>
                         )}
                     </button>

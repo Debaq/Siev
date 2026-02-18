@@ -1,7 +1,6 @@
 import { useState, useCallback } from 'react';
-
-// Note: Install these dependencies before using:
-// npm install jspdf html2canvas
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeFile } from '@tauri-apps/plugin-fs';
 
 export interface PDFGenerationOptions {
     filename?: string;
@@ -13,7 +12,77 @@ export interface PDFGenerationOptions {
 export interface PDFGenerationResult {
     success: boolean;
     error?: string;
-    blob?: Blob;
+}
+
+/**
+ * Capture computed RGB colors from all elements inside a root,
+ * keyed by a data attribute we stamp on each element.
+ * Must be called BEFORE neutralizing oklch so values are correct.
+ */
+function captureComputedColors(root: HTMLElement): Map<string, { color: string; bg: string; border: string }> {
+    const map = new Map<string, { color: string; bg: string; border: string }>();
+    const els = root.querySelectorAll('*');
+    els.forEach((el, i) => {
+        const htmlEl = el as HTMLElement;
+        const key = `__pdf_${i}`;
+        htmlEl.dataset.pdfKey = key;
+        const cs = getComputedStyle(htmlEl);
+        map.set(key, {
+            color: cs.color,
+            bg: cs.backgroundColor,
+            border: cs.borderColor,
+        });
+    });
+    return map;
+}
+
+/**
+ * Temporarily neutralize oklch() in all stylesheets so html2canvas can parse them.
+ * Returns a restore function.
+ */
+function neutralizeOklch(): () => void {
+    const savedStyles: { el: HTMLStyleElement; original: string }[] = [];
+    const disabledLinks: HTMLLinkElement[] = [];
+
+    document.querySelectorAll('style').forEach((styleEl) => {
+        const text = styleEl.textContent || '';
+        if (text.includes('oklch')) {
+            savedStyles.push({ el: styleEl as HTMLStyleElement, original: text });
+            styleEl.textContent = text.replace(/oklch\([^)]*\)/g, 'transparent');
+        }
+    });
+
+    document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]').forEach((linkEl) => {
+        try {
+            const sheet = linkEl.sheet;
+            if (!sheet) return;
+            let hasOklch = false;
+            for (let i = 0; i < sheet.cssRules.length; i++) {
+                if (sheet.cssRules[i].cssText.includes('oklch')) {
+                    hasOklch = true;
+                    break;
+                }
+            }
+            if (hasOklch) {
+                linkEl.disabled = true;
+                disabledLinks.push(linkEl);
+                const sanitized = document.createElement('style');
+                sanitized.dataset.pdfFallback = 'true';
+                let css = '';
+                for (let i = 0; i < sheet.cssRules.length; i++) {
+                    css += sheet.cssRules[i].cssText.replace(/oklch\([^)]*\)/g, 'transparent') + '\n';
+                }
+                sanitized.textContent = css;
+                document.head.appendChild(sanitized);
+            }
+        } catch { /* CORS */ }
+    });
+
+    return () => {
+        savedStyles.forEach(({ el, original }) => { el.textContent = original; });
+        disabledLinks.forEach((l) => { l.disabled = false; });
+        document.querySelectorAll('style[data-pdf-fallback]').forEach((el) => el.remove());
+    };
 }
 
 export function usePDFGeneration() {
@@ -34,8 +103,9 @@ export function usePDFGeneration() {
         setIsGenerating(true);
         setProgress(0);
 
+        let restoreStyles: (() => void) | null = null;
+
         try {
-            // Dynamic imports to avoid build errors if not installed
             const [jsPDFModule, html2canvasModule] = await Promise.all([
                 import('jspdf'),
                 import('html2canvas')
@@ -46,66 +116,85 @@ export function usePDFGeneration() {
 
             setProgress(20);
 
-            // Render element to canvas
+            // 1. Capture correct RGB colors BEFORE neutralizing
+            const colorMap = captureComputedColors(element);
+
+            // 2. Neutralize oklch so html2canvas parser doesn't crash
+            restoreStyles = neutralizeOklch();
+
+            // 3. Render — use onclone to restore correct colors via inline styles
             const canvas = await html2canvas(element, {
                 scale,
                 useCORS: true,
                 logging: false,
-                backgroundColor: '#ffffff'
+                backgroundColor: '#ffffff',
+                onclone: (_doc: Document, clonedEl: HTMLElement) => {
+                    // Apply saved RGB colors to cloned elements
+                    clonedEl.querySelectorAll('[data-pdf-key]').forEach((el) => {
+                        const htmlEl = el as HTMLElement;
+                        const key = htmlEl.dataset.pdfKey!;
+                        const saved = colorMap.get(key);
+                        if (saved) {
+                            htmlEl.style.color = saved.color;
+                            htmlEl.style.backgroundColor = saved.bg;
+                            htmlEl.style.borderColor = saved.border;
+                        }
+                    });
+                },
+            });
+
+            // 4. Restore stylesheets immediately
+            restoreStyles();
+            restoreStyles = null;
+
+            // Clean up data attributes
+            element.querySelectorAll('[data-pdf-key]').forEach((el) => {
+                (el as HTMLElement).removeAttribute('data-pdf-key');
             });
 
             setProgress(60);
 
-            // Calculate dimensions
-            const imgWidth = 210 - (margin * 2); // A4 width in mm minus margins
-            const pageHeight = 297 - (margin * 2); // A4 height in mm minus margins
+            const imgWidth = 210 - (margin * 2);
+            const pageHeight = 297 - (margin * 2);
             const imgHeight = (canvas.height * imgWidth) / canvas.width;
             const imgData = canvas.toDataURL('image/jpeg', quality);
 
             setProgress(80);
 
-            // Create PDF
             const pdf = new jsPDF('p', 'mm', 'a4');
             let heightLeft = imgHeight;
             let position = margin;
-            let page = 1;
 
-            // Add first page
             pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight);
             heightLeft -= pageHeight;
 
-            // Add additional pages if needed
             while (heightLeft > 0) {
                 position = heightLeft - imgHeight + margin;
                 pdf.addPage();
                 pdf.addImage(imgData, 'JPEG', margin, position, imgWidth, imgHeight);
                 heightLeft -= pageHeight;
-                page++;
             }
 
             setProgress(100);
 
-            // Generate blob for download
-            const blob = pdf.output('blob');
+            const pdfBytes = pdf.output('arraybuffer');
 
-            // Trigger download
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
+            const savePath = await save({
+                defaultPath: filename,
+                filters: [{ name: 'PDF', extensions: ['pdf'] }],
+            });
 
-            setIsGenerating(false);
-            return { success: true, blob };
+            if (!savePath) {
+                return { success: false };
+            }
+
+            await writeFile(savePath, new Uint8Array(pdfBytes));
+
+            return { success: true };
 
         } catch (error) {
-            setIsGenerating(false);
             const errorMessage = error instanceof Error ? error.message : 'Error generating PDF';
 
-            // Check if it's a module not found error
             if (errorMessage.includes('Cannot find module') || errorMessage.includes('Failed to resolve')) {
                 return {
                     success: false,
@@ -114,6 +203,13 @@ export function usePDFGeneration() {
             }
 
             return { success: false, error: errorMessage };
+        } finally {
+            if (restoreStyles) restoreStyles();
+            // Clean up data attributes on error too
+            element.querySelectorAll('[data-pdf-key]').forEach((el) => {
+                (el as HTMLElement).removeAttribute('data-pdf-key');
+            });
+            setIsGenerating(false);
         }
     }, []);
 
@@ -128,9 +224,66 @@ export function usePDFGeneration() {
         return generatePDF(containerRef.current, options);
     }, [generatePDF]);
 
+    const printReport = useCallback((reportContainer: HTMLElement) => {
+        // Mark the report container so CSS can target it
+        reportContainer.dataset.printing = 'true';
+
+        // Inject print-specific CSS
+        const printStyle = document.createElement('style');
+        printStyle.dataset.printHelper = 'true';
+        printStyle.textContent = `
+            @media print {
+                /* Hide everything */
+                body > * { display: none !important; }
+                /* Show only the app root, then drill down to the report */
+                #root, #root > *, #root > * > * { display: block !important; }
+
+                /* Hide all app chrome */
+                [data-printing="true"] {
+                    display: block !important;
+                    position: fixed !important;
+                    inset: 0 !important;
+                    z-index: 99999 !important;
+                    background: white !important;
+                    overflow: visible !important;
+                    max-width: none !important;
+                    width: 100% !important;
+                    padding: 0 !important;
+                    margin: 0 !important;
+                    box-shadow: none !important;
+                    min-height: auto !important;
+                }
+
+                /* Ensure ancestors are visible */
+                [data-printing="true"],
+                [data-printing="true"] * {
+                    color-adjust: exact !important;
+                    -webkit-print-color-adjust: exact !important;
+                    print-color-adjust: exact !important;
+                }
+
+                /* Hide editing controls */
+                .report-controls { display: none !important; }
+
+                @page { size: A4; margin: 10mm; }
+            }
+        `;
+        document.head.appendChild(printStyle);
+
+        // Use a small delay to let the style apply
+        requestAnimationFrame(() => {
+            window.print();
+
+            // Cleanup after print dialog closes
+            delete reportContainer.dataset.printing;
+            printStyle.remove();
+        });
+    }, []);
+
     return {
         generatePDF,
         generateFromSections,
+        printReport,
         isGenerating,
         progress
     };
@@ -154,12 +307,10 @@ export const REFERENCE_RANGES = {
     }
 };
 
-// Helper to check if value is within normal range
 export function isNormal(value: number, range: { min: number; max: number }): boolean {
     return value >= range.min && value <= range.max;
 }
 
-// Helper to format value with unit
 export function formatValue(value: number, unit: string, decimals = 1): string {
     return `${value.toFixed(decimals)}${unit ? ` ${unit}` : ''}`;
 }
