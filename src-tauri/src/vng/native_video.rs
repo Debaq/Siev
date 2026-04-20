@@ -607,15 +607,85 @@ impl NativeVideoManager {
                 }
             }
 
+            // Si no se pudo abrir la cámara, entrar en modo polling
             if nokhwa_camera.is_none() && v4l_stream.is_none() {
-                eprintln!("[SIEV] Error: No se pudo abrir la cámara {} con ningún método", camera_id);
-                running.store(false, Ordering::SeqCst);
-                return;
+                println!("[SIEV] Cámara {} no disponible, esperando conexión...", camera_id);
+                ws.broadcast(&WsMessage::CameraStatus {
+                    status: "disconnected".to_string(),
+                });
+
+                loop {
+                    if !running.load(Ordering::SeqCst) {
+                        println!("[SIEV] Polling de cámara cancelado");
+                        return;
+                    }
+
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+
+                    if !running.load(Ordering::SeqCst) {
+                        return;
+                    }
+
+                    // Intentar abrir la cámara de nuevo
+                    for &(w, h, f) in &formats_to_try {
+                        let format = CameraFormat::new(Resolution::new(w, h), FrameFormat::MJPEG, f);
+                        let requested = RequestedFormat::new::<LumaFormat>(RequestedFormatType::Closest(format));
+
+                        match Camera::new(index.clone(), requested) {
+                            Ok(mut c) => {
+                                if c.open_stream().is_ok() {
+                                    actual_format = (w, h);
+                                    nokhwa_camera = Some(c);
+                                    break;
+                                }
+                            }
+                            Err(_) => continue,
+                        }
+                    }
+
+                    // Si nokhwa no funcionó, intentar v4l
+                    if nokhwa_camera.is_none() {
+                        if let Ok(dev) = v4l::Device::new(camera_id as usize) {
+                            let mjpg = v4l::FourCC::new(b"MJPG");
+                            for &(w, h, _f) in &formats_to_try {
+                                let fmt = v4l::Format::new(w, h, mjpg);
+                                if let Ok(actual) = V4lCapture::set_format(&dev, &fmt) {
+                                    if actual.fourcc == mjpg {
+                                        if let Ok(stream) = v4l::io::mmap::Stream::with_buffers(&dev, v4l::buffer::Type::VideoCapture, 4) {
+                                            actual_format = (actual.width, actual.height);
+                                            v4l_stream = Some(stream);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if nokhwa_camera.is_some() || v4l_stream.is_some() {
+                        println!("[SIEV] Cámara {} detectada, iniciando captura", camera_id);
+                        ws.broadcast(&WsMessage::CameraStatus {
+                            status: "connected".to_string(),
+                        });
+                        break;
+                    }
+                }
+
+                // Si salimos del loop sin cámara (por stop), retornar
+                if nokhwa_camera.is_none() && v4l_stream.is_none() {
+                    running.store(false, Ordering::SeqCst);
+                    return;
+                }
             }
 
             if v4l_stream.is_some() {
                 println!("[SIEV] Usando captura v4l directa");
             }
+
+            // Notificar al frontend que la cámara está conectada
+            ws.broadcast(&WsMessage::CameraStatus {
+                status: "connected".to_string(),
+            });
 
             let (width, height) = actual_format;
 
@@ -687,22 +757,155 @@ impl NativeVideoManager {
             let mut blink_start_left: Option<std::time::Instant> = None;
 
             println!("[SIEV] Iniciando bucle de captura...");
+            let mut consecutive_errors: u32 = 0;
+            const MAX_CONSECUTIVE_ERRORS: u32 = 10;
 
-            while running.load(Ordering::SeqCst) {
+            'capture_loop: while running.load(Ordering::SeqCst) {
                 // Capturar frame desde nokhwa o v4l
                 let frame_bytes: Vec<u8> = if let Some(ref mut cam) = nokhwa_camera {
                     match cam.frame() {
-                        Ok(f) => f.buffer().to_vec(),
+                        Ok(f) => {
+                            consecutive_errors = 0;
+                            f.buffer().to_vec()
+                        }
                         Err(e) => {
-                            if frame_count == 0 { println!("[CAM] Error capturando: {:?}", e); }
+                            consecutive_errors += 1;
+                            if consecutive_errors == 1 || consecutive_errors % 30 == 0 {
+                                println!("[CAM] Error capturando: {:?} (errores consecutivos: {})", e, consecutive_errors);
+                            }
+                            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                                println!("[CAM] Cámara desconectada, entrando en modo reconexión...");
+                                // Soltar la cámara actual
+                                drop(nokhwa_camera.take());
+                                ws.broadcast(&WsMessage::CameraStatus {
+                                    status: "disconnected".to_string(),
+                                });
+
+                                // Polling de reconexión
+                                loop {
+                                    if !running.load(Ordering::SeqCst) { break 'capture_loop; }
+                                    std::thread::sleep(std::time::Duration::from_millis(500));
+                                    if !running.load(Ordering::SeqCst) { break 'capture_loop; }
+
+                                    for &(w, h, f) in &formats_to_try {
+                                        let format = CameraFormat::new(Resolution::new(w, h), FrameFormat::MJPEG, f);
+                                        let requested = RequestedFormat::new::<LumaFormat>(RequestedFormatType::Closest(format));
+                                        if let Ok(mut c) = Camera::new(index.clone(), requested) {
+                                            if c.open_stream().is_ok() {
+                                                println!("[CAM] Cámara reconectada: {}x{}@{}", w, h, f);
+                                                nokhwa_camera = Some(c);
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    if nokhwa_camera.is_some() {
+                                        ws.broadcast(&WsMessage::CameraStatus {
+                                            status: "connected".to_string(),
+                                        });
+                                        consecutive_errors = 0;
+                                        break;
+                                    }
+
+                                    // Intentar v4l si nokhwa no funcionó
+                                    if let Ok(dev) = v4l::Device::new(camera_id as usize) {
+                                        let mjpg = v4l::FourCC::new(b"MJPG");
+                                        for &(w, h, _f) in &formats_to_try {
+                                            let fmt = v4l::Format::new(w, h, mjpg);
+                                            if let Ok(actual) = V4lCapture::set_format(&dev, &fmt) {
+                                                if actual.fourcc == mjpg {
+                                                    if let Ok(stream) = v4l::io::mmap::Stream::with_buffers(&dev, v4l::buffer::Type::VideoCapture, 4) {
+                                                        println!("[CAM] Cámara reconectada via v4l: {}x{}", actual.width, actual.height);
+                                                        v4l_stream = Some(stream);
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if v4l_stream.is_some() {
+                                        ws.broadcast(&WsMessage::CameraStatus {
+                                            status: "connected".to_string(),
+                                        });
+                                        consecutive_errors = 0;
+                                        break;
+                                    }
+                                }
+                            }
                             continue;
                         }
                     }
                 } else if let Some(ref mut stream) = v4l_stream {
                     match V4lCaptureStream::next(stream) {
-                        Ok((buf, meta)) => buf[..meta.bytesused as usize].to_vec(),
+                        Ok((buf, meta)) => {
+                            consecutive_errors = 0;
+                            buf[..meta.bytesused as usize].to_vec()
+                        }
                         Err(e) => {
-                            if frame_count == 0 { println!("[CAM] Error capturando v4l: {:?}", e); }
+                            consecutive_errors += 1;
+                            if consecutive_errors == 1 || consecutive_errors % 30 == 0 {
+                                println!("[CAM] Error capturando v4l: {:?} (errores consecutivos: {})", e, consecutive_errors);
+                            }
+                            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                                println!("[CAM] Cámara v4l desconectada, entrando en modo reconexión...");
+                                drop(v4l_stream.take());
+                                ws.broadcast(&WsMessage::CameraStatus {
+                                    status: "disconnected".to_string(),
+                                });
+
+                                loop {
+                                    if !running.load(Ordering::SeqCst) { break 'capture_loop; }
+                                    std::thread::sleep(std::time::Duration::from_millis(500));
+                                    if !running.load(Ordering::SeqCst) { break 'capture_loop; }
+
+                                    // Intentar nokhwa primero
+                                    for &(w, h, f) in &formats_to_try {
+                                        let format = CameraFormat::new(Resolution::new(w, h), FrameFormat::MJPEG, f);
+                                        let requested = RequestedFormat::new::<LumaFormat>(RequestedFormatType::Closest(format));
+                                        if let Ok(mut c) = Camera::new(index.clone(), requested) {
+                                            if c.open_stream().is_ok() {
+                                                println!("[CAM] Cámara reconectada via nokhwa: {}x{}@{}", w, h, f);
+                                                nokhwa_camera = Some(c);
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    if nokhwa_camera.is_some() {
+                                        ws.broadcast(&WsMessage::CameraStatus {
+                                            status: "connected".to_string(),
+                                        });
+                                        consecutive_errors = 0;
+                                        break;
+                                    }
+
+                                    // Intentar v4l
+                                    if let Ok(dev) = v4l::Device::new(camera_id as usize) {
+                                        let mjpg = v4l::FourCC::new(b"MJPG");
+                                        for &(w, h, _f) in &formats_to_try {
+                                            let fmt = v4l::Format::new(w, h, mjpg);
+                                            if let Ok(actual) = V4lCapture::set_format(&dev, &fmt) {
+                                                if actual.fourcc == mjpg {
+                                                    if let Ok(s) = v4l::io::mmap::Stream::with_buffers(&dev, v4l::buffer::Type::VideoCapture, 4) {
+                                                        println!("[CAM] Cámara reconectada via v4l: {}x{}", actual.width, actual.height);
+                                                        v4l_stream = Some(s);
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if v4l_stream.is_some() {
+                                        ws.broadcast(&WsMessage::CameraStatus {
+                                            status: "connected".to_string(),
+                                        });
+                                        consecutive_errors = 0;
+                                        break;
+                                    }
+                                }
+                            }
                             continue;
                         }
                     }

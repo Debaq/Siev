@@ -259,7 +259,7 @@ export const ExternalDisplayPage: React.FC = () => {
     // 2. FULLSCREEN IDLE (Ready State)
     if (isFullscreen && mode === 'idle') {
         return (
-            <div className="h-screen w-screen bg-black flex items-center justify-center cursor-none relative group">
+            <div className="h-screen w-screen bg-black flex items-center justify-center relative group">
                 <img src="/logo-large.png" alt="SIEV" className="w-64 opacity-20 grayscale" />
                 
                 {/* Hidden controls appearing on hover at top */}
@@ -317,7 +317,7 @@ export const ExternalDisplayPage: React.FC = () => {
     };
 
     return (
-        <div className="h-screen w-screen bg-black overflow-hidden relative cursor-none">
+        <div className="h-screen w-screen bg-black overflow-hidden relative">
             {/* Safety Warning - not fullscreen */}
             {!isFullscreen && (
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-red-500/90 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-3 backdrop-blur pointer-events-auto cursor-pointer" onClick={handleToggleFullscreen}>

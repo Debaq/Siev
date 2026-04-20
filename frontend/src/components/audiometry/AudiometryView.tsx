@@ -223,7 +223,6 @@ export default function AudiometryView({
   return (
     <div className="h-full flex flex-col font-sans text-xs">
       <StatusBar
-        hardwareStatus="offline"
         fps={0}
         recording={false}
         testType={testType}

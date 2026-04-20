@@ -164,7 +164,7 @@ export const CalibrationPage: React.FC = () => {
     // --- STEP 4: Idle / Logo Mode ---
     if (step === 'idle') {
         return (
-            <div className="h-screen w-screen bg-black flex items-center justify-center cursor-none">
+            <div className="h-screen w-screen bg-black flex items-center justify-center">
                 {/* Logo centered */}
                 <img 
                     src="/logo-large.png" 

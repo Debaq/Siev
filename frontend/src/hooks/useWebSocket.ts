@@ -28,7 +28,8 @@ export type WsMessage =
     | { type: 'stop_capture' }
     | { type: 'set_config'; key: string; value: any }
     | { type: 'connect_hardware'; port: string; baud_rate: number }
-    | { type: 'send_hardware_command'; cmd: string };
+    | { type: 'send_hardware_command'; cmd: string }
+    | { type: 'camera_status'; status: string };
 
 type ListenerCallback = (data: any) => void;
 
@@ -39,6 +40,7 @@ export function useWebSocket() {
     const [cameras, setCameras] = useState<any[]>([]);
     const [resolutions, setResolutions] = useState<string[]>([]);
     const [resolutionsCameraId, setResolutionsCameraId] = useState<number>(-1);
+    const [cameraStatus, setCameraStatus] = useState<string>('unknown');
     
     const ws = useRef<WebSocket | null>(null);
     const reconnectTimeout = useRef<number | null>(null);
@@ -132,6 +134,10 @@ export function useWebSocket() {
                             setResolutions(msg.resolutions);
                             setResolutionsCameraId(msg.camera_id);
                             break;
+                        case 'camera_status':
+                            console.log('[WS] Camera status:', (msg as any).status);
+                            setCameraStatus((msg as any).status);
+                            break;
                         case 'error':
                             console.error(`Error from ${msg.source}: ${msg.message}`);
                             break;
@@ -195,6 +201,7 @@ export function useWebSocket() {
         cameras,
         resolutions,
         resolutionsCameraId,
+        cameraStatus,
         send,
         addListener,
         removeListener

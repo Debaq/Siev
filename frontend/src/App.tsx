@@ -38,7 +38,7 @@ import { ExternalDisplayPage } from './pages/ExternalDisplayPage'
 // MainApp contains all the heavy logic (WebSockets, DB, etc.)
 // This component should ONLY run in the main window.
 const MainApp = () => {
-  const { connected: isWsConnected, hardwareStatus, cameras: wsCameras, send } = useWebSocket()
+  const { connected: isWsConnected, cameras: wsCameras, cameraStatus, send } = useWebSocket()
   const { getSetting, getSpecialists, createSession, createRecording } = useTauriDb()
   
   // Initialize hooks with WebSocket send capability
@@ -405,7 +405,6 @@ const MainApp = () => {
     <div className="h-full flex flex-col font-sans text-xs">
       {!isFullscreen && (
         <StatusBar
-          hardwareStatus={hardwareStatus ? 'online' : 'offline'}
           fps={0}
           recording={false}
           testType={currentTestType}
@@ -424,6 +423,7 @@ const MainApp = () => {
              <div className="flex-1 bg-black flex items-center justify-center overflow-hidden">
                 <VideoFeed
                   isCapturing={isCapturing}
+                  cameraStatus={cameraStatus}
                   patientName={currentPatient ? `${currentPatient.last_name}, ${currentPatient.first_name}` : null}
                   testType={currentTestType}
                   caloricStageLabel={caloricProtocol.currentStageLabel}
@@ -734,7 +734,6 @@ const MainApp = () => {
                         enabled_tests: [],
                         custom_tests: [],
                     }}
-                    hardwareStatus={!!hardwareStatus}
                     onSelectTest={() => setActiveView('test_selection')}
                     onSelectPatient={() => setActiveView('patients')}
                 />

@@ -1,4 +1,4 @@
-import { Video, VideoOff } from 'lucide-react'
+import { Video, VideoOff, Unplug } from 'lucide-react'
 import { useRef, useEffect, useState } from 'react'
 import { useWebSocket } from '../contexts/WebSocketContext'
 
@@ -11,6 +11,7 @@ interface CaloricTimerOverlay {
 
 interface VideoFeedProps {
   isCapturing: boolean
+  cameraStatus?: string
   patientName?: string | null
   testType?: string | null
   caloricStageLabel?: string | null
@@ -41,7 +42,7 @@ function formatOverlayTime(seconds: number): string {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
 }
 
-function VideoFeed({ isCapturing, patientName, testType, caloricStageLabel, isRecording, caloricTimer }: VideoFeedProps) {
+function VideoFeed({ isCapturing, cameraStatus, patientName, testType, caloricStageLabel, isRecording, caloricTimer }: VideoFeedProps) {
   const { addListener, removeListener } = useWebSocket()
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -213,9 +214,19 @@ function VideoFeed({ isCapturing, patientName, testType, caloricStageLabel, isRe
       />
       
       {!hasSignal && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-          <div className="w-8 h-8 border-2 border-siev-500 border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs text-dark-400">Esperando señal...</span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+          {cameraStatus === 'disconnected' ? (
+            <>
+              <Unplug className="w-12 h-12 text-dark-500 animate-pulse" />
+              <span className="text-sm text-dark-400 font-medium">Conecte el VNG</span>
+              <span className="text-xs text-dark-600">Buscando dispositivo...</span>
+            </>
+          ) : (
+            <>
+              <div className="w-8 h-8 border-2 border-siev-500 border-t-transparent rounded-full animate-spin" />
+              <span className="text-xs text-dark-400">Conectando...</span>
+            </>
+          )}
         </div>
       )}
       

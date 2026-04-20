@@ -29,6 +29,9 @@ pub enum WsMessage {
         resolutions: Vec<String>,
         camera_id: i32,
     },
+    CameraStatus {
+        status: String, // "disconnected", "connecting", "connected"
+    },
 
     // Frontend -> Rust: Commands
     ListCameras,

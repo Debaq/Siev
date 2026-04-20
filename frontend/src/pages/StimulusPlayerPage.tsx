@@ -80,7 +80,7 @@ export const StimulusPlayerPage: React.FC = () => {
 
     if (!state.isPlaying || !state.config) {
         return (
-            <div className="h-screen w-screen bg-black flex items-center justify-center cursor-none">
+            <div className="h-screen w-screen bg-black flex items-center justify-center">
                 <div className="w-2 h-2 bg-dark-800 rounded-full" /> {/* Fixation point for idle? Or just black */}
             </div>
         );
@@ -97,7 +97,7 @@ export const StimulusPlayerPage: React.FC = () => {
     };
 
     return (
-        <div className="h-screen w-screen bg-black overflow-hidden relative cursor-none">
+        <div className="h-screen w-screen bg-black overflow-hidden relative">
             {state.config.test === 'calibration' && (
                 <CalibrationStimulus config={state.config.params} {...commonProps} />
             )}

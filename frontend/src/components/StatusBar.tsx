@@ -1,7 +1,6 @@
-import { Cpu, CircleDot, ChevronRight, Activity } from 'lucide-react'
+import { CircleDot, ChevronRight, Activity } from 'lucide-react'
 
 interface StatusBarProps {
-  hardwareStatus: 'offline' | 'online' | 'error'
   fps: number
   recording: boolean
   testType?: string | null
@@ -11,7 +10,6 @@ interface StatusBarProps {
 }
 
 function StatusBar({
-  hardwareStatus,
   fps,
   recording,
   testType,
@@ -19,28 +17,6 @@ function StatusBar({
   onSelectTest,
   onSelectPatient
 }: StatusBarProps) {
-  const getStatusColor = (status: 'offline' | 'online' | 'error') => {
-    switch (status) {
-      case 'online':
-        return 'text-green-400'
-      case 'error':
-        return 'text-red-400'
-      default:
-        return 'text-dark-400'
-    }
-  }
-
-  const getStatusDotClass = (status: 'offline' | 'online' | 'error') => {
-    switch (status) {
-      case 'online':
-        return 'status-dot-online'
-      case 'error':
-        return 'status-dot-offline'
-      default:
-        return 'bg-dark-500'
-    }
-  }
-
   // Map test IDs to readable labels
   const getTestLabel = (id: string) => {
     const labels: Record<string, string> = {
@@ -125,28 +101,14 @@ function StatusBar({
 
         {/* Status Indicators */}
         <div className="flex items-center gap-6">
-          {/* Hardware Status */}
-          <div className="flex items-center gap-2">
-            <Cpu className={`w-4 h-4 ${getStatusColor(hardwareStatus)}`} />
-            <div className="flex items-center gap-1.5">
-              <span className={`status-dot ${getStatusDotClass(hardwareStatus)}`} />
-              <span className={`text-sm ${getStatusColor(hardwareStatus)}`}>
-                IMU
-              </span>
-            </div>
-          </div>
-
           {/* FPS */}
           {fps > 0 && (
-            <>
-              <div className="w-px h-6 bg-dark-700" />
-              <div className="flex items-center gap-1.5">
-                <Activity className="w-4 h-4 text-siev-400" />
-                <span className="text-sm text-siev-400 font-mono">
-                  {fps.toFixed(1)} FPS
-                </span>
-              </div>
-            </>
+            <div className="flex items-center gap-1.5">
+              <Activity className="w-4 h-4 text-siev-400" />
+              <span className="text-sm text-siev-400 font-mono">
+                {fps.toFixed(1)} FPS
+              </span>
+            </div>
           )}
 
           {/* Recording Indicator */}

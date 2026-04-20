@@ -16,7 +16,6 @@ interface PosturalViewProps {
     isCapturing: boolean
     patientName: string | null
     posturalConfig: PosturalConfig
-    hardwareStatus: boolean
     onSelectTest: () => void
     onSelectPatient: () => void
 }
@@ -25,7 +24,6 @@ export default function PosturalView({
     isCapturing,
     patientName,
     posturalConfig,
-    hardwareStatus,
     onSelectTest,
     onSelectPatient,
 }: PosturalViewProps) {
@@ -130,7 +128,6 @@ export default function PosturalView({
     return (
         <div className="h-full flex flex-col font-sans text-xs">
             <StatusBar
-                hardwareStatus={hardwareStatus ? 'online' : 'offline'}
                 fps={0}
                 recording={false}
                 testType={protocol.test?.id ?? 'vppb'}
