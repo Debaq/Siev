@@ -1,33 +1,33 @@
 # SIEV
 
-Sistema de Video-Oculografía para diagnóstico vestibular y auditivo.
+Video-oculography system for vestibular and audiological diagnostics.
 
-Aplicación de escritorio (Tauri + React + Rust) que integra captura de video ocular, análisis de nistagmo, pruebas calóricas, posicionales, oculomotoras, audiometría y posturografía.
+Desktop application (Tauri + React + Rust) that integrates dual-camera eye tracking, nystagmus analysis, caloric / positional / oculomotor testing, audiometry, and posturography into a single clinical workstation.
 
-## Características
+## Features
 
-- **VNG (Video-oculografía):** captura dual-cámara, detección de pupila por algoritmo matemático refinado con *hints* de un modelo YOLO26 (ONNX) para seed del tracker, métricas de nistagmo.
-- **Pruebas clínicas:**
-  - Calórica (bitermal / monotermal, OFI, método seleccionable)
-  - Posicional (Dix-Hallpike, rotaciones)
-  - Oculomotora (sacadas, seguimiento, optokinético)
-  - Postural (estabilometría, tests custom, editor de fases)
-  - Audiometría (tonal, vocal, supraliminar, alta frecuencia, acumetría)
-- **Calibración persistente por paciente** (auto guardar/cargar).
-- **Generación de reportes PDF** (jsPDF + html2canvas).
-- **Pantalla externa de estímulo** (ventana secundaria para paciente).
-- **Firmware ESP8266** para hardware de estímulo físico.
+- **VNG (video-oculography):** dual-camera capture, pupil detection via a refined mathematical algorithm seeded with hints from a YOLO26 ONNX model, real-time nystagmus metrics.
+- **Clinical tests:**
+  - Caloric (bithermal / monothermal, OFI, selectable method)
+  - Positional (Dix-Hallpike, rotations)
+  - Oculomotor (saccades, smooth pursuit, optokinetic)
+  - Postural (stabilometry, custom tests, phase editor)
+  - Audiometry (pure-tone, speech, suprathreshold, high-frequency, acumetry)
+- **Per-patient persistent calibration** (auto save / load).
+- **PDF report generation** (jsPDF + html2canvas).
+- **External stimulus display** (secondary window for the patient).
+- **ESP8266 firmware** for physical stimulus hardware.
 
 ## Stack
 
-| Capa | Tech |
-|------|------|
+| Layer    | Tech |
+|----------|------|
 | Frontend | React 19, TypeScript, Vite, TailwindCSS v4, Three.js, ECharts, Recharts, uPlot |
-| Backend | Rust, Tauri 2, tokio, sqlx (SQLite), nokhwa (v4l), ort (ONNX Runtime), nalgebra, ndarray, openh264 |
-| Hardware | ESP8266 (estímulo), Arduino (prototipo tesis), puerto serial |
-| IPC | Tauri commands + WebSocket (tokio-tungstenite) |
+| Backend  | Rust, Tauri 2, tokio, sqlx (SQLite), nokhwa (v4l), ort (ONNX Runtime), nalgebra, ndarray, openh264 |
+| Hardware | ESP8266 (stimulus), Arduino (thesis prototype), serial port |
+| IPC      | Tauri commands + WebSocket (tokio-tungstenite) |
 
-## Estructura
+## Layout
 
 ```
 siev/
@@ -37,7 +37,7 @@ siev/
 │       ├── pages/        (Calibration, ExternalDisplay, StimulusPlayer)
 │       ├── contexts/     (WebSocket)
 │       └── hooks/
-├── src-tauri/         Backend Rust + Tauri
+├── src-tauri/         Rust + Tauri backend
 │   └── src/
 │       ├── vng/          (metrics, nystagmus, native_video, report, tests/)
 │       ├── hardware/     (manager, serial)
@@ -45,32 +45,32 @@ siev/
 │       ├── websocket/
 │       ├── storage/
 │       └── math/
-├── firmware/          Código ESP8266 + Arduino
-├── backend/models/    Modelos ONNX
+├── firmware/          ESP8266 + Arduino code
+├── backend/models/    ONNX models
 └── docs/
 ```
 
-## Requisitos
+## Requirements
 
-- Node.js 20+ y npm (o pnpm)
+- Node.js 20+ and npm (or pnpm)
 - Rust stable (cargo)
 - `cargo-tauri` CLI: `cargo install tauri-cli --version "^2"`
-- Linux: v4l, libappindicator, libwebkit2gtk-4.1, fuse2 (para AppImage)
-- Windows: WebView2 (nativo en Win10+)
-- Cámara V4L2 compatible
+- Linux: v4l, libappindicator, libwebkit2gtk-4.1, fuse2 (for AppImage)
+- Windows: WebView2 (bundled in Win10+)
+- V4L2-compatible camera
 
-## Uso rápido
+## Quick start
 
-Script todo-en-uno:
+All-in-one script:
 
 ```bash
-./siev.sh            # menú interactivo
-./siev.sh install    # instalar deps
+./siev.sh            # interactive menu
+./siev.sh install    # install deps
 ./siev.sh dev        # dev debug
-./siev.sh dev-fast   # dev release (alto FPS)
-./siev.sh dev-clean  # limpiar y dev
-./siev.sh build      # build producción + bundle
-./siev.sh clean      # limpieza total
+./siev.sh dev-fast   # dev release (high FPS)
+./siev.sh dev-clean  # clean and dev
+./siev.sh build      # production build + bundle
+./siev.sh clean      # full cleanup
 ```
 
 Windows: `siev.ps1`.
@@ -82,18 +82,18 @@ cd frontend && npm install
 cd ../src-tauri && cargo fetch
 cargo tauri dev           # debug
 cargo tauri dev --release # release
-cargo tauri build         # bundle final
+cargo tauri build         # final bundle
 ```
 
-Artefactos de build: `out/v<version>_<timestamp>/` (binario + tarball + AppImage/MSI/NSIS si disponible).
+Build artifacts: `out/v<version>_<timestamp>/` (binary + tarball + AppImage/MSI/NSIS when available).
 
-## Desarrollo
+## Development
 
 - Frontend dev server: `http://localhost:5173`
-- Ventana Tauri: 1400x900 mín. 1280x720
-- WebSocket interno para streaming de frames y eventos de hardware
-- SQLite embebido (pacientes, sesiones, calibración)
+- Tauri window: 1400x900, min 1280x720
+- Internal WebSocket for frame streaming and hardware events
+- Embedded SQLite (patients, sessions, calibration)
 
-## Licencia
+## License
 
 MIT
