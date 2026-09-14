@@ -1,0 +1,17 @@
+# Toolchain fijado para reproducibilidad de la traza de regresion.
+#
+# La prueba de tolerancia cero (tests/trace_regression.rs) compara aritmetica
+# de punto flotante bit a bit. Esa garantia vale para ESTE toolchain y ESTE
+# target. Al cambiar cualquiera de los dos, la comparacion exacta puede fallar
+# por diferencias de ULP legitimas (reasociacion, FMA, cambios en libm).
+#
+# Si eso ocurre: NO relajar la tolerancia sin antes confirmar que el cambio
+# proviene del toolchain y no del codigo. Regenerar el patron de referencia
+# solo despues de verificarlo, y anotar ambos toolchains en el manifiesto.
+#
+# Patron de referencia generado con: rustc 1.93.0 (254b59607 2026-01-19)
+[toolchain]
+channel = "1.93.0"
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-unknown-linux-gnu"]
+profile = "minimal"

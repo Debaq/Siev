@@ -165,3 +165,6 @@ temp/
 *.backup
 *.orig
 /out
+
+# Secuencias de referencia: se reconstruyen con fixtures/README.md
+fixtures/*/

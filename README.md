@@ -94,6 +94,10 @@ Build artifacts: `out/v<version>_<timestamp>/` (binary + tarball + AppImage/MSI/
 - Internal WebSocket for frame streaming and hardware events
 - Embedded SQLite (patients, sessions, calibration)
 
+## Documentation
+
+- [Eye tracking pipeline](docs/seguimiento-ocular.md) — capture, ROI, YOLO hints, pupil detector, Kalman, calibration
+
 ## License
 
 MIT

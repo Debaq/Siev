@@ -21,6 +21,9 @@ use crate::websocket::{WebSocketServer, WsMessage};
 use crate::math::processor::{RawEyeData, EyeProcessor};
 use crate::storage::recorder::SessionRecorder;
 use crate::storage::video_recorder::VideoRecorder;
+// FASE 1' (andamiaje temporal, se elimina en Fase 4/5)
+use crate::vng::trace::{PgmSequence, TraceWriter, TraceRecord};
+use std::path::PathBuf;
 
 // V4L2 directo como fallback cuando nokhwa falla (framerates fraccionarios, etc.)
 use v4l::video::Capture as V4lCapture;
@@ -473,6 +476,17 @@ impl NativeVideoManager {
     }
 
     pub fn start_capture(&self, camera_id: u32, width: u32, height: u32, fps: u32, model_path: String) -> Result<(), String> {
+        self.start_capture_inner(camera_id, width, height, fps, model_path, None, None)
+    }
+
+    /// FASE 1' (andamiaje temporal). Reproduce una secuencia PGM por el bucle de
+    /// captura real y escribe la traza. Sincrono: retorna al agotarse la secuencia.
+    pub fn run_pgm_sequence(&self, seq: PgmSequence, trace_path: PathBuf, model_path: String) -> Result<(), String> {
+        let (w, h) = (seq.width, seq.height);
+        self.start_capture_inner(0, w, h, 0, model_path, Some(seq), Some(trace_path))
+    }
+
+    fn start_capture_inner(&self, camera_id: u32, width: u32, height: u32, fps: u32, model_path: String, sequence: Option<PgmSequence>, trace_path: Option<PathBuf>) -> Result<(), String> {
         // Usar compare_exchange para evitar múltiples llamadas concurrentes
         if self.starting.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
             // Ya hay otra llamada en progreso, ignorar esta
@@ -522,7 +536,12 @@ impl NativeVideoManager {
         let aspect_ratio_min_ref = self.aspect_ratio_min.clone();
         let aspect_ratio_max_ref = self.aspect_ratio_max.clone();
 
-        thread::spawn(move || {
+        let sequence_mode = sequence.is_some();
+        let work = move || {
+            // FASE 1': fuente en disco y tap de traza (andamiaje temporal)
+            let mut seq = sequence;
+            let mut trace = trace_path.as_ref().and_then(|p| TraceWriter::create(p).ok());
+
             // Abrir cámara con fallback de formatos
             let index = CameraIndex::Index(camera_id);
 
@@ -546,6 +565,7 @@ impl NativeVideoManager {
 
             // Intentar nokhwa primero
             for (w, h, f) in formats_to_try {
+                if seq.is_some() { break; }  // FASE 1': fuente en disco, no se abre camara
                 let format = CameraFormat::new(Resolution::new(w, h), FrameFormat::MJPEG, f);
                 let requested = RequestedFormat::new::<LumaFormat>(RequestedFormatType::Closest(format));
 
@@ -565,7 +585,7 @@ impl NativeVideoManager {
             }
 
             // Si nokhwa falló, intentar v4l directo
-            if nokhwa_camera.is_none() {
+            if nokhwa_camera.is_none() && seq.is_none() {
                 println!("[SIEV] nokhwa falló para cámara {}, intentando v4l directo...", camera_id);
                 if let Ok(dev) = v4l::Device::new(camera_id as usize) {
                     let mjpg = v4l::FourCC::new(b"MJPG");
@@ -608,7 +628,7 @@ impl NativeVideoManager {
             }
 
             // Si no se pudo abrir la cámara, entrar en modo polling
-            if nokhwa_camera.is_none() && v4l_stream.is_none() {
+            if nokhwa_camera.is_none() && v4l_stream.is_none() && seq.is_none() {
                 println!("[SIEV] Cámara {} no disponible, esperando conexión...", camera_id);
                 ws.broadcast(&WsMessage::CameraStatus {
                     status: "disconnected".to_string(),
@@ -761,8 +781,20 @@ impl NativeVideoManager {
             const MAX_CONSECUTIVE_ERRORS: u32 = 10;
 
             'capture_loop: while running.load(Ordering::SeqCst) {
+                // FASE 1': si hay secuencia en disco, sustituye a la camara
+                let seq_frame: Option<(GrayImage, f64)> = if let Some(ref mut s) = seq {
+                    match s.next_frame() {
+                        Some(v) => Some(v),
+                        None => break 'capture_loop,  // secuencia agotada
+                    }
+                } else {
+                    None
+                };
+
                 // Capturar frame desde nokhwa o v4l
-                let frame_bytes: Vec<u8> = if let Some(ref mut cam) = nokhwa_camera {
+                let frame_bytes: Vec<u8> = if seq_frame.is_some() {
+                    Vec::new()
+                } else if let Some(ref mut cam) = nokhwa_camera {
                     match cam.frame() {
                         Ok(f) => {
                             consecutive_errors = 0;
@@ -916,16 +948,22 @@ impl NativeVideoManager {
                 let start_proc = std::time::Instant::now();
 
                 // DECODIFICACIÓN TURBO (Zune-JPEG)
-                let mut decoder = JpegDecoder::new_with_options(&frame_bytes, zune_options);
-                
-                let pixels = match decoder.decode() {
-                    Ok(p) => p,
-                    Err(_) => continue,
-                };
+                // FASE 1': el PGM ya viene en Luma8; se omite el decode por
+                // completo, sin pasar por ninguna conversion de color.
+                let img = if let Some((ref im, _)) = seq_frame {
+                    im.clone()
+                } else {
+                    let mut decoder = JpegDecoder::new_with_options(&frame_bytes, zune_options);
 
-                let img = match ImageBuffer::<Luma<u8>, Vec<u8>>::from_vec(width, height, pixels) {
-                    Some(i) => i,
-                    None => continue,
+                    let pixels = match decoder.decode() {
+                        Ok(p) => p,
+                        Err(_) => continue,
+                    };
+
+                    match ImageBuffer::<Luma<u8>, Vec<u8>>::from_vec(width, height, pixels) {
+                        Some(i) => i,
+                        None => continue,
+                    }
                 };
 
                 if frame_count == 0 {
@@ -1215,13 +1253,19 @@ impl NativeVideoManager {
                     left_eye: pupil_pos[0],
                     right_eye: pupil_pos[1],
                     processed: None,
-                    timestamp: chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
+                    timestamp: match seq_frame {
+                        Some((_, t)) => t,  // FASE 1': reloj sintetico, reproducible
+                        None => chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
+                    },
                 };
 
                 let processed = {
                     let mut p = eye_proc.lock().unwrap();
                     p.process(raw_data)
                 };
+                // FASE 1': copia de los dos campos que consume el tap, antes de
+                // que `processed` pueda moverse al recorder. Ambos son Copy.
+                let (trace_filt_l, trace_filt_r) = (processed.left, processed.right);
                 ws.broadcast(&WsMessage::EyeData(processed.clone()));
 
                 // Send to session recorder if active
@@ -1298,7 +1342,54 @@ impl NativeVideoManager {
                 // Mide cuánto tardó SOLO el procesamiento (CPU pura)
                 let processing_duration = start_proc.elapsed();
                 total_proc_time += processing_duration;
-                
+
+                // ===== FASE 1': TAP DE TRAZA (andamiaje temporal) =====
+                // Deliberadamente DESPUES de cerrar `processing_duration`: el
+                // tap no entra en ninguna ventana cronometrada.
+                if let Some(ref mut tw) = trace {
+                    let emit = |tw: &mut TraceWriter,
+                                eye: &'static str,
+                                raw: &Option<RustPupilResult>,
+                                trk: &Option<RustPupilResult>,
+                                vel: (f32, f32),
+                                lost: u32,
+                                thr: u8,
+                                boxr: [u32; 4],
+                                filt: Option<[f64; 2]>| {
+                        let status = match raw {
+                            Some(r) if r.confidence == -1.0 => "blink",
+                            Some(r) if r.found => "detected",
+                            Some(_) => "lost",
+                            None => "none",
+                        };
+                        let found = raw.map(|r| r.found).unwrap_or(false);
+                        tw.write(&TraceRecord {
+                            frame_idx: frame_count,
+                            eye,
+                            status,
+                            raw_x: if found { raw.map(|r| r.center_x) } else { None },
+                            raw_y: if found { raw.map(|r| r.center_y) } else { None },
+                            raw_radius: if found { raw.map(|r| r.radius) } else { None },
+                            raw_confidence: raw.map(|r| r.confidence),
+                            trk_x: trk.filter(|t| t.found).map(|t| t.center_x),
+                            trk_y: trk.filter(|t| t.found).map(|t| t.center_y),
+                            trk_radius_smoothed: trk.filter(|t| t.found).map(|t| t.radius),
+                            velocity_x: vel.0,
+                            velocity_y: vel.1,
+                            lost_count: lost,
+                            threshold_used: thr,
+                            search_box: boxr,
+                            filtered_x: filt.map(|f| f[0]),
+                            filtered_y: filt.map(|f| f[1]),
+                        });
+                    };
+
+                    emit(tw, "right", &pupil_right, &last_pupil_right, velocity_right,
+                         lost_count_right, last_threshold_right, search_box_right, trace_filt_r);
+                    emit(tw, "left", &pupil_left, &last_pupil_left, velocity_left,
+                         lost_count_left, last_threshold_left, search_box_left, trace_filt_l);
+                }
+
                 frame_count += 1;
                 fps_frame_count += 1;
 
@@ -1331,7 +1422,16 @@ impl NativeVideoManager {
             }
             // v4l_stream se limpia automáticamente al hacer drop
             drop(v4l_stream);
-        });
+            if let Some(tw) = trace.take() { tw.finish(); }
+        };
+
+        if sequence_mode {
+            // FASE 1': sincrono, para que la prueba pueda esperar el resultado
+            work();
+            self.running.store(false, Ordering::SeqCst);
+        } else {
+            thread::spawn(work);
+        }
 
         Ok(())
     }
