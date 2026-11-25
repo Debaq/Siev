@@ -55,6 +55,7 @@ fn main() {
         umbral_semilla: mej.contains("semilla"),
     });
 
+    nv.set_ia_closed_eye_judge(std::env::var("SIEV_JUEZ").map(|v| v != "0").unwrap_or(true));
     if let Some(m) = std::env::var("SIEV_IA_MARGEN").ok().and_then(|v| v.parse().ok()) {
         nv.set_ia_margin(m);
     }

@@ -115,11 +115,13 @@ pub struct Ia {
     pub usar: bool,
     /// Margen alrededor del iris detectado, en fraccion de su diametro.
     pub margen: f32,
+    /// Si la IA no ve el iris, el ojo se da por cerrado.
+    pub juez: bool,
 }
 
 impl Default for Ia {
     fn default() -> Self {
-        Self { modelo: String::new(), usar: false, margen: 0.15 }
+        Self { modelo: String::new(), usar: false, margen: 0.15, juez: true }
     }
 }
 
@@ -249,6 +251,7 @@ impl Config {
 
         m.set_use_yolo(self.ia.usar && !self.ia.modelo.is_empty());
         m.set_ia_margin(self.ia.margen);
+        m.set_ia_closed_eye_judge(self.ia.juez);
     }
 }
 

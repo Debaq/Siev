@@ -27,6 +27,9 @@ pub struct BusReceiver {
 pub struct EventBus {
     events: SyncSender<TrackEvent>,
     frames: SyncSender<RgbImage>,
+    /// Cuadros sin descartar (bloquea al productor): solo para corridas
+    /// offline que escriben un video de depuracion.
+    sin_perdida: bool,
     notify: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
 }
 
@@ -42,7 +45,7 @@ impl EventBus {
         // Solo interesa el cuadro mas reciente.
         let (ftx, frx) = mpsc::sync_channel(2);
         (
-            Self { events: etx, frames: ftx, notify: Mutex::new(None) },
+            Self { events: etx, frames: ftx, sin_perdida: false, notify: Mutex::new(None) },
             BusReceiver { events: erx, frames: frx },
         )
     }
@@ -58,8 +61,19 @@ impl EventBus {
         }
     }
 
+    /// Version offline: los cuadros nunca se descartan.
+    pub fn new_lossless(eventos: usize) -> (Self, BusReceiver) {
+        let (mut bus, rx) = Self::new_with_capacity(eventos);
+        bus.sin_perdida = true;
+        (bus, rx)
+    }
+
     pub fn broadcast_frame(&self, img: RgbImage) {
-        let _ = self.frames.try_send(img);
+        if self.sin_perdida {
+            let _ = self.frames.send(img);
+        } else {
+            let _ = self.frames.try_send(img);
+        }
         if let Some(f) = self.notify.lock().unwrap().as_ref() {
             f();
         }

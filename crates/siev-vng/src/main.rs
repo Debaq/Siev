@@ -875,6 +875,10 @@ impl VngApp {
                             .add_enabled(ia.usar, egui::Slider::new(&mut ia.margen, 0.0..=0.6).text("Margen alrededor del iris"))
                             .on_hover_text("Tamaño de la zona verde, en fraccion del diametro del iris. La cruz verde marca el centro del iris: el detector prefiere la pupila cerca de ella.")
                             .changed();
+                        cambio |= ui
+                            .add_enabled(ia.usar, egui::Checkbox::new(&mut ia.juez, "Si la IA no ve el iris, dar el ojo por cerrado"))
+                            .on_hover_text("Evita marcar pupilas falsas en las pestañas con el ojo cerrado. La zona se pinta magenta.")
+                            .changed();
                     });
 
                     egui::CollapsingHeader::new(RichText::new("Herramientas").strong()).show(ui, |ui| {

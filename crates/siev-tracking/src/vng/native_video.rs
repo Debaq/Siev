@@ -233,6 +233,10 @@ pub struct NativeVideoManager {
     eye_height: Arc<Mutex<f32>>,
     /// Margen de la caja de iris de la IA, en fraccion del diametro del iris.
     ia_margen: Arc<Mutex<f32>>,
+    /// Si la IA no ve el iris de un ojo, ese ojo se da por cerrado.
+    ia_juez: Arc<AtomicBool>,
+    /// Vista previa en cada cuadro (y sin descartar): para videos de depuracion.
+    preview_cada_cuadro: Arc<AtomicBool>,
     use_yolo: Arc<AtomicBool>,
     yolo_frequency: Arc<Mutex<u32>>,
     // ROI manual para cada ojo [derecho, izquierdo]
@@ -273,7 +277,7 @@ pub struct NativeVideoManager {
 /// ocupado, el cuadro se descarta) y devuelve las cajas de anclaje.
 struct YoloWorker {
     tx: std::sync::mpsc::SyncSender<GrayImage>,
-    rx: std::sync::mpsc::Receiver<Yolo26Result>,
+    rx: std::sync::mpsc::Receiver<Option<Yolo26Result>>,
 }
 
 impl YoloWorker {
@@ -282,11 +286,10 @@ impl YoloWorker {
         let (tx_res, rx) = std::sync::mpsc::channel();
         thread::spawn(move || {
             // Termina solo cuando el bucle de captura suelta el emisor.
+            // Responde siempre, tambien "no vi nada": eso indica ojo cerrado.
             while let Ok(img) = rx_img.recv() {
-                if let Some(r) = NativeVideoManager::run_yolo_inference(&mut session, &img) {
-                    if tx_res.send(r).is_err() {
-                        break;
-                    }
+                if tx_res.send(NativeVideoManager::run_yolo_inference(&mut session, &img)).is_err() {
+                    break;
                 }
             }
         });
@@ -297,8 +300,9 @@ impl YoloWorker {
         let _ = self.tx.try_send(img.clone());
     }
 
-    /// Ultimo resultado disponible, si llego alguno desde la llamada anterior.
-    fn recibir(&self) -> Option<Yolo26Result> {
+    /// Ultima respuesta disponible, si llego alguna desde la llamada anterior.
+    /// `Some(None)` = la IA corrio y no encontro ningun ojo.
+    fn recibir(&self) -> Option<Option<Yolo26Result>> {
         self.rx.try_iter().last()
     }
 }
@@ -342,6 +346,8 @@ impl NativeVideoManager {
             // 0.05-0.3 rinden igual con la pista de la IA (mascara_20261125);
             // 0.15 deja la ventana mas chica sin perder el ojo al moverse.
             ia_margen: Arc::new(Mutex::new(0.15)),
+            ia_juez: Arc::new(AtomicBool::new(true)),
+            preview_cada_cuadro: Arc::new(AtomicBool::new(false)),
             use_yolo: Arc::new(AtomicBool::new(false)),
             yolo_frequency: Arc::new(Mutex::new(10)),
             manual_roi_right: Arc::new(Mutex::new(ManualEyeRoi::default())),
@@ -411,6 +417,17 @@ impl NativeVideoManager {
         if let Ok(mut e) = self.eye_height.lock() {
             *e = value;
         }
+    }
+
+    /// Con IA activa: si no ve el iris de un ojo, no se acepta pupila en ese
+    /// ojo (evita falsos positivos en pestañas con el ojo cerrado).
+    pub fn set_ia_closed_eye_judge(&self, enabled: bool) {
+        self.ia_juez.store(enabled, Ordering::SeqCst);
+    }
+
+    /// Emite la vista previa de cada cuadro (normalmente ~30 por segundo).
+    pub fn set_preview_every_frame(&self, enabled: bool) {
+        self.preview_cada_cuadro.store(enabled, Ordering::SeqCst);
     }
 
     /// Margen alrededor del iris detectado por la IA (fraccion del diametro).
@@ -566,6 +583,8 @@ impl NativeVideoManager {
         let nose_ref = self.nose_width.clone();
         let eye_h_ref = self.eye_height.clone();
         let ia_margen_ref = self.ia_margen.clone();
+        let ia_juez_ref = self.ia_juez.clone();
+        let preview_todo_ref = self.preview_cada_cuadro.clone();
         let use_yolo_ref = self.use_yolo.clone();
         let yolo_freq_ref = self.yolo_frequency.clone();
         let manual_roi_right_ref = self.manual_roi_right.clone();
@@ -830,6 +849,8 @@ impl NativeVideoManager {
             // Pista de la IA: centro y radio del iris [cx, cy, r]
             let mut pista_right: Option<[f32; 3]> = None;
             let mut pista_left: Option<[f32; 3]> = None;
+            // Ultimo veredicto de la IA por ojo: Some(false) = no vio el iris.
+            let mut ia_visible: [Option<bool>; 2] = [None, None];
 
             // Variables de estado persistente para matemáticas refinadas
             let mut last_threshold_right = 40u8;
@@ -1140,18 +1161,24 @@ impl NativeVideoManager {
                 // ===== PASO 3: Ejecutar YOLO cada N frames =====
                 let use_yolo = use_yolo_ref.load(Ordering::SeqCst);
                 if use_yolo {
-                    let mut resultado = None;
+                    let mut respuesta: Option<Option<Yolo26Result>> = None;
                     if let Some(ref mut sess) = session {
                         if frame_count % yolo_freq as u64 == 0 {
-                            resultado = Self::run_yolo_inference(sess, &combined);
+                            respuesta = Some(Self::run_yolo_inference(sess, &combined));
                         }
                     } else if let Some(ref w) = yolo_worker {
                         if frame_count % yolo_freq as u64 == 0 {
                             w.enviar(&combined);
                         }
-                        resultado = w.recibir();
+                        respuesta = w.recibir();
                     }
-                    if let Some(result) = resultado {
+                    if let Some(ref r) = respuesta {
+                        ia_visible = [
+                            Some(r.as_ref().is_some_and(|x| x.iris_right.is_some() || x.eye_right.is_some())),
+                            Some(r.as_ref().is_some_and(|x| x.iris_left.is_some() || x.eye_left.is_some())),
+                        ];
+                    }
+                    if let Some(result) = respuesta.flatten() {
                         if result.iris_right.is_some() || result.iris_left.is_some() {
                             // Detector de iris: caja = iris + margen, sin cruzar
                             // a la mitad del otro ojo.
@@ -1182,6 +1209,7 @@ impl NativeVideoManager {
                     }
                 } else {
                     // IA apagada: nada de cajas ni pistas viejas.
+                    ia_visible = [None, None];
                     yolo_box_right = None;
                     yolo_box_left = None;
                     pista_right = None;
@@ -1217,7 +1245,12 @@ impl NativeVideoManager {
                 };
 
                 // ===== PASO 5: Detectar pupilas con Predicción + Validación =====
-                let pupil_right = Self::detect_pupil_math_refined(
+                // IA como juez: ojo que la IA no ve = cerrado (estado parpadeo).
+                let juez = ia_juez_ref.load(Ordering::SeqCst);
+                let ia_cerrado = [juez && ia_visible[0] == Some(false), juez && ia_visible[1] == Some(false)];
+                let cerrado = Some(RustPupilResult { center_x: 0.0, center_y: 0.0, radius: 0.0, confidence: -1.0, found: false });
+
+                let pupil_right = if ia_cerrado[0] { cerrado } else { Self::detect_pupil_math_refined(
                     &combined,
                     search_box_right,
                     thresholds[0],
@@ -1238,7 +1271,7 @@ impl NativeVideoManager {
                     aspect_ratio_max_val,
                     opciones_val,
                     pista_right,
-                );
+                ) };
                 // Actualizar estado de tracking (ojo derecho)
                 if let Some(ref pr) = pupil_right {
                     if pr.confidence == -1.0 {
@@ -1283,7 +1316,7 @@ impl NativeVideoManager {
                     }
                 }
 
-                let pupil_left = Self::detect_pupil_math_refined(
+                let pupil_left = if ia_cerrado[1] { cerrado } else { Self::detect_pupil_math_refined(
                     &combined,
                     search_box_left,
                     thresholds[1],
@@ -1304,7 +1337,7 @@ impl NativeVideoManager {
                     aspect_ratio_max_val,
                     opciones_val,
                     pista_left,
-                );
+                ) };
                 // Actualizar estado de tracking (ojo izquierdo)
                 if let Some(ref pl) = pupil_left {
                     if pl.confidence == -1.0 {
@@ -1385,7 +1418,7 @@ impl NativeVideoManager {
 
                 // ===== PASO 7: Enviar imagen a UI (30 FPS) =====
                 let show_debug = show_debug_ref.load(Ordering::SeqCst);
-                if last_ui_time.elapsed().as_millis() > 33 {
+                if last_ui_time.elapsed().as_millis() > 33 || preview_todo_ref.load(Ordering::Relaxed) {
                     // Convertir a RGB solo para visualización
                     let mut display = DynamicImage::ImageLuma8(combined.clone()).to_rgb8();
 
@@ -1413,8 +1446,11 @@ impl NativeVideoManager {
                     }
 
                     // Dibujar cajas de búsqueda originales
-                    let box_color_r = if yolo_box_right.is_some() { [0, 255, 0] } else { [255, 255, 0] };
-                    let box_color_l = if yolo_box_left.is_some() { [0, 255, 0] } else { [255, 255, 0] };
+                    // Verde = caja de la IA, amarillo = zona manual, magenta = la IA
+                    // da el ojo por cerrado.
+                    let color_caja = |cerrado: bool, ia: bool| if cerrado { [230, 0, 230] } else if ia { [0, 255, 0] } else { [255, 255, 0] };
+                    let box_color_r = color_caja(ia_cerrado[0], yolo_box_right.is_some());
+                    let box_color_l = color_caja(ia_cerrado[1], yolo_box_left.is_some());
 
                     Self::draw_box(&mut display, search_box_right, box_color_r);
                     Self::draw_box(&mut display, search_box_left, box_color_l);
