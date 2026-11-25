@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = ["crates/siev-tracking", "crates/siev-vng"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["SIEV Team"]
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+
+# El seguimiento corre a 120-240 fps: optimizar dependencias incluso en debug.
+[profile.dev.package."*"]
+opt-level = 2

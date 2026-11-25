@@ -1,0 +1,10 @@
+[package]
+name = "siev-vng"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+eframe = "0.37.0"
+egui_plot = "0.38.0"
+rfd = "0.18.0"
+siev-tracking = { path = "../siev-tracking" }

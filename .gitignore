@@ -1,0 +1,22 @@
+# Rust
+target/
+*.rs.bk
+
+# Editores / SO
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Datos locales
+/out
+*.log
+*.jsonl
+!crates/siev-tracking/tests/fixtures/*.jsonl
+
+# Modelos ONNX (no se versionan)
+*.onnx
+
+# Secuencias de referencia: se reconstruyen con fixtures/README.md
+fixtures/*/
