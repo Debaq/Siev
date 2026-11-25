@@ -4,6 +4,8 @@
 //! lado y trazados abajo. Los ajustes tecnicos viven en la ventana de
 //! Configuracion (secciones desplegables) y se guardan en disco.
 
+mod calibracion;
+mod calibracion_ui;
 mod config;
 mod tema;
 
@@ -15,6 +17,7 @@ use std::time::{Duration, Instant};
 use eframe::egui::{self, Color32, ColorImage, CornerRadius, RichText, Stroke, TextureHandle, TextureOptions};
 use egui_plot::{HLine, Legend, Line, Plot, PlotPoints, Points};
 
+use calibracion::{Fuente, Historial, Registro, Resultado, Toma, TomaCero};
 use config::{Config, MetodoAuto, Roi};
 use siev_tracking::bus::{BusReceiver, EventBus, TrackEvent};
 use siev_tracking::math::processor::EyeProcessor;
@@ -86,6 +89,21 @@ struct VngApp {
     en_grados: bool,
     eje_spv: Eje,
 
+    // Calibracion
+    historial: Historial,
+    fuente: Fuente,
+    ver_calib: bool,
+    /// Ventana de estimulos abierta en el monitor del paciente.
+    estimulos: bool,
+    /// Tamaño de la ventana de estimulos en px fisicos (0 = aun no se vio).
+    tam_estimulos_px: [f64; 2],
+    regla: bool,
+    largo_regla_px: f64,
+    toma: Option<Toma>,
+    resultado: Option<Resultado>,
+    /// Cero del paciente al iniciar una prueba.
+    cero: Option<TomaCero>,
+
     /// Desarrollo: `SIEV_CAPTURA=ruta.png` guarda una captura de la ventana a
     /// los 5 s y cierra la app. Evita capturar el escritorio completo.
     captura: Option<(std::path::PathBuf, Instant, bool)>,
@@ -136,8 +154,19 @@ impl VngApp {
             en_grados: false,
             eje_spv: Eje::H,
             captura: std::env::var_os("SIEV_CAPTURA").map(|p| (p.into(), Instant::now(), false)),
+            historial: Historial::cargar(),
+            fuente: Fuente::Ninguna,
+            ver_calib: false,
+            estimulos: false,
+            tam_estimulos_px: [0.0, 0.0],
+            regla: false,
+            largo_regla_px: 700.0,
+            toma: None,
+            resultado: None,
+            cero: None,
         };
         app.refrescar_camaras();
+        app.usar_escala_por_defecto();
         app
     }
 
@@ -220,9 +249,98 @@ impl VngApp {
         self.conectar();
     }
 
+    /// Toma el cero (el paciente mira el centro) y despues arranca la prueba.
     fn iniciar_prueba(&mut self) {
         self.limpiar();
+        self.cero = Some(TomaCero::nueva());
+        self.inicio_prueba = None;
+    }
+
+    fn avanzar_cero(&mut self) {
+        let Some(c) = &self.cero else { return };
+        if !c.terminada() {
+            return;
+        }
+        let (od, oi) = c.resultado();
+        self.cero = None;
+        if let Ok(mut p) = self.procesador.lock() {
+            p.set_centers(od, oi);
+        }
+        if od.is_none() || oi.is_none() {
+            let falta = match (od, oi) {
+                (None, None) => "ambos ojos",
+                (None, _) => "el OD",
+                _ => "el OI",
+            };
+            self.mensaje = format!("Cero sin datos de {falta}: se mantiene el anterior.");
+        }
+        self.limpiar();
         self.inicio_prueba = Some(Instant::now());
+    }
+
+    // ---------------------------------------------------------------
+    // Calibracion
+    // ---------------------------------------------------------------
+
+    fn mascara(&self) -> String {
+        self.cfg.camara.nombre.clone()
+    }
+
+    /// Escala de fabrica: mediana de las ultimas calibraciones de esta mascara.
+    fn usar_escala_por_defecto(&mut self) {
+        match self.historial.defecto(&self.mascara()) {
+            Some((od, oi, n)) => self.aplicar_escala(Some(od), Some(oi), Fuente::PorDefecto { n }),
+            None => self.aplicar_escala(None, None, Fuente::Ninguna),
+        }
+    }
+
+    fn aplicar_escala(&mut self, od: Option<[f64; 2]>, oi: Option<[f64; 2]>, fuente: Fuente) {
+        if let Ok(mut p) = self.procesador.lock() {
+            p.set_degree_scale(od, oi);
+        }
+        // Con escala calibrada los signos ya salen en la convencion clinica.
+        self.nistagmo.set_convencion_fija(od.is_some() || oi.is_some());
+        self.fuente = fuente;
+        self.limpiar();
+    }
+
+    fn comenzar_calibracion(&mut self) {
+        let objetivos = calibracion::secuencia(&self.cfg.estacion, self.tam_estimulos_px);
+        self.resultado = None;
+        self.regla = false;
+        self.toma = Some(Toma::nueva(objetivos));
+    }
+
+    fn avanzar_calibracion(&mut self) {
+        let Some(t) = &mut self.toma else { return };
+        if t.tick() {
+            let medidas = std::mem::take(&mut t.medidas);
+            self.toma = None;
+            self.resultado = Some(calibracion::ajustar(&medidas));
+        }
+    }
+
+    fn aceptar_calibracion(&mut self) {
+        let Some(r) = self.resultado.take() else { return };
+        let (Some(od), Some(oi)) = (r.od, r.oi) else { return };
+        self.historial.agregar(Registro {
+            fecha_unix: unix_secs(),
+            mascara: self.mascara(),
+            distancia_cm: self.cfg.estacion.distancia_cm,
+            escala_od: od.escala,
+            escala_oi: oi.escala,
+            error_od: od.error_deg,
+            error_oi: oi.error_deg,
+            parcial: r.copiado.is_some() || !r.avisos.is_empty(),
+        });
+        if let Err(e) = self.historial.guardar() {
+            self.mensaje = format!("No se pudo guardar la calibracion: {e}");
+        }
+        let error = od.error_deg.max(oi.error_deg);
+        self.aplicar_escala(Some(od.escala), Some(oi.escala), Fuente::Paciente { hora: hora_local(), error });
+        if let Ok(mut p) = self.procesador.lock() {
+            p.set_centers(Some(od.centro), Some(oi.centro));
+        }
     }
 
     fn terminar_prueba(&mut self) {
@@ -312,6 +430,14 @@ impl VngApp {
 
     fn drenar_bus(&mut self, ctx: &egui::Context) {
         while let Ok(ev) = self.rx.events.try_recv() {
+            if let TrackEvent::EyeData(d) = &ev {
+                if let Some(t) = &mut self.toma {
+                    t.push(d.raw_right, d.raw_left);
+                }
+                if let Some(c) = &mut self.cero {
+                    c.push(d.raw_right, d.raw_left);
+                }
+            }
             match ev {
                 // Las primeras ~30 muestras el procesador aun no fijo su centro:
                 // la posicion salta al fijarlo y eso se veria como un latido.
@@ -412,6 +538,9 @@ impl VngApp {
                 if ui.add(egui::Button::new(RichText::new("⚙  Configuracion")).min_size(egui::vec2(0.0, 38.0))).clicked() {
                     self.ver_config = !self.ver_config;
                 }
+                if ui.add(egui::Button::new(RichText::new("◎  Calibrar")).min_size(egui::vec2(0.0, 38.0))).clicked() {
+                    self.ver_calib = !self.ver_calib;
+                }
                 ui.add_space(6.0);
 
                 let grabando = self.recorder.lock().unwrap().is_some();
@@ -425,7 +554,13 @@ impl VngApp {
                     self.alternar_grabacion();
                 }
 
-                if self.inicio_prueba.is_some() {
+                if self.cero.is_some() {
+                    ui.add_sized(
+                        egui::vec2(170.0, 38.0),
+                        egui::Label::new(RichText::new("Tomando el cero…").strong().color(AMBAR)),
+                    )
+                    .on_hover_text("El paciente mira el punto central. La prueba empieza sola.");
+                } else if self.inicio_prueba.is_some() {
                     let b = egui::Button::new(RichText::new("■  Terminar prueba").strong()).min_size(egui::vec2(170.0, 38.0));
                     if ui.add(b).clicked() {
                         self.terminar_prueba();
@@ -497,9 +632,20 @@ impl VngApp {
                     self.tarjeta_ojo(ui, ojo, alto_tarjeta);
                 }
                 ui.horizontal(|ui| {
-                    if !self.en_grados {
-                        ui.label(RichText::new("● Sin calibracion: valores en px").small().color(AMBAR));
-                    }
+                    let (txt, color, ayuda) = match &self.fuente {
+                        Fuente::Ninguna => ("● Sin calibracion: valores en px".to_string(), AMBAR, "Calibrar al menos una vez con esta mascara."),
+                        Fuente::PorDefecto { n } => (
+                            format!("● Calibracion por defecto (mediana de {n})"),
+                            AMBAR,
+                            "Escala tipica de esta mascara. Calibrar al paciente para medir ganancias de sacadas y seguimiento.",
+                        ),
+                        Fuente::Paciente { hora, error } => (
+                            format!("● Calibrado {hora} · error {error:.1}°"),
+                            VERDE,
+                            "Escala medida con este paciente.",
+                        ),
+                    };
+                    ui.label(RichText::new(txt).small().color(color)).on_hover_text(ayuda);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.small_button("Reiniciar analisis").clicked() {
                             self.nistagmo.reiniciar();
@@ -793,9 +939,11 @@ impl VngApp {
                             self.nistagmo.ventana_s = a.ventana_s;
                             cambio = true;
                         }
+                        let fija = self.fuente != Fuente::Ninguna;
                         if ui
-                            .checkbox(&mut a.espejar_h, "Invertir derecha/izquierda")
+                            .add_enabled(!fija, egui::Checkbox::new(&mut a.espejar_h, "Invertir derecha/izquierda"))
                             .on_hover_text("Si al mirar a la derecha la traza horizontal baja, activar. Reinicia el analisis.")
+                            .on_disabled_hover_text("La calibracion ya fija la direccion de cada eje.")
                             .changed()
                         {
                             self.nistagmo.set_espejar_h(a.espejar_h);
@@ -917,6 +1065,8 @@ impl eframe::App for VngApp {
         self.drenar_bus(&ctx);
         self.en_grados = self.procesador.lock().map(|p| p.has_degree_mapping()).unwrap_or(false);
         self.mantener_camara();
+        self.avanzar_cero();
+        self.avanzar_calibracion();
         if self.sensor_pendiente {
             self.sensor_pendiente = false;
             self.aplicar_sensor();
@@ -958,6 +1108,8 @@ impl eframe::App for VngApp {
             });
 
         self.ventana_config(&ctx);
+        self.ventana_calibracion(&ctx);
+        self.pantalla_estimulos(&ctx);
         self.captura_desarrollo(&ctx);
     }
 
@@ -1036,6 +1188,10 @@ fn editor_roi(ui: &mut egui::Ui, r: &mut Roi) -> bool {
     c |= ui.add(egui::Slider::new(&mut r.nasal, 0.0..=1.0).text("Nasal")).changed();
     c |= ui.add(egui::Slider::new(&mut r.temporal, 0.0..=1.0).text("Temporal")).changed();
     c
+}
+
+fn hora_local() -> String {
+    chrono::Local::now().format("%H:%M").to_string()
 }
 
 fn unix_secs() -> u64 {

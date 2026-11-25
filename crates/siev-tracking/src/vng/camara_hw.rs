@@ -45,7 +45,11 @@ pub struct ControlHw {
 pub fn listar(indice: u32) -> Result<Vec<ControlHw>, String> {
     use v4l::control::Value;
     let dev = v4l::Device::new(indice as usize).map_err(|e| e.to_string())?;
-    let desc = dev.query_controls().map_err(|e| e.to_string())?;
+    // v4l 0.14 hace unwrap() con tipos de control que no conoce (p. ej. la
+    // camara integrada de un notebook): eso no debe botar la app.
+    let desc = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dev.query_controls()))
+        .map_err(|_| "la camara expone controles que v4l no reconoce".to_string())?
+        .map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     for (id, nombre) in OFRECIDOS {
         let Some(d) = desc.iter().find(|d| d.id == id) else { continue };

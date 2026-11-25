@@ -4286,6 +4286,7 @@ dependencies = [
 name = "siev-vng"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "eframe",
  "egui_plot",
  "image",

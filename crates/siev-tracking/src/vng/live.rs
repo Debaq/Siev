@@ -95,6 +95,9 @@ pub struct LiveNystagmus {
     min_amplitud: f64,
     pub ventana_s: f64,
     pub espejar_h: bool,
+    /// La entrada ya viene en grados con la convencion de signos aplicada
+    /// (calibracion contra estimulos): no espejar ni invertir.
+    convencion_fija: bool,
     historial: VecDeque<LatidoVivo>,
     totales: [[usize; 2]; 2],
     t_actual: f64,
@@ -109,6 +112,7 @@ impl LiveNystagmus {
             min_amplitud,
             ventana_s: 10.0,
             espejar_h: false,
+            convencion_fija: false,
             historial: VecDeque::new(),
             totales: [[0; 2]; 2],
             t_actual: 0.0,
@@ -131,6 +135,9 @@ impl LiveNystagmus {
     /// Lleva una posicion del procesador (centrada, x derecha / y abajo) a la
     /// convencion de este modulo.
     pub fn a_convencion(&self, p: [f64; 2]) -> [f64; 2] {
+        if self.convencion_fija {
+            return p;
+        }
         let x = if self.espejar_h { -p[0] } else { p[0] };
         [x, -p[1]]
     }
@@ -139,6 +146,14 @@ impl LiveNystagmus {
     pub fn set_espejar_h(&mut self, v: bool) {
         if v != self.espejar_h {
             self.espejar_h = v;
+            self.reiniciar();
+        }
+    }
+
+    /// Ver `convencion_fija`. Cambiarla reinicia el analisis.
+    pub fn set_convencion_fija(&mut self, v: bool) {
+        if v != self.convencion_fija {
+            self.convencion_fija = v;
             self.reiniciar();
         }
     }

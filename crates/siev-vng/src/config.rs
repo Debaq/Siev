@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use crate::calibracion::Estacion;
 use siev_tracking::vng::camara_hw;
 use siev_tracking::vng::mejoras::OpcionesDetector;
 use siev_tracking::vng::native_video::NativeVideoManager;
@@ -20,6 +21,7 @@ pub struct Config {
     pub detector: Detector,
     pub analisis: Analisis,
     pub ia: Ia,
+    pub estacion: Estacion,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -183,13 +185,18 @@ impl Default for Analisis {
     }
 }
 
+/// `~/.config/siev-vng` (o `$XDG_CONFIG_HOME/siev-vng`).
+pub fn dir_config() -> PathBuf {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .unwrap_or_else(|| PathBuf::from("."));
+    base.join("siev-vng")
+}
+
 impl Config {
     fn ruta() -> PathBuf {
-        let base = std::env::var_os("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-            .unwrap_or_else(|| PathBuf::from("."));
-        base.join("siev-vng").join("config.json")
+        dir_config().join("config.json")
     }
 
     pub fn cargar() -> Self {

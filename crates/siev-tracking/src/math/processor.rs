@@ -23,6 +23,12 @@ pub struct ProcessedEyeData {
     pub right: Option<[f64; 2]>,
     pub timestamp: f64,
     pub is_calibrated: bool,
+    /// Posicion de la pupila en px de imagen, sin centrar, filtrar ni escalar.
+    /// La usa el asistente de calibracion.
+    #[serde(default)]
+    pub raw_left: Option<[f64; 2]>,
+    #[serde(default)]
+    pub raw_right: Option<[f64; 2]>,
 }
 
 // --- Manual Calibration Data (from Frontend) ---
@@ -126,6 +132,7 @@ impl EyeProcessor {
     fn process_internal(&mut self, data: RawEyeData) -> ProcessedEyeData {
         // Calculate dynamic dt
         let current_time = data.timestamp;
+        let (raw_left, raw_right) = (data.left_eye, data.right_eye);
         let dt = match self.last_timestamp {
             Some(last) => (current_time - last).max(0.001), // Min 1ms to avoid infinity
             None => 0.005, // Default for 200 FPS
@@ -145,6 +152,8 @@ impl EyeProcessor {
                 right: r,
                 timestamp: data.timestamp,
                 is_calibrated: true, // Mark as "calibrated" to show it's ready
+                raw_left,
+                raw_right,
             };
         }
 
@@ -218,6 +227,8 @@ impl EyeProcessor {
             right: processed_right,
             timestamp: data.timestamp,
             is_calibrated: self.is_calibrated,
+            raw_left,
+            raw_right,
         }
     }
 
@@ -394,6 +405,40 @@ impl EyeProcessor {
         self.kalman_right.reset();
         self.calibration_samples_left.clear();
         self.calibration_samples_right.clear();
+    }
+
+    /// Fija solo la escala (grados por px, con signo) de cada ojo y deja el
+    /// centro como este. `None` = volver a px.
+    pub fn set_degree_scale(&mut self, right: Option<[f64; 2]>, left: Option<[f64; 2]>) {
+        let m = |s: [f64; 2]| EyeCalibrationMapping { scale: Vector2::new(s[0], s[1]) };
+        self.manual_cal_right = right.map(m);
+        self.manual_cal_left = left.map(m);
+        self.kalman_left.reset();
+        self.kalman_right.reset();
+    }
+
+    /// Escala actual (derecho, izquierdo) en grados por px.
+    pub fn degree_scale(&self) -> (Option<[f64; 2]>, Option<[f64; 2]>) {
+        let f = |c: &Option<EyeCalibrationMapping>| c.as_ref().map(|c| [c.scale.x, c.scale.y]);
+        (f(&self.manual_cal_right), f(&self.manual_cal_left))
+    }
+
+    /// Fija el cero de cada ojo (px de imagen) sin tocar la escala. Un ojo
+    /// en `None` conserva su cero anterior.
+    pub fn set_centers(&mut self, right: Option<[f64; 2]>, left: Option<[f64; 2]>) {
+        if let Some(r) = right {
+            self.right_center = Some(Vector2::new(r[0], r[1]));
+        }
+        if let Some(l) = left {
+            self.left_center = Some(Vector2::new(l[0], l[1]));
+        }
+        if self.right_center.is_some() || self.left_center.is_some() {
+            self.is_calibrated = true;
+            self.calibration_samples_left.clear();
+            self.calibration_samples_right.clear();
+        }
+        self.kalman_left.reset();
+        self.kalman_right.reset();
     }
 
     pub fn reset_calibration(&mut self) {
