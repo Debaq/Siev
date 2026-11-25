@@ -113,6 +113,12 @@ impl EyeProcessor {
         }
     }
 
+    /// true si la salida esta en grados (hay calibracion manual); si no, en
+    /// pixeles centrados.
+    pub fn has_degree_mapping(&self) -> bool {
+        self.manual_cal_left.is_some() || self.manual_cal_right.is_some()
+    }
+
     pub fn process(&mut self, data: RawEyeData) -> ProcessedEyeData {
         self.process_internal(data)
     }

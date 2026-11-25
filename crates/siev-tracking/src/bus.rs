@@ -33,7 +33,12 @@ pub struct EventBus {
 impl EventBus {
     pub fn new() -> (Self, BusReceiver) {
         // 4096 eventos ~ 20 s a 200 Hz: holgura de sobra para un repintado.
-        let (etx, erx) = mpsc::sync_channel(4096);
+        Self::new_with_capacity(4096)
+    }
+
+    /// Para corridas por lotes que drenan al final (no descartar eventos).
+    pub fn new_with_capacity(eventos: usize) -> (Self, BusReceiver) {
+        let (etx, erx) = mpsc::sync_channel(eventos);
         // Solo interesa el cuadro mas reciente.
         let (ftx, frx) = mpsc::sync_channel(2);
         (

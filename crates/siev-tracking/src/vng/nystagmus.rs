@@ -33,6 +33,9 @@ pub struct NystagmusResult {
     pub beat_count: usize,
 }
 
+/// Puntos de deflexion retenidos en modo tiempo real (solo se usan los 3 ultimos).
+const MAX_DEFLECTIONS: usize = 64;
+
 /// A detected local extremum (peak or valley)
 #[derive(Debug, Clone)]
 struct Extremum {
@@ -91,6 +94,14 @@ impl NystagmusAnalyzer {
     /// Feed a single sample (real-time). Returns a beat if one was just completed.
     pub fn push_sample(&mut self, time: f64, position: f64) -> Option<NystagmusBeat> {
         self.position_buffer.push_back((time, position));
+        // Solo se usan las ultimas `smooth_window` muestras y los ultimos 3
+        // suavizados: acotar evita que el buffer crezca sin limite en vivo.
+        while self.position_buffer.len() > self.smooth_window {
+            self.position_buffer.pop_front();
+        }
+        while self.smoothed_buffer.len() > 2 {
+            self.smoothed_buffer.pop_front();
+        }
 
         // Need at least smooth_window samples to produce a smoothed value
         if self.position_buffer.len() < self.smooth_window {
@@ -136,6 +147,11 @@ impl NystagmusAnalyzer {
         }
 
         self.deflection_points.push((curr.0, curr.1));
+        if self.deflection_points.len() > MAX_DEFLECTIONS {
+            let sobra = self.deflection_points.len() - MAX_DEFLECTIONS;
+            self.deflection_points.drain(..sobra);
+            self.last_emitted_deflection = self.last_emitted_deflection.saturating_sub(sobra);
+        }
 
         // Try to form a beat from the last 3 deflection points
         self.try_emit_beat()
@@ -145,6 +161,14 @@ impl NystagmusAnalyzer {
     fn try_emit_beat(&mut self) -> Option<NystagmusBeat> {
         let n = self.deflection_points.len();
         if n < 3 {
+            return None;
+        }
+
+        // Sin solapamiento, igual que `analyze_batch` (que avanza de a dos
+        // segmentos): el primer punto del latido nuevo no puede ser anterior
+        // al ultimo punto del latido emitido. Sin esto, cada fase lenta se
+        // contaba en dos latidos consecutivos.
+        if n - 3 < self.last_emitted_deflection {
             return None;
         }
 
@@ -162,6 +186,7 @@ impl NystagmusAnalyzer {
         }
 
         let beat = classify_beat(&seg1, &seg2, &[p0, p1, p2]);
+        self.last_emitted_deflection = n - 1;
         self.beat_count += 1;
         self.spv_sum += beat.slow_velocity.abs();
 
@@ -263,6 +288,19 @@ impl NystagmusAnalyzer {
         } else {
             0.0
         }
+    }
+
+    /// Corta la continuidad de la senal (parpadeo, perdida de pupila) sin
+    /// borrar las estadisticas acumuladas. Un latido no puede atravesar un hueco.
+    pub fn break_continuity(&mut self) {
+        self.position_buffer.clear();
+        self.smoothed_buffer.clear();
+        self.deflection_points.clear();
+        self.last_emitted_deflection = 0;
+    }
+
+    pub fn set_min_amplitude(&mut self, min_amplitude: f64) {
+        self.min_amplitude = min_amplitude;
     }
 
     pub fn reset(&mut self) {
@@ -525,6 +563,39 @@ mod tests {
         assert!(beats.len() > 0, "Real-time should detect at least some beats");
         assert!(analyzer.get_beat_count() > 0);
         assert!(analyzer.get_average_spv() > 1.0);
+    }
+
+    #[test]
+    fn test_realtime_no_double_counting() {
+        // 10 latidos reales: el modo en vivo no puede contar mas que eso, y
+        // debe coincidir (+-1) con el analisis por lotes.
+        let data = generate_sawtooth(10, 5.0, -100.0, 1.0, 0.05, 200.0);
+        let mut analyzer = NystagmusAnalyzer::new(0.5);
+        let beats: Vec<_> = data.iter().filter_map(|(t, p)| analyzer.push_sample(*t, *p)).collect();
+        let batch = NystagmusAnalyzer::analyze_batch(&data, 0.5);
+
+        assert!(beats.len() <= 10, "doble conteo: {} latidos de 10", beats.len());
+        assert!(beats.len() >= 8, "se perdieron latidos: {}", beats.len());
+        assert!((beats.len() as i64 - batch.beat_count as i64).abs() <= 1,
+            "vivo={} lotes={}", beats.len(), batch.beat_count);
+        for b in &beats {
+            assert!((b.slow_velocity - 5.0).abs() < 1.5, "SPV {:.2}", b.slow_velocity);
+            assert_eq!(b.direction, "left");
+        }
+    }
+
+    #[test]
+    fn test_break_continuity_keeps_stats() {
+        let data = generate_sawtooth(4, 5.0, -100.0, 1.0, 0.05, 200.0);
+        let mut analyzer = NystagmusAnalyzer::new(0.5);
+        for (t, p) in &data {
+            analyzer.push_sample(*t, *p);
+        }
+        let n = analyzer.get_beat_count();
+        assert!(n > 0);
+        analyzer.break_continuity();
+        assert_eq!(analyzer.get_beat_count(), n);
+        assert!(analyzer.get_deflection_points().is_empty());
     }
 
     #[test]

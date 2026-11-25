@@ -71,3 +71,57 @@ Grabacion propia de depuracion, **desde la camara**, no desde un bundle:
 Sin esos dos eventos la traza de referencia no ejercita la parte del estado
 inter-cuadro que mas se movera en la Fase 3 (congelado por parpadeo, decaimiento
 de velocidad, `lost_count`, reset del tracker).
+
+---
+
+## mascara_20261125 — grabacion cruda de la mascara (definitiva candidata)
+
+Captura directa de la camara, **antes** de cualquier recorte o ajuste: es el
+material que pedia la seccion anterior. No se versiona (gitignore `fixtures/*/`).
+
+| | |
+|---|---|
+| Camara | USB GS CAM (`/dev/video2`), MJPEG sin recomprimir |
+| Formato | 640x360 @ 210 fps nominal, 1348 cuadros en 6 s (~225 fps reales) |
+| Sensor | exposicion automatica (aperture priority), gamma 300, brillo 16, contraste 35 |
+| Contenido | mirada al frente, a los lados y parpadeos; voluntario del equipo |
+| Fecha | 2026-11-25 |
+| SHA-256 `crudo.mkv` | `5439d689fdbb98d097db2f69a9dccaad5a5ab5fc860c067d6e5e667646df44ba` |
+
+Grabacion:
+
+```bash
+ffmpeg -f v4l2 -input_format mjpeg -video_size 640x360 -framerate 210 \
+  -i /dev/video2 -t 6 -c:v copy fixtures/mascara_20261125/crudo.mkv
+```
+
+Cuadros PGM (misma regla de gris que arriba):
+
+```bash
+ffmpeg -i fixtures/mascara_20261125/crudo.mkv -fps_mode passthrough \
+  -pix_fmt gray -f image2 fixtures/mascara_20261125/pgm/%06d.pgm
+```
+
+Analisis con la geometria de la app:
+
+```bash
+SIEV_GEOM_APP=1 SIEV_MEJORAS=reflejos,semilla SIEV_YOLO=<siev_iris_r01.onnx> \
+  cargo run --release -p siev-tracking --example nistagmo_pgm -- fixtures/mascara_20261125/pgm 0 0
+```
+
+---
+
+## mascara_20261125_2min — movimientos rapidos y apertura variable
+
+Misma camara y formato que `mascara_20261125`. Exposicion automatica, gamma
+265, brillo 22, contraste 31, nitidez 26. Mirada en todas las direcciones, a
+distintas velocidades, con ojos entrecerrados, muy abiertos y parpadeos. Se
+pidieron 2 min; la grabacion se detuvo a los 63,5 s.
+
+| | |
+|---|---|
+| Cuadros | 14273 en 63,5 s (~225 fps) |
+| SHA-256 `crudo.mkv` | `eee546680964ebb13fdc044123fef77844b96e863a1e635f3d3ef9bf60bbd05e` |
+
+Mismos comandos de grabacion, extraccion y analisis que la seccion anterior
+(`-t 120`, carpeta `mascara_20261125_2min`).

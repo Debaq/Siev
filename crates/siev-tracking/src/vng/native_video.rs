@@ -22,6 +22,7 @@ use crate::storage::recorder::SessionRecorder;
 use crate::storage::video_recorder::VideoRecorder;
 // FASE 1' (andamiaje temporal, se elimina en Fase 4/5)
 use crate::vng::trace::{PgmSequence, TraceWriter, TraceRecord};
+use crate::vng::mejoras::{self, OpcionesDetector};
 use std::path::PathBuf;
 
 // V4L2 directo como fallback cuando nokhwa falla (framerates fraccionarios, etc.)
@@ -230,6 +231,8 @@ pub struct NativeVideoManager {
     erode: Arc<Mutex<[u8; 2]>>,          // [right, left]
     nose_width: Arc<Mutex<f32>>,
     eye_height: Arc<Mutex<f32>>,
+    /// Margen de la caja de iris de la IA, en fraccion del diametro del iris.
+    ia_margen: Arc<Mutex<f32>>,
     use_yolo: Arc<AtomicBool>,
     yolo_frequency: Arc<Mutex<u32>>,
     // ROI manual para cada ojo [derecho, izquierdo]
@@ -262,6 +265,42 @@ pub struct NativeVideoManager {
     velocity_margin_factor: Arc<Mutex<f32>>,
     aspect_ratio_min: Arc<Mutex<f32>>,
     aspect_ratio_max: Arc<Mutex<f32>>,
+    // Mejoras para imagen de baja calidad (apagadas = detector de referencia)
+    opciones_detector: Arc<Mutex<OpcionesDetector>>,
+}
+
+/// Hilo de inferencia: recibe el cuadro combinado mas reciente (si esta
+/// ocupado, el cuadro se descarta) y devuelve las cajas de anclaje.
+struct YoloWorker {
+    tx: std::sync::mpsc::SyncSender<GrayImage>,
+    rx: std::sync::mpsc::Receiver<Yolo26Result>,
+}
+
+impl YoloWorker {
+    fn spawn(mut session: Session) -> Self {
+        let (tx, rx_img) = std::sync::mpsc::sync_channel::<GrayImage>(1);
+        let (tx_res, rx) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            // Termina solo cuando el bucle de captura suelta el emisor.
+            while let Ok(img) = rx_img.recv() {
+                if let Some(r) = NativeVideoManager::run_yolo_inference(&mut session, &img) {
+                    if tx_res.send(r).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+        Self { tx, rx }
+    }
+
+    fn enviar(&self, img: &GrayImage) {
+        let _ = self.tx.try_send(img.clone());
+    }
+
+    /// Ultimo resultado disponible, si llego alguno desde la llamada anterior.
+    fn recibir(&self) -> Option<Yolo26Result> {
+        self.rx.try_iter().last()
+    }
 }
 
 /// Detección individual de YOLO26
@@ -279,6 +318,10 @@ struct Yolo26Result {
     eye_left: Option<[u32; 4]>,
     pupil_right: Option<(f32, f32)>,  // centro (x,y)
     pupil_left: Option<(f32, f32)>,
+    /// Detector de iris (YOLOv8): iris [cx, cy, radio]. Las cajas `eye_*`
+    /// vienen sin margen; el bucle las amplia con `ia_margen`.
+    iris_right: Option<[f32; 3]>,
+    iris_left: Option<[f32; 3]>,
 }
 
 impl NativeVideoManager {
@@ -296,6 +339,9 @@ impl NativeVideoManager {
             erode: Arc::new(Mutex::new([1, 1])),
             nose_width: Arc::new(Mutex::new(0.25)),
             eye_height: Arc::new(Mutex::new(0.25)),
+            // 0.05-0.3 rinden igual con la pista de la IA (mascara_20261125);
+            // 0.15 deja la ventana mas chica sin perder el ojo al moverse.
+            ia_margen: Arc::new(Mutex::new(0.15)),
             use_yolo: Arc::new(AtomicBool::new(false)),
             yolo_frequency: Arc::new(Mutex::new(10)),
             manual_roi_right: Arc::new(Mutex::new(ManualEyeRoi::default())),
@@ -319,6 +365,7 @@ impl NativeVideoManager {
             velocity_margin_factor: Arc::new(Mutex::new(2.0)),
             aspect_ratio_min: Arc::new(Mutex::new(0.4)),
             aspect_ratio_max: Arc::new(Mutex::new(2.5)),
+            opciones_detector: Arc::new(Mutex::new(OpcionesDetector::default())),
         }
     }
 
@@ -363,6 +410,13 @@ impl NativeVideoManager {
     pub fn set_eye_height(&self, value: f32) {
         if let Ok(mut e) = self.eye_height.lock() {
             *e = value;
+        }
+    }
+
+    /// Margen alrededor del iris detectado por la IA (fraccion del diametro).
+    pub fn set_ia_margin(&self, value: f32) {
+        if let Ok(mut e) = self.ia_margen.lock() {
+            *e = value.clamp(0.0, 1.5);
         }
     }
 
@@ -511,6 +565,7 @@ impl NativeVideoManager {
         let erode_ref = self.erode.clone();
         let nose_ref = self.nose_width.clone();
         let eye_h_ref = self.eye_height.clone();
+        let ia_margen_ref = self.ia_margen.clone();
         let use_yolo_ref = self.use_yolo.clone();
         let yolo_freq_ref = self.yolo_frequency.clone();
         let manual_roi_right_ref = self.manual_roi_right.clone();
@@ -534,6 +589,7 @@ impl NativeVideoManager {
         let velocity_margin_factor_ref = self.velocity_margin_factor.clone();
         let aspect_ratio_min_ref = self.aspect_ratio_min.clone();
         let aspect_ratio_max_ref = self.aspect_ratio_max.clone();
+        let opciones_ref = self.opciones_detector.clone();
 
         let sequence_mode = sequence.is_some();
         let work = move || {
@@ -729,7 +785,11 @@ impl NativeVideoManager {
                 .and_then(|b| b.commit_from_file(&model_path))
             {
                 Ok(s) => {
-                    println!("[SIEV] ✓ Modelo ONNX cargado exitosamente");
+                    println!(
+                        "[SIEV] ✓ Modelo ONNX cargado: entrada {} px, salidas {:?}",
+                        Self::yolo_input_size(&s),
+                        s.outputs().iter().map(|o| format!("{} {:?}", o.name(), o.dtype())).collect::<Vec<_>>()
+                    );
                     Some(s)
                 }
                 Err(e) => {
@@ -743,6 +803,11 @@ impl NativeVideoManager {
             }
 
             let mut session = session;
+            // Con camara la IA corre en su propio hilo: una inferencia tarda
+            // ~35 ms y, dentro del bucle, hacia perder cuadros (224 -> 150 fps).
+            // Con secuencias PGM sigue sincrona para que la corrida sea
+            // reproducible cuadro a cuadro.
+            let yolo_worker = if sequence_mode { None } else { session.take().map(YoloWorker::spawn) };
             let mut last_ui_time = std::time::Instant::now();
             let mut last_fps_time = std::time::Instant::now();
             let mut frame_count: u64 = 0;
@@ -762,6 +827,9 @@ impl NativeVideoManager {
             // Hints de pupila YOLO26 (centro x,y para seed del tracker)
             let mut _yolo_pupil_hint_right: Option<(f32, f32)> = None;
             let mut _yolo_pupil_hint_left: Option<(f32, f32)> = None;
+            // Pista de la IA: centro y radio del iris [cx, cy, r]
+            let mut pista_right: Option<[f32; 3]> = None;
+            let mut pista_left: Option<[f32; 3]> = None;
 
             // Variables de estado persistente para matemáticas refinadas
             let mut last_threshold_right = 40u8;
@@ -989,6 +1057,7 @@ impl NativeVideoManager {
                 let velocity_margin_factor_val = *velocity_margin_factor_ref.lock().unwrap();
                 let aspect_ratio_min_val = *aspect_ratio_min_ref.lock().unwrap();
                 let aspect_ratio_max_val = *aspect_ratio_max_ref.lock().unwrap();
+                let opciones_val = *opciones_ref.lock().unwrap();
 
                 // ===== PASO 1: Extraer ROIs de ambos ojos =====
                 let roi_nose = (w as f32 * nose_w) as u32;
@@ -1071,16 +1140,52 @@ impl NativeVideoManager {
                 // ===== PASO 3: Ejecutar YOLO cada N frames =====
                 let use_yolo = use_yolo_ref.load(Ordering::SeqCst);
                 if use_yolo {
+                    let mut resultado = None;
                     if let Some(ref mut sess) = session {
                         if frame_count % yolo_freq as u64 == 0 {
-                            if let Some(result) = Self::run_yolo_inference(sess, &combined) {
-                                yolo_box_right = result.eye_right;
-                                yolo_box_left = result.eye_left;
-                                _yolo_pupil_hint_right = result.pupil_right;
-                                _yolo_pupil_hint_left = result.pupil_left;
-                            }
+                            resultado = Self::run_yolo_inference(sess, &combined);
                         }
+                    } else if let Some(ref w) = yolo_worker {
+                        if frame_count % yolo_freq as u64 == 0 {
+                            w.enviar(&combined);
+                        }
+                        resultado = w.recibir();
                     }
+                    if let Some(result) = resultado {
+                        if result.iris_right.is_some() || result.iris_left.is_some() {
+                            // Detector de iris: caja = iris + margen, sin cruzar
+                            // a la mitad del otro ojo.
+                            let margen = *ia_margen_ref.lock().unwrap();
+                            let (cw, ch) = (combined.width() as f32, combined.height() as f32);
+                            let mitad = cw / 2.0;
+                            let ampliar = |iris: Option<[f32; 3]>, izq: f32, der: f32| -> Option<[u32; 4]> {
+                                let [cx, cy, r] = iris?;
+                                let m = r * (1.0 + 2.0 * margen);
+                                let b = [
+                                    (cx - m).clamp(izq, der),
+                                    (cy - m).clamp(0.0, ch),
+                                    (cx + m).clamp(izq, der),
+                                    (cy + m).clamp(0.0, ch),
+                                ];
+                                (b[2] - b[0] >= 8.0 && b[3] - b[1] >= 8.0).then(|| b.map(|v| v as u32))
+                            };
+                            yolo_box_right = ampliar(result.iris_right, 0.0, mitad);
+                            yolo_box_left = ampliar(result.iris_left, mitad, cw);
+                            pista_right = result.iris_right;
+                            pista_left = result.iris_left;
+                        } else {
+                            yolo_box_right = result.eye_right;
+                            yolo_box_left = result.eye_left;
+                        }
+                        _yolo_pupil_hint_right = result.pupil_right;
+                        _yolo_pupil_hint_left = result.pupil_left;
+                    }
+                } else {
+                    // IA apagada: nada de cajas ni pistas viejas.
+                    yolo_box_right = None;
+                    yolo_box_left = None;
+                    pista_right = None;
+                    pista_left = None;
                 }
 
                 // ===== PASO 4: Definir regiones de búsqueda de pupila =====
@@ -1131,6 +1236,8 @@ impl NativeVideoManager {
                     velocity_margin_factor_val,
                     aspect_ratio_min_val,
                     aspect_ratio_max_val,
+                    opciones_val,
+                    pista_right,
                 );
                 // Actualizar estado de tracking (ojo derecho)
                 if let Some(ref pr) = pupil_right {
@@ -1195,6 +1302,8 @@ impl NativeVideoManager {
                     velocity_margin_factor_val,
                     aspect_ratio_min_val,
                     aspect_ratio_max_val,
+                    opciones_val,
+                    pista_left,
                 );
                 // Actualizar estado de tracking (ojo izquierdo)
                 if let Some(ref pl) = pupil_left {
@@ -1314,6 +1423,12 @@ impl NativeVideoManager {
                     Self::draw_label(&mut display, search_box_right[0] + 2, search_box_right[1] + 2, "OD", [255, 0, 0]);
                     Self::draw_label(&mut display, search_box_left[0] + 2, search_box_left[1] + 2, "OI", [0, 191, 255]);
 
+                    // Pista de la IA: cruz fina verde en el centro del iris
+                    for p in [pista_right, pista_left].into_iter().flatten() {
+                        let (cx, cy, r) = (p[0].max(0.0) as u32, p[1].max(0.0) as u32, (p[2] * 0.35).max(4.0) as u32);
+                        Self::draw_crosshair(&mut display, cx, cy, r, [0, 200, 90]);
+                    }
+
                     // Dibujar pupilas detectadas
                     if let Some(pr) = last_pupil_right {
                         if pr.found {
@@ -1430,26 +1545,42 @@ impl NativeVideoManager {
     }
 
     /// Ejecuta inferencia YOLO26 y retorna detecciones de ojos y pupilas
+    /// Lado de la entrada cuadrada del modelo (640 para YOLO26, 320 para
+    /// siev_iris_r01). Si la dimension es dinamica, 640.
+    fn yolo_input_size(session: &Session) -> u32 {
+        session
+            .inputs()
+            .first()
+            .and_then(|i| i.dtype().tensor_shape())
+            .and_then(|s| s.get(2).copied())
+            .filter(|d| *d > 0)
+            .map(|d| d as u32)
+            .unwrap_or(640)
+    }
+
     fn run_yolo_inference(session: &mut Session, img: &GrayImage) -> Option<Yolo26Result> {
         let (orig_w, orig_h) = (img.width() as f32, img.height() as f32);
+        let lado = Self::yolo_input_size(session);
+        let lado_f = lado as f32;
+        let lado_us = lado as usize;
 
         // Letterboxing: mantener proporción y añadir padding gris (114,114,114)
-        let scale = (640.0 / orig_w).min(640.0 / orig_h);
+        let scale = (lado_f / orig_w).min(lado_f / orig_h);
         let new_w = (orig_w * scale) as u32;
         let new_h = (orig_h * scale) as u32;
-        let pad_x = (640 - new_w) / 2;
-        let pad_y = (640 - new_h) / 2;
+        let pad_x = (lado - new_w) / 2;
+        let pad_y = (lado - new_h) / 2;
 
         // Redimensionar manteniendo proporción
         let resized = image::imageops::resize(img, new_w, new_h, image::imageops::FilterType::Triangle);
 
-        // Crear imagen 640x640 con padding gris (114,114,114)
-        let mut input = Array4::<f32>::zeros((1, 3, 640, 640));
+        // Crear imagen cuadrada con padding gris (114,114,114)
+        let mut input = Array4::<f32>::zeros((1, 3, lado_us, lado_us));
         let gray_val = 114.0 / 255.0;
 
         // Llenar con gris
-        for y in 0..640 {
-            for x in 0..640 {
+        for y in 0..lado_us {
+            for x in 0..lado_us {
                 input[[0, 0, y, x]] = gray_val;
                 input[[0, 1, y, x]] = gray_val;
                 input[[0, 2, y, x]] = gray_val;
@@ -1487,10 +1618,17 @@ impl NativeVideoManager {
             None => return None
         };
 
-        // Validar shape YOLO26: [1, 300, 6]
         let shape = output.shape();
+
+        // YOLOv8 crudo: [1, 4 + clases, anclas], sin NMS (p. ej. siev_iris_r01:
+        // [1, 5, 2100], una clase "iris"). Se usa la clase 0 como ancla del ojo.
+        if shape.len() == 3 && shape[1] >= 5 && shape[2] > shape[1] {
+            return Self::parse_yolov8_iris(&output.view(), scale, pad_x as f32, pad_y as f32, orig_w, orig_h);
+        }
+
+        // Validar shape YOLO26: [1, 300, 6]
         if shape.len() != 3 || shape[2] != 6 {
-            eprintln!("[YOLO26] Shape inesperado: {:?} (esperado [1, 300, 6])", shape);
+            eprintln!("[YOLO] Shape inesperado: {:?} (YOLO26 [1, 300, 6] o YOLOv8 [1, 4+C, N])", shape);
             return None;
         }
 
@@ -1589,7 +1727,54 @@ impl NativeVideoManager {
             eye_left: Some(eye_left_box),
             pupil_right,
             pupil_left,
+            iris_right: None,
+            iris_left: None,
         })
+    }
+
+    /// Salida YOLOv8 de un detector de iris: la mejor caja de cada mitad de la
+    /// imagen combinada (mitad izquierda = OD, derecha = OI), sin margen. El
+    /// bucle la amplia (`ia_margen`) y usa el centro del iris como pista.
+    fn parse_yolov8_iris(
+        out: &ndarray::ArrayViewD<'_, f32>,
+        scale: f32,
+        pad_x: f32,
+        pad_y: f32,
+        orig_w: f32,
+        orig_h: f32,
+    ) -> Option<Yolo26Result> {
+        const CONF_MIN: f32 = 0.25;
+        let n = out.shape()[2];
+        let mitad = orig_w / 2.0;
+        // (confianza, [x1, y1, x2, y2]) por mitad
+        let mut mejor: [Option<(f32, [f32; 4])>; 2] = [None, None];
+
+        for i in 0..n {
+            let conf = out[[0, 4, i]];
+            if conf < CONF_MIN {
+                continue;
+            }
+            let (cx, cy) = ((out[[0, 0, i]] - pad_x) / scale, (out[[0, 1, i]] - pad_y) / scale);
+            let (w, h) = (out[[0, 2, i]] / scale, out[[0, 3, i]] / scale);
+            let lado = if cx < mitad { 0 } else { 1 };
+            if mejor[lado].is_none_or(|(c, _)| conf > c) {
+                mejor[lado] = Some((conf, [cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0]));
+            }
+        }
+
+        let iris = |lado: usize| -> Option<[f32; 3]> {
+            let (_, [x1, y1, x2, y2]) = mejor[lado]?;
+            Some([(x1 + x2) / 2.0, (y1 + y2) / 2.0, (x2 - x1).max(y2 - y1) / 2.0])
+        };
+        let caja = |lado: usize| -> Option<[u32; 4]> {
+            let (_, b) = mejor[lado]?;
+            Some(b.map(|v| v.clamp(0.0, orig_w.max(orig_h)) as u32))
+        };
+        let (iris_right, iris_left) = (iris(0), iris(1));
+        if iris_right.is_none() && iris_left.is_none() {
+            return None;
+        }
+        Some(Yolo26Result { eye_right: caja(0), eye_left: caja(1), pupil_right: None, pupil_left: None, iris_right, iris_left })
     }
 
     /// Detector de pupila optimizado con Precisión Sub-píxel, Tracking y Centroide Ponderado
@@ -1612,6 +1797,8 @@ impl NativeVideoManager {
         velocity_margin_factor: f32,
         aspect_ratio_min: f32,
         aspect_ratio_max: f32,
+        opciones: OpcionesDetector,
+        pista: Option<[f32; 3]>,
     ) -> Option<RustPupilResult> {
         let (x1, y1, x2, y2) = (roi[0], roi[1], roi[2], roi[3]);
         let full_rw = x2 - x1;
@@ -1668,10 +1855,24 @@ impl NativeVideoManager {
             }
         }
 
+        if opciones.quitar_reflejos {
+            mejoras::quitar_reflejos(scratch_gray);
+        }
+
         let blurred = gaussian_blur_f32(scratch_gray, smooth_sigma);
 
         // --- UMBRAL ESTABILIZADO (Histéresis) ---
-        let current_thresh_val = if manual_threshold == 0 {
+        let valle = if manual_threshold == 0 {
+            let v = if opciones.umbral_valle { mejoras::umbral_por_valle(&blurred) } else { None };
+            v.or_else(|| if opciones.umbral_semilla { mejoras::umbral_por_semilla(&blurred, min_area_param) } else { None })
+        } else {
+            None
+        };
+        let current_thresh_val = if let Some(raw_val) = valle {
+            let final_val = ((*last_threshold as f32 * 0.8) + (raw_val as f32 * 0.2)) as u8;
+            *last_threshold = final_val;
+            final_val
+        } else if manual_threshold == 0 {
             let mut hist = [0u32; 256];
             let skip = if search_w > 100 { 2 } else { 1 };
             for (i, p) in blurred.pixels().enumerate() {
@@ -1783,7 +1984,11 @@ impl NativeVideoManager {
             let perimeter_val = perimeter(&contour.points);
             if perimeter_val == 0.0 { continue; }
             let circularity = (4.0 * std::f32::consts::PI * area) / (perimeter_val.powi(2) as f32);
-            if circularity < min_circularity { continue; }
+            // Con pista de la IA se toleran formas menos redondas (pupila
+            // ovalada al mirar a los lados, parpado encima), pero solo si el
+            // candidato cae dentro del iris (se verifica abajo).
+            let relajado = circularity < min_circularity;
+            if relajado && (pista.is_none() || circularity < min_circularity * 0.6) { continue; }
 
             // Calcular centroide antes del score (necesario para proximidad)
             let center_x = if weight_sum > 0.0 { m10_w / weight_sum } else { 0.0 };
@@ -1799,6 +2004,21 @@ impl NativeVideoManager {
                abs_cy - (y1 as f32) < edge_margin || (y2 as f32) - abs_cy < edge_margin {
                 continue;
             }
+
+            // Pista de la IA: el centro de la pupila esta cerca del centro del iris.
+            let bonus_pista = if let Some([px, py, pr]) = pista {
+                let d2 = (abs_cx - px).powi(2) + (abs_cy - py).powi(2);
+                if relajado && d2 > pr * pr {
+                    continue;
+                }
+                let sigma = pr.max(6.0);
+                0.4 + 0.6 * (-d2 / (2.0 * sigma * sigma)).exp()
+            } else {
+                if relajado {
+                    continue;
+                }
+                1.0
+            };
 
             // Bonus de proximidad: preferir candidatos cerca de la posición predicha
             let proximity_bonus = if let Some(prev) = prev_pupil {
@@ -1817,7 +2037,7 @@ impl NativeVideoManager {
                 1.0
             };
 
-            let score = area * circularity * darkness_factor * (0.3 + 0.7 * proximity_bonus);
+            let score = area * circularity * darkness_factor * (0.3 + 0.7 * proximity_bonus) * bonus_pista;
 
             if score > max_score {
                 let radius = (area / std::f32::consts::PI).sqrt();
@@ -1943,6 +2163,19 @@ impl NativeVideoManager {
                     }
                 }
             }
+        }
+    }
+
+    /// Quitar reflejos y umbral automatico por valle (ver `vng::mejoras`).
+    pub fn set_detector_options(&self, opciones: OpcionesDetector) {
+        if let Ok(mut o) = self.opciones_detector.lock() {
+            if *o != opciones {
+                println!(
+                    "[DETECTOR] reflejos={} umbral_valle={} umbral_semilla={}",
+                    opciones.quitar_reflejos, opciones.umbral_valle, opciones.umbral_semilla
+                );
+            }
+            *o = opciones;
         }
     }
 
