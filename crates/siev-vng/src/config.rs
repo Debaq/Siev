@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use crate::calibracion::Estacion;
 use siev_tracking::vng::camara_hw;
+use siev_tracking::vng::equipo::ResultadoEquipo;
 use siev_tracking::vng::mejoras::OpcionesDetector;
 use siev_tracking::vng::native_video::NativeVideoManager;
 
@@ -22,6 +23,8 @@ pub struct Config {
     pub analisis: Analisis,
     pub ia: Ia,
     pub estacion: Estacion,
+    /// Resultado de la prueba del equipo (None = sin medir).
+    pub equipo: Option<ResultadoEquipo>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -204,8 +207,8 @@ impl Config {
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
-        // Sin modelo configurado: usar el de iris si esta disponible.
-        if cfg.ia.modelo.is_empty() {
+        // Sin modelo configurado, o con el YOLO anterior: usar el propio si esta.
+        if cfg.ia.modelo.is_empty() || cfg.ia.modelo.ends_with("siev_iris_r01.onnx") {
             if let Some(m) = buscar_modelo() {
                 cfg.ia.modelo = m;
                 cfg.ia.usar = true;
@@ -275,23 +278,36 @@ impl Config {
     }
 }
 
-/// Busca el detector de iris siev_iris_r01.onnx (no se versiona: licencia
-/// AGPL de Ultralytics y 12 MB). Orden: `SIEV_MODELO`, `./models/`, y el
-/// repositorio hermano `siev_vng_models` junto a este proyecto.
+/// Busca el modelo de la IA: primero el propio `siev_ojo_r03.bin` (MIT,
+/// inferencia en Rust), si no el detector `siev_iris_r01.onnx` (AGPL). Orden de
+/// carpetas: `SIEV_MODELO`, `./models/`, junto al ejecutable y el repositorio
+/// hermano `siev_vng_models`.
 fn buscar_modelo() -> Option<String> {
-    const NOMBRE: &str = "siev_iris_r01.onnx";
-    let mut candidatos: Vec<PathBuf> = Vec::new();
     if let Some(m) = std::env::var_os("SIEV_MODELO") {
-        candidatos.push(m.into());
+        let p = PathBuf::from(m);
+        if p.is_file() {
+            return p.canonicalize().ok().map(|p| p.display().to_string());
+        }
     }
-    candidatos.push(PathBuf::from("models").join(NOMBRE));
+    ["siev_ojo_r03.bin", "siev_iris_r01.onnx"].into_iter().find_map(buscar_recurso)
+}
+
+/// Clip MJPEG de la mascara para la prueba del equipo.
+pub fn buscar_clip_equipo() -> Option<String> {
+    buscar_recurso("clip_equipo.mjpeg")
+}
+
+/// Archivo de recursos (no versionado) en `./models/`, junto al ejecutable o
+/// en el repositorio hermano `siev_vng_models`.
+fn buscar_recurso(nombre: &str) -> Option<String> {
+    let mut candidatos: Vec<PathBuf> = vec![PathBuf::from("models").join(nombre)];
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            candidatos.push(dir.join("models").join(NOMBRE));
+            candidatos.push(dir.join("models").join(nombre));
         }
     }
     // <proyectos>/Siev-vng/crates/siev-vng -> <proyectos>/siev_vng_models
-    candidatos.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../siev_vng_models").join(NOMBRE));
+    candidatos.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../siev_vng_models").join(nombre));
     candidatos
         .into_iter()
         .find(|p| p.is_file())

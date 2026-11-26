@@ -201,6 +201,19 @@ pub struct RustPupilResult {
     pub found: bool,
 }
 
+/// Estado del regulador de rendimiento del pipeline en vivo.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Rendimiento {
+    /// Fraccion del tiempo que el pipeline estuvo ocupado (ultimo segundo).
+    pub carga: f32,
+    /// La IA corre cada N cuadros (1 = todos).
+    pub ia_cada: u32,
+    /// Ni con la IA al minimo da abasto: hay que bajar los fps de la camara.
+    pub sobrecargado: bool,
+    /// Cuadros procesados por segundo.
+    pub fps: f32,
+}
+
 /// ROI manual para un ojo: límites superior, inferior, nasal y temporal
 /// Los valores son relativos (0.0 a 1.0) respecto al área de cada ojo en la imagen combinada
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -239,6 +252,7 @@ pub struct NativeVideoManager {
     preview_cada_cuadro: Arc<AtomicBool>,
     use_yolo: Arc<AtomicBool>,
     yolo_frequency: Arc<Mutex<u32>>,
+    rendimiento: Arc<Mutex<Rendimiento>>,
     // ROI manual para cada ojo [derecho, izquierdo]
     manual_roi_right: Arc<Mutex<ManualEyeRoi>>,
     manual_roi_left: Arc<Mutex<ManualEyeRoi>>,
@@ -350,6 +364,7 @@ impl NativeVideoManager {
             preview_cada_cuadro: Arc::new(AtomicBool::new(false)),
             use_yolo: Arc::new(AtomicBool::new(false)),
             yolo_frequency: Arc::new(Mutex::new(10)),
+            rendimiento: Arc::new(Mutex::new(Rendimiento::default())),
             manual_roi_right: Arc::new(Mutex::new(ManualEyeRoi::default())),
             manual_roi_left: Arc::new(Mutex::new(ManualEyeRoi::default())),
             smooth_sigma: Arc::new(Mutex::new(2.5)),
@@ -466,6 +481,16 @@ impl NativeVideoManager {
         let right = self.manual_roi_right.lock().map(|r| *r).unwrap_or_default();
         let left = self.manual_roi_left.lock().map(|l| *l).unwrap_or_default();
         (right, left)
+    }
+
+    /// Cada cuantos cuadros corre la IA (1 = todos). Por defecto 10.
+    /// Estado del regulador de rendimiento (con camara en vivo).
+    pub fn rendimiento(&self) -> Rendimiento {
+        *self.rendimiento.lock().unwrap()
+    }
+
+    pub fn set_yolo_frequency(&self, cada: u32) {
+        *self.yolo_frequency.lock().unwrap() = cada.max(1);
     }
 
     /// Activa o desactiva YOLO
@@ -587,6 +612,7 @@ impl NativeVideoManager {
         let preview_todo_ref = self.preview_cada_cuadro.clone();
         let use_yolo_ref = self.use_yolo.clone();
         let yolo_freq_ref = self.yolo_frequency.clone();
+        let rendimiento_ref = self.rendimiento.clone();
         let manual_roi_right_ref = self.manual_roi_right.clone();
         let manual_roi_left_ref = self.manual_roi_left.clone();
         let smooth_ref = self.smooth_sigma.clone();
@@ -799,7 +825,33 @@ impl NativeVideoManager {
 
             // Cargar modelo YOLO
             println!("[SIEV] Intentando cargar modelo: {}", model_path);
-            let session = match Session::builder()
+            // .bin = siev_ojo con inferencia propia en Rust (sin ONNX Runtime)
+            let mut ojo_rust = if model_path.ends_with(".bin") {
+                let ruta = std::path::Path::new(&model_path);
+                match super::siev_ojo::SievOjo::cargar(ruta).and_then(|a| Ok([a, super::siev_ojo::SievOjo::cargar(ruta)?])) {
+                    Ok(r) => {
+                        println!("[SIEV] ✓ siev_ojo (Rust) cargado: {}", model_path);
+                        Some(r)
+                    }
+                    Err(e) => {
+                        eprintln!("[SIEV] ✗ Error cargando siev_ojo: {e}");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            let mut buf_ojo: [Vec<f32>; 2] = [Vec::new(), Vec::new()];
+            // Un hilo por ojo para la IA (SIEV_IA_PARALELO=1). Apagado por defecto:
+            // con el recorte de 64x64 crear el hilo cuesta lo que ahorra (medido con piso_vng).
+            let ia_paralelo = std::env::var("SIEV_IA_PARALELO").is_ok_and(|v| v == "1");
+            // Modo recorte: la IA corre en 64x64 alrededor de la zona conocida (SIEV_IA_ROI=0 lo apaga).
+            let ia_roi = std::env::var("SIEV_IA_ROI").map(|v| v != "0").unwrap_or(true);
+            let (mut ia_seg, mut ia_n) = (0f64, 0u64);
+            // Suavizado temporal de la pista de la IA (quita el temblor); SIEV_IA_SUAVE=0 lo apaga.
+            let suavizar_ia = std::env::var("SIEV_IA_SUAVE").map(|v| v != "0").unwrap_or(true);
+            let mut ia_suave: [Option<[f32; 3]>; 2] = [None, None];
+            let session = if ojo_rust.is_some() { None } else { match Session::builder()
                 .and_then(|b| b.with_intra_threads(1))
                 .and_then(|b| b.commit_from_file(&model_path))
             {
@@ -815,9 +867,9 @@ impl NativeVideoManager {
                     eprintln!("[SIEV] ✗ Error cargando modelo: {:?}", e);
                     None
                 }
-            };
+            } };
 
-            if session.is_none() {
+            if session.is_none() && ojo_rust.is_none() {
                 eprintln!("[SIEV] IA no cargada. Usando modo manual. Ruta: {}", model_path);
             }
 
@@ -851,6 +903,20 @@ impl NativeVideoManager {
             let mut pista_left: Option<[f32; 3]> = None;
             // Ultimo veredicto de la IA por ojo: Some(false) = no vio el iris.
             let mut ia_visible: [Option<bool>; 2] = [None, None];
+            // Inferencias seguidas en que la IA no vio el iris (histeresis del tutor).
+            let mut ia_sin_iris: [u32; 2] = [0, 0];
+            // Regulador de rendimiento: indice en la escala de "IA cada N cuadros".
+            let (mut reg_paso, mut reg_baja) = (0usize, 0u32);
+            if !sequence_mode && ojo_rust.is_some() {
+                *yolo_freq_ref.lock().unwrap() = 1;
+            }
+            // El clasico encontro pupila (dentro de la zona) en el cuadro anterior.
+            let mut pupila_ok: [bool; 2] = [false, false];
+            // Salto de la IA lejos de la ultima zona: candidato y cuantas veces se repitio.
+            let mut ia_candidato: [Option<([f32; 3], u32)>; 2] = [None, None];
+            // Ancla de cada ojo: posicion media del iris confirmada por IA + pupila.
+            // La mascara va fija a la cabeza: el ojo no se mueve en la imagen.
+            let mut ia_ancla: [Option<[f32; 3]>; 2] = [None, None];
 
             // Variables de estado persistente para matemáticas refinadas
             let mut last_threshold_right = 40u8;
@@ -870,18 +936,31 @@ impl NativeVideoManager {
 
             'capture_loop: while running.load(Ordering::SeqCst) {
                 // FASE 1': si hay secuencia en disco, sustituye a la camara
+                // Clip MJPEG: los bytes pasan por el mismo decode que la camara.
+                let mut seq_jpeg: Option<(Vec<u8>, f64)> = None;
                 let seq_frame: Option<(GrayImage, f64)> = if let Some(ref mut s) = seq {
-                    match s.next_frame() {
-                        Some(v) => Some(v),
-                        None => break 'capture_loop,  // secuencia agotada
+                    if s.es_jpeg() {
+                        match s.next_jpeg() {
+                            Some(v) => seq_jpeg = Some(v),
+                            None => break 'capture_loop,
+                        }
+                        None
+                    } else {
+                        match s.next_frame() {
+                            Some(v) => Some(v),
+                            None => break 'capture_loop,  // secuencia agotada
+                        }
                     }
                 } else {
                     None
                 };
+                let t_seq_jpeg = seq_jpeg.as_ref().map(|(_, t)| *t);
 
                 // Capturar frame desde nokhwa o v4l
                 let frame_bytes: Vec<u8> = if seq_frame.is_some() {
                     Vec::new()
+                } else if let Some((b, _)) = seq_jpeg {
+                    b
                 } else if let Some(ref mut cam) = nokhwa_camera {
                     match cam.frame() {
                         Ok(f) => {
@@ -1162,7 +1241,26 @@ impl NativeVideoManager {
                 let use_yolo = use_yolo_ref.load(Ordering::SeqCst);
                 if use_yolo {
                     let mut respuesta: Option<Option<Yolo26Result>> = None;
-                    if let Some(ref mut sess) = session {
+                    if let Some(ref mut red) = ojo_rust {
+                        if frame_count % yolo_freq as u64 == 0 {
+                            // centro del recorte: ultima zona del iris o el ancla; si la IA
+                            // lleva rato sin ver el iris, cada 20 cuadros mira la mitad entera.
+                            let centro = |k: usize, pista: Option<[f32; 3]>| -> Option<(f32, f32)> {
+                                if !ia_roi || (ia_sin_iris[k] > 0 && ia_sin_iris[k] % 20 == 0) {
+                                    return None;
+                                }
+                                pista.or(ia_ancla[k]).map(|p| (p[0], p[1]))
+                            };
+                            let centros = [centro(0, pista_right), centro(1, pista_left)];
+                            let t_ia = std::time::Instant::now();
+                            respuesta = Some(Self::run_siev_ojo_rust(red, &combined, &mut buf_ojo, centros, ia_paralelo));
+                            ia_seg += t_ia.elapsed().as_secs_f64();
+                            ia_n += 1;
+                            if ia_n % 2000 == 0 {
+                                eprintln!("[IA] siev_ojo Rust: {:.3} ms por cuadro (2 ojos), {} cuadros", ia_seg * 1000.0 / ia_n as f64, ia_n);
+                            }
+                        }
+                    } else if let Some(ref mut sess) = session {
                         if frame_count % yolo_freq as u64 == 0 {
                             respuesta = Some(Self::run_yolo_inference(sess, &combined));
                         }
@@ -1172,13 +1270,39 @@ impl NativeVideoManager {
                         }
                         respuesta = w.recibir();
                     }
+                    // La IA no puede saltar lejos de la ultima zona sin confirmarlo
+                    // (p. ej. la ceja con el ojo cerrado): se acepta si repite el
+                    // lugar en IA_CONFIRMAR inferencias seguidas.
+                    if let Some(Some(ref mut res)) = respuesta {
+                        res.iris_right = Self::compuerta_salto(res.iris_right, pista_right, ia_ancla[0], &mut ia_candidato[0]);
+                        res.iris_left = Self::compuerta_salto(res.iris_left, pista_left, ia_ancla[1], &mut ia_candidato[1]);
+                        if res.iris_right.is_none() {
+                            res.eye_right = None;
+                        }
+                        if res.iris_left.is_none() {
+                            res.eye_left = None;
+                        }
+                        if res.iris_right.is_none() && res.iris_left.is_none() {
+                            respuesta = Some(None);
+                        }
+                    }
                     if let Some(ref r) = respuesta {
                         ia_visible = [
                             Some(r.as_ref().is_some_and(|x| x.iris_right.is_some() || x.eye_right.is_some())),
                             Some(r.as_ref().is_some_and(|x| x.iris_left.is_some() || x.eye_left.is_some())),
                         ];
+                        for k in 0..2 {
+                            ia_sin_iris[k] = if ia_visible[k] == Some(false) { ia_sin_iris[k] + 1 } else { 0 };
+                        }
                     }
-                    if let Some(result) = respuesta.flatten() {
+                    if matches!(respuesta, Some(None)) {
+                        ia_suave = [None, None];
+                    }
+                    if let Some(mut result) = respuesta.flatten() {
+                        if suavizar_ia {
+                            result.iris_right = Self::suavizar_iris(&mut ia_suave[0], result.iris_right);
+                            result.iris_left = Self::suavizar_iris(&mut ia_suave[1], result.iris_left);
+                        }
                         if result.iris_right.is_some() || result.iris_left.is_some() {
                             // Detector de iris: caja = iris + margen, sin cruzar
                             // a la mitad del otro ojo.
@@ -1196,10 +1320,15 @@ impl NativeVideoManager {
                                 ];
                                 (b[2] - b[0] >= 8.0 && b[3] - b[1] >= 8.0).then(|| b.map(|v| v as u32))
                             };
-                            yolo_box_right = ampliar(result.iris_right, 0.0, mitad);
-                            yolo_box_left = ampliar(result.iris_left, mitad, cw);
-                            pista_right = result.iris_right;
-                            pista_left = result.iris_left;
+                            // Ojo que la IA no ve: se conserva su ultima zona (tutor).
+                            if result.iris_right.is_some() {
+                                yolo_box_right = ampliar(result.iris_right, 0.0, mitad);
+                                pista_right = result.iris_right;
+                            }
+                            if result.iris_left.is_some() {
+                                yolo_box_left = ampliar(result.iris_left, mitad, cw);
+                                pista_left = result.iris_left;
+                            }
                         } else {
                             yolo_box_right = result.eye_right;
                             yolo_box_left = result.eye_left;
@@ -1245,12 +1374,24 @@ impl NativeVideoManager {
                 };
 
                 // ===== PASO 5: Detectar pupilas con Predicción + Validación =====
-                // IA como juez: ojo que la IA no ve = cerrado (estado parpadeo).
+                // IA como tutora, no juez absoluto. Tres estados por ojo:
+                //  - IA ve el iris: circulo verde, el clasico busca dentro.
+                //  - IA perdida (no lo ve): circulo magenta en la ultima zona y
+                //    el clasico sigue buscando ahi.
+                //  - Ojo cerrado: IA_HISTERESIS inferencias seguidas sin iris Y
+                //    el clasico sin pupila en el cuadro anterior. No se busca ni
+                //    se dibuja nada.
+                // La pupila solo vale dentro del circulo del iris: si cae fuera,
+                // la marca desaparece en vez de saltar a otro lado.
+                const IA_HISTERESIS: u32 = 5;
                 let juez = ia_juez_ref.load(Ordering::SeqCst);
-                let ia_cerrado = [juez && ia_visible[0] == Some(false), juez && ia_visible[1] == Some(false)];
+                let ia_cerrado = [
+                    juez && ia_sin_iris[0] >= IA_HISTERESIS && !pupila_ok[0],
+                    juez && ia_sin_iris[1] >= IA_HISTERESIS && !pupila_ok[1],
+                ];
                 let cerrado = Some(RustPupilResult { center_x: 0.0, center_y: 0.0, radius: 0.0, confidence: -1.0, found: false });
 
-                let pupil_right = if ia_cerrado[0] { cerrado } else { Self::detect_pupil_math_refined(
+                let pupil_right = if ia_cerrado[0] { cerrado } else { Self::tutor_ia(Self::detect_pupil_math_refined(
                     &combined,
                     search_box_right,
                     thresholds[0],
@@ -1271,7 +1412,7 @@ impl NativeVideoManager {
                     aspect_ratio_max_val,
                     opciones_val,
                     pista_right,
-                ) };
+                ), pista_right) };
                 // Actualizar estado de tracking (ojo derecho)
                 if let Some(ref pr) = pupil_right {
                     if pr.confidence == -1.0 {
@@ -1316,7 +1457,7 @@ impl NativeVideoManager {
                     }
                 }
 
-                let pupil_left = if ia_cerrado[1] { cerrado } else { Self::detect_pupil_math_refined(
+                let pupil_left = if ia_cerrado[1] { cerrado } else { Self::tutor_ia(Self::detect_pupil_math_refined(
                     &combined,
                     search_box_left,
                     thresholds[1],
@@ -1337,7 +1478,7 @@ impl NativeVideoManager {
                     aspect_ratio_max_val,
                     opciones_val,
                     pista_left,
-                ) };
+                ), pista_left) };
                 // Actualizar estado de tracking (ojo izquierdo)
                 if let Some(ref pl) = pupil_left {
                     if pl.confidence == -1.0 {
@@ -1380,6 +1521,54 @@ impl NativeVideoManager {
                     }
                 }
 
+                pupila_ok = [pupil_right.is_some_and(|p| p.found), pupil_left.is_some_and(|p| p.found)];
+                // IA perdida (sin cerrar): el circulo sigue a la marca matematica.
+                // Con pupila se centra en ella (radio de la IA); sin pupila avanza
+                // con la velocidad que traia la pupila (se frena sola). Siempre
+                // dentro del rango del ancla: el ojo no salta.
+                {
+                    let margen = *ia_margen_ref.lock().unwrap();
+                    let (cw, ch) = (combined.width() as f32, combined.height() as f32);
+                    let mitad = cw / 2.0;
+                    for (k, pista, caja, pupila, vel) in [
+                        (0, &mut pista_right, &mut yolo_box_right, pupil_right, velocity_right),
+                        (1, &mut pista_left, &mut yolo_box_left, pupil_left, velocity_left),
+                    ] {
+                        if ia_visible[k] == Some(true) || ia_cerrado[k] {
+                            continue;
+                        }
+                        let Some(mut p) = *pista else { continue };
+                        match pupila {
+                            Some(r) if r.found => {
+                                p[0] = r.center_x;
+                                p[1] = r.center_y;
+                            }
+                            _ => {
+                                p[0] += vel.0;
+                                p[1] += vel.1;
+                            }
+                        }
+                        if let Some(a) = ia_ancla[k] {
+                            p[0] = p[0].clamp(a[0] - 2.0 * a[2], a[0] + 2.0 * a[2]);
+                            p[1] = p[1].clamp(a[1] - a[2], a[1] + a[2]);
+                        }
+                        *pista = Some(p);
+                        ia_suave[k] = Some(p);
+                        let (izq, der) = if k == 0 { (0.0, mitad) } else { (mitad, cw) };
+                        *caja = Self::caja_iris(p, margen, izq, der, ch).or(*caja);
+                    }
+                }
+
+                // El ancla aprende solo de cuadros con IA y pupila de acuerdo.
+                for (k, pista) in [(0, pista_right), (1, pista_left)] {
+                    if let (true, Some(true), Some(p)) = (pupila_ok[k], ia_visible[k], pista) {
+                        ia_ancla[k] = Some(match ia_ancla[k] {
+                            None => p,
+                            Some(a) => std::array::from_fn(|i| a[i] + 0.01 * (p[i] - a[i])),
+                        });
+                    }
+                }
+
                 // Convertir coordenadas
                 let mut pupil_pos: [Option<[f64; 2]>; 2] = [None, None];
                 if let Some(pr) = pupil_right {
@@ -1394,9 +1583,10 @@ impl NativeVideoManager {
                     left_eye: pupil_pos[0],
                     right_eye: pupil_pos[1],
                     processed: None,
-                    timestamp: match seq_frame {
-                        Some((_, t)) => t,  // FASE 1': reloj sintetico, reproducible
-                        None => chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
+                    timestamp: match (&seq_frame, t_seq_jpeg) {
+                        (Some((_, t)), _) => *t,  // FASE 1': reloj sintetico, reproducible
+                        (None, Some(t)) => t,
+                        (None, None) => chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
                     },
                 };
 
@@ -1445,33 +1635,35 @@ impl NativeVideoManager {
                         Self::overlay_mask(&mut display, &scratch_thresh_left, box_l, [0, 191, 255], 0.5);
                     }
 
-                    // Dibujar cajas de búsqueda originales
-                    // Verde = caja de la IA, amarillo = zona manual, magenta = la IA
-                    // da el ojo por cerrado.
-                    let color_caja = |cerrado: bool, ia: bool| if cerrado { [230, 0, 230] } else if ia { [0, 255, 0] } else { [255, 255, 0] };
-                    let box_color_r = color_caja(ia_cerrado[0], yolo_box_right.is_some());
-                    let box_color_l = color_caja(ia_cerrado[1], yolo_box_left.is_some());
-
-                    Self::draw_box(&mut display, search_box_right, box_color_r);
-                    Self::draw_box(&mut display, search_box_left, box_color_l);
-
-                    // Etiquetas
-                    Self::draw_label(&mut display, search_box_right[0] + 2, search_box_right[1] + 2, "OD", [255, 0, 0]);
-                    Self::draw_label(&mut display, search_box_left[0] + 2, search_box_left[1] + 2, "OI", [0, 191, 255]);
-
-                    // Pista de la IA: cruz fina verde en el centro del iris
-                    for p in [pista_right, pista_left].into_iter().flatten() {
-                        let (cx, cy, r) = (p[0].max(0.0) as u32, p[1].max(0.0) as u32, (p[2] * 0.35).max(4.0) as u32);
-                        Self::draw_crosshair(&mut display, cx, cy, r, [0, 200, 90]);
+                    // Zona de cada ojo: circulo verde = la IA ve el iris, magenta =
+                    // IA perdida (ultima zona), caja amarilla = zona manual (sin
+                    // IA). Ojo cerrado: nada.
+                    for (k, caja, pista, etiqueta) in [
+                        (0, search_box_right, pista_right, [255, 0, 0]),
+                        (1, search_box_left, pista_left, [0, 191, 255]),
+                    ] {
+                        if ia_cerrado[k] {
+                            continue;
+                        }
+                        match pista {
+                            Some(p) => {
+                                let c = if ia_visible[k] == Some(true) { [0, 255, 0] } else { [230, 0, 230] };
+                                Self::draw_circle(&mut display, p[0], p[1], p[2], c);
+                                let (cx, cy, r) = (p[0].max(0.0) as u32, p[1].max(0.0) as u32, (p[2] * 0.35).max(4.0) as u32);
+                                Self::draw_crosshair(&mut display, cx, cy, r, c);
+                            }
+                            None => Self::draw_box(&mut display, caja, [255, 255, 0]),
+                        }
+                        Self::draw_label(&mut display, caja[0] + 2, caja[1] + 2, if k == 0 { "OD" } else { "OI" }, etiqueta);
                     }
 
-                    // Dibujar pupilas detectadas
-                    if let Some(pr) = last_pupil_right {
+                    // Dibujar pupilas detectadas EN ESTE cuadro (perdida = sin marca)
+                    if let Some(pr) = pupil_right {
                         if pr.found {
                             Self::draw_crosshair(&mut display, pr.center_x as u32, pr.center_y as u32, pr.radius as u32, [255, 0, 0]);
                         }
                     }
-                    if let Some(pl) = last_pupil_left {
+                    if let Some(pl) = pupil_left {
                         if pl.found {
                             Self::draw_crosshair(&mut display, pl.center_x as u32, pl.center_y as u32, pl.radius as u32, [0, 191, 255]);
                         }
@@ -1553,6 +1745,34 @@ impl NativeVideoManager {
                     println!("[PERF] FPS Reales: {:.1} | Latencia CPU: {:.3}ms | Carga Pipeline: {:.1}%", 
                              wall_fps, avg_proc_ms, cpu_load_percent);
 
+                    // Regulador (camara en vivo + IA propia): si el pipeline ocupa
+                    // mas del 70 % del tiempo, la IA corre cada mas cuadros (la
+                    // tutora, el ancla y el seguimiento cubren los intermedios);
+                    // bajo 40 % durante 3 s vuelve a subir.
+                    if !sequence_mode && ojo_rust.is_some() {
+                        const PASOS: [u32; 6] = [1, 2, 3, 5, 8, 10];
+                        let carga = cpu_load_percent / 100.0;
+                        if carga > 0.7 && reg_paso + 1 < PASOS.len() {
+                            reg_paso += 1;
+                            reg_baja = 0;
+                        } else if carga < 0.4 {
+                            reg_baja += 1;
+                            if reg_baja >= 3 && reg_paso > 0 {
+                                reg_paso -= 1;
+                                reg_baja = 0;
+                            }
+                        } else {
+                            reg_baja = 0;
+                        }
+                        *yolo_freq_ref.lock().unwrap() = PASOS[reg_paso];
+                        *rendimiento_ref.lock().unwrap() = Rendimiento {
+                            carga,
+                            ia_cada: PASOS[reg_paso],
+                            sobrecargado: carga > 0.9 && reg_paso + 1 == PASOS.len(),
+                            fps: wall_fps,
+                        };
+                    }
+
                     // Reiniciar contadores
                     last_fps_time = std::time::Instant::now();
                     total_proc_time = std::time::Duration::from_secs(0);
@@ -1595,6 +1815,16 @@ impl NativeVideoManager {
     }
 
     fn run_yolo_inference(session: &mut Session, img: &GrayImage) -> Option<Yolo26Result> {
+        // Modelo propio siev_ojo (entrada gris de 1 canal, tamaño libre).
+        let canales = session
+            .inputs()
+            .first()
+            .and_then(|i| i.dtype().tensor_shape())
+            .and_then(|s| s.get(1).copied())
+            .unwrap_or(3);
+        if canales == 1 {
+            return Self::run_siev_ojo(session, img);
+        }
         let (orig_w, orig_h) = (img.width() as f32, img.height() as f32);
         let lado = Self::yolo_input_size(session);
         let lado_f = lado as f32;
@@ -1766,6 +1996,253 @@ impl NativeVideoManager {
             iris_right: None,
             iris_left: None,
         })
+    }
+
+    /// Modelo propio siev_ojo (tools/modelo_ojo): red convolucional que da el
+    /// centro y radio del iris por ojo. Entrada: cada mitad de la imagen
+    /// combinada reducida 2x (la del OI espejada, lado nasal a la derecha),
+    /// rellenada a multiplos de 16. Salida [2, 4, H/4, W/4]: logit de centro,
+    /// dx, dy, r/16. Iris presente si la confianza del pico >= umbral
+    /// (`SIEV_OJO_UMBRAL`, 0,7 por defecto: con ojo cerrado r01 da ~0,6).
+    fn run_siev_ojo(session: &mut Session, img: &GrayImage) -> Option<Yolo26Result> {
+        let umbral: f32 = std::env::var("SIEV_OJO_UMBRAL").ok().and_then(|v| v.parse().ok()).unwrap_or(0.7);
+        let (w, h) = (img.width() as usize, img.height() as usize);
+        let mitad = w / 2;
+        let (hw, hh) = (mitad / 2, h / 2);
+        if hw < 8 || hh < 8 {
+            return None;
+        }
+        let (w16, h16) = (hw.div_ceil(16) * 16, hh.div_ceil(16) * 16);
+        let raw = img.as_raw();
+        let mut input = Array4::<f32>::zeros((2, 1, h16, w16));
+        for lado in 0..2 {
+            for y in 0..h16 {
+                let sy = y.min(hh - 1) * 2;
+                for x in 0..w16 {
+                    let sx = x.min(hw - 1) * 2;
+                    let mut suma = 0u32;
+                    for dy in 0..2 {
+                        for dx in 0..2 {
+                            let hx = sx + dx;
+                            let ox = if lado == 0 { hx } else { w - 1 - hx };
+                            suma += raw[(sy + dy) * w + ox] as u32;
+                        }
+                    }
+                    input[[lado, 0, y, x]] = suma as f32 / 4.0;
+                }
+            }
+        }
+        let tensor = ort::value::Value::from_array(input).ok()?;
+        let outputs = session.run(ort::inputs![tensor]).ok()?;
+        let mapa = outputs.get("mapa")?.try_extract_array::<f32>().ok()?;
+        let (ho, wo) = (mapa.shape()[2], mapa.shape()[3]);
+        let iris = |lado: usize| -> Option<[f32; 3]> {
+            let (mut mejor, mut iy, mut ix) = (f32::MIN, 0, 0);
+            for y in 0..ho {
+                for x in 0..wo {
+                    let v = mapa[[lado, 0, y, x]];
+                    if v > mejor {
+                        (mejor, iy, ix) = (v, y, x);
+                    }
+                }
+            }
+            let conf = 1.0 / (1.0 + (-mejor).exp());
+            if conf < umbral {
+                return None;
+            }
+            let cx = (ix as f32 + mapa[[lado, 1, iy, ix]]) * 8.0;
+            let cy = (iy as f32 + mapa[[lado, 2, iy, ix]]) * 8.0;
+            let r = mapa[[lado, 3, iy, ix]] * 32.0;
+            let cx = if lado == 0 { cx } else { w as f32 - cx };
+            Some([cx, cy, r.max(2.0)])
+        };
+        let (iris_right, iris_left) = (iris(0), iris(1));
+        if iris_right.is_none() && iris_left.is_none() {
+            return None;
+        }
+        let caja = |i: Option<[f32; 3]>| {
+            i.map(|[cx, cy, r]| [(cx - r).max(0.0) as u32, (cy - r).max(0.0) as u32, (cx + r) as u32, (cy + r) as u32])
+        };
+        Some(Yolo26Result {
+            eye_right: caja(iris_right),
+            eye_left: caja(iris_left),
+            pupil_right: None,
+            pupil_left: None,
+            iris_right,
+            iris_left,
+        })
+    }
+
+    /// siev_ojo con la inferencia propia en Rust (`siev_ojo.rs`). Misma
+    /// salida que `run_siev_ojo`. Una red por ojo; con `paralelo` cada ojo va
+    /// en su propio hilo.
+    /// `centros`: por ojo, centro (en la combinada) del recorte de 64x64 de red
+    /// (128x128 px de la combinada); None = mitad completa.
+    fn run_siev_ojo_rust(
+        redes: &mut [super::siev_ojo::SievOjo; 2],
+        img: &GrayImage,
+        bufs: &mut [Vec<f32>; 2],
+        centros: [Option<(f32, f32)>; 2],
+        paralelo: bool,
+    ) -> Option<Yolo26Result> {
+        static UMBRAL: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+        // 0,5: sin falsos positivos en ojos cerrados en la validacion de r02/r03
+        let umbral = *UMBRAL.get_or_init(|| std::env::var("SIEV_OJO_UMBRAL").ok().and_then(|v| v.parse().ok()).unwrap_or(0.5));
+        let [r0, r1] = redes;
+        let [b0, b1] = bufs;
+        let (iris_right, iris_left) = if paralelo {
+            std::thread::scope(|s| {
+                let h = s.spawn(|| Self::ia_un_ojo(r1, img, b1, 1, centros[1], umbral));
+                let a = Self::ia_un_ojo(r0, img, b0, 0, centros[0], umbral);
+                (a, h.join().unwrap_or(None))
+            })
+        } else {
+            (Self::ia_un_ojo(r0, img, b0, 0, centros[0], umbral), Self::ia_un_ojo(r1, img, b1, 1, centros[1], umbral))
+        };
+        if iris_right.is_none() && iris_left.is_none() {
+            return None;
+        }
+        let caja = |i: Option<[f32; 3]>| {
+            i.map(|[cx, cy, r]| [(cx - r).max(0.0) as u32, (cy - r).max(0.0) as u32, (cx + r) as u32, (cy + r) as u32])
+        };
+        Some(Yolo26Result { eye_right: caja(iris_right), eye_left: caja(iris_left), pupil_right: None, pupil_left: None, iris_right, iris_left })
+    }
+
+    /// Un ojo de siev_ojo: mitad `lado` (0 = OD, 1 = OI espejada) reducida 2x,
+    /// recorte de 64x64 alrededor de `centro` o mitad completa. Devuelve el
+    /// iris [cx, cy, r] en px de la combinada si la confianza >= umbral.
+    fn ia_un_ojo(
+        red: &mut super::siev_ojo::SievOjo,
+        img: &GrayImage,
+        buf: &mut Vec<f32>,
+        lado: usize,
+        centro: Option<(f32, f32)>,
+        umbral: f32,
+    ) -> Option<[f32; 3]> {
+        const ROI: usize = 64;
+        let (w, h) = (img.width() as usize, img.height() as usize);
+        let mitad = w / 2;
+        let (hw, hh) = (mitad / 2, h / 2);
+        if hw < 8 || hh < 8 {
+            return None;
+        }
+        let (w16, h16) = (hw.div_ceil(16) * 16, hh.div_ceil(16) * 16);
+        let raw = img.as_raw();
+        // origen (x0, y0) y tamaño de la entrada de red, en px de la mitad reducida
+        let (x0, y0, ew, eh) = match centro {
+            Some((cx, cy)) if hw >= ROI && hh >= ROI => {
+                let cxm = if lado == 0 { cx } else { w as f32 - cx } / 2.0;
+                let x0 = (cxm - ROI as f32 / 2.0).round().clamp(0.0, (hw - ROI) as f32) as usize;
+                let y0 = (cy / 2.0 - ROI as f32 / 2.0).round().clamp(0.0, (hh - ROI) as f32) as usize;
+                (x0, y0, ROI, ROI)
+            }
+            _ => (0, 0, w16, h16),
+        };
+        buf.clear();
+        buf.resize(eh * ew, 0.0);
+        for y in 0..eh {
+            let sy = (y0 + y).min(hh - 1) * 2;
+            for x in 0..ew {
+                let sx = (x0 + x).min(hw - 1) * 2;
+                let mut suma = 0u32;
+                for dy in 0..2 {
+                    for dx in 0..2 {
+                        let hx = sx + dx;
+                        let ox = if lado == 0 { hx } else { w - 1 - hx };
+                        suma += raw[(sy + dy) * w + ox] as u32;
+                    }
+                }
+                buf[y * ew + x] = suma as f32 / 4.0;
+            }
+        }
+        let (conf, cx, cy, r) = red.inferir(buf, eh, ew).pico();
+        let (cx, cy) = (cx + x0 as f32, cy + y0 as f32);
+        if conf < umbral {
+            return None;
+        }
+        let cx = cx * 2.0;
+        let cx = if lado == 0 { cx } else { w as f32 - cx };
+        Some([cx, cy * 2.0, (r * 2.0).max(2.0)])
+    }
+
+    /// La IA como tutora del detector clasico: una pupila fuera del circulo
+    /// del iris se descarta (perdida) en vez de aceptarse en otro lado.
+    fn tutor_ia(p: Option<RustPupilResult>, pista: Option<[f32; 3]>) -> Option<RustPupilResult> {
+        match (p, pista) {
+            (Some(r), Some([cx, cy, ri])) if r.found && ((r.center_x - cx).powi(2) + (r.center_y - cy).powi(2)).sqrt() > ri => {
+                Some(RustPupilResult { center_x: 0.0, center_y: 0.0, radius: 0.0, confidence: 0.0, found: false })
+            }
+            (p, _) => p,
+        }
+    }
+
+    /// Iris propuesto por la IA a mas de un radio de la ultima zona aceptada:
+    /// solo vale si se repite en el mismo lugar IA_CONFIRMAR veces seguidas.
+    /// Un ojo real no salta a la ceja; una sacada real se confirma enseguida.
+    /// Ademas, con ancla: fuera de +-2 radios en horizontal o +-1 en vertical
+    /// alrededor de ella se descarta siempre (el ojo no se mueve en la imagen).
+    fn compuerta_salto(
+        nuevo: Option<[f32; 3]>,
+        zona: Option<[f32; 3]>,
+        ancla: Option<[f32; 3]>,
+        cand: &mut Option<([f32; 3], u32)>,
+    ) -> Option<[f32; 3]> {
+        const IA_CONFIRMAR: u32 = 3;
+        let dist = |a: [f32; 3], b: [f32; 3]| ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2)).sqrt();
+        let n = nuevo?;
+        if let Some(a) = ancla {
+            if (n[0] - a[0]).abs() > 2.0 * a[2] || (n[1] - a[1]).abs() > a[2] {
+                *cand = None;
+                return None;
+            }
+        }
+        let Some(z) = zona else {
+            *cand = None;
+            return Some(n);
+        };
+        if dist(n, z) <= z[2] {
+            *cand = None;
+            return Some(n);
+        }
+        let veces = match *cand {
+            Some((c, k)) if dist(n, c) <= 0.5 * c[2].max(n[2]) => k + 1,
+            _ => 1,
+        };
+        if veces >= IA_CONFIRMAR {
+            *cand = None;
+            Some(n)
+        } else {
+            *cand = Some((n, veces));
+            None
+        }
+    }
+
+    /// Zona de busqueda alrededor de un iris [cx, cy, r]: iris + margen, sin
+    /// cruzar a la mitad del otro ojo.
+    fn caja_iris(p: [f32; 3], margen: f32, izq: f32, der: f32, alto: f32) -> Option<[u32; 4]> {
+        let [cx, cy, r] = p;
+        let m = r * (1.0 + 2.0 * margen);
+        let b = [(cx - m).clamp(izq, der), (cy - m).clamp(0.0, alto), (cx + m).clamp(izq, der), (cy + m).clamp(0.0, alto)];
+        (b[2] - b[0] >= 8.0 && b[3] - b[1] >= 8.0).then(|| b.map(|v| v as u32))
+    }
+
+    /// Suavizado adaptativo de la pista de la IA: los saltos chicos (temblor)
+    /// se amortiguan; los grandes (sacada, fase rapida) pasan casi enteros.
+    fn suavizar_iris(prev: &mut Option<[f32; 3]>, nuevo: Option<[f32; 3]>) -> Option<[f32; 3]> {
+        let Some(n) = nuevo else {
+            *prev = None;
+            return None;
+        };
+        let s = match *prev {
+            None => n,
+            Some(p) => {
+                let d = ((n[0] - p[0]).powi(2) + (n[1] - p[1]).powi(2)).sqrt();
+                let a = (d / (0.5 * p[2].max(1.0))).clamp(0.15, 1.0);
+                [p[0] + a * (n[0] - p[0]), p[1] + a * (n[1] - p[1]), p[2] + 0.1 * (n[2] - p[2])]
+            }
+        };
+        *prev = Some(s);
+        Some(s)
     }
 
     /// Salida YOLOv8 de un detector de iris: la mejor caja de cada mitad de la
@@ -2123,6 +2600,21 @@ impl NativeVideoManager {
         for y in y1..=y2.min(h - 1) {
             if x1 < w { img.put_pixel(x1, y, Rgb(color)); }
             if x2 < w { img.put_pixel(x2, y, Rgb(color)); }
+        }
+    }
+
+    /// Circulo de 2 px de grosor en buffer RGB.
+    fn draw_circle(img: &mut ImageBuffer<Rgb<u8>, Vec<u8>>, cx: f32, cy: f32, r: f32, color: [u8; 3]) {
+        let (w, h) = (img.width() as i32, img.height() as i32);
+        let pasos = ((r * 8.0) as usize).max(32);
+        for rr in [r, r + 1.0] {
+            for i in 0..pasos {
+                let a = i as f32 / pasos as f32 * std::f32::consts::TAU;
+                let (px, py) = ((cx + rr * a.cos()) as i32, (cy + rr * a.sin()) as i32);
+                if px >= 0 && px < w && py >= 0 && py < h {
+                    img.put_pixel(px as u32, py as u32, Rgb(color));
+                }
+            }
         }
     }
 

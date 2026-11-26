@@ -1,0 +1,85 @@
+# piso_vng 2026-11-26T00:43:06-03:00
+CPU: AMD Ryzen 7 PRO 4750U with Radeon Graphics | nucleos: 16 | AVX2: si | RAM: 13.4 GB
+SO: Linux 7.3.5-arch1-1-znver2 | governor: performance | enchufado: 1 | carga al inicio: 27.07
+modelo: siev_ojo_r03.bin | grabacion: mascara_20261125_2min
+
+AVISO: carga del sistema 27.07; cerrar otros programas o los numeros saldran inflados.
+=== vuelta 1 ===
+## sin IA
+decodificar MJPEG :  1.586 ms/cuadro
+pipeline (+lectura):  4.396 ms/cuadro
+total             :  5.982 ms/cuadro  -> maximo sostenible ~117 fps
+   60 fps clinico        presupuesto 16.67 ms  uso  35.9 %  OK
+   90 fps vHIT basico    presupuesto 11.11 ms  uso  53.8 %  OK
+  120 fps vHIT avanzado  presupuesto  8.33 ms  uso  71.8 %  justo
+  220 fps lujo           presupuesto  4.55 ms  uso 131.6 %  NO
+
+## IA recorte 64x64
+decodificar MJPEG :  1.378 ms/cuadro
+pipeline (+lectura):  8.357 ms/cuadro
+total             :  9.735 ms/cuadro  -> maximo sostenible ~72 fps
+   60 fps clinico        presupuesto 16.67 ms  uso  58.4 %  OK
+   90 fps vHIT basico    presupuesto 11.11 ms  uso  87.6 %  justo
+  120 fps vHIT avanzado  presupuesto  8.33 ms  uso 116.8 %  NO
+  220 fps lujo           presupuesto  4.55 ms  uso 214.2 %  NO
+
+## IA recorte 64x64, forzando ruta sin AVX2
+decodificar MJPEG :  1.415 ms/cuadro
+pipeline (+lectura):  7.130 ms/cuadro
+total             :  8.544 ms/cuadro  -> maximo sostenible ~82 fps
+   60 fps clinico        presupuesto 16.67 ms  uso  51.3 %  OK
+   90 fps vHIT basico    presupuesto 11.11 ms  uso  76.9 %  justo
+  120 fps vHIT avanzado  presupuesto  8.33 ms  uso 102.5 %  NO
+  220 fps lujo           presupuesto  4.55 ms  uso 188.0 %  NO
+
+## IA recorte cada 3 cuadros
+decodificar MJPEG :  0.554 ms/cuadro
+pipeline (+lectura):  1.510 ms/cuadro
+total             :  2.063 ms/cuadro  -> maximo sostenible ~339 fps
+   60 fps clinico        presupuesto 16.67 ms  uso  12.4 %  OK
+   90 fps vHIT basico    presupuesto 11.11 ms  uso  18.6 %  OK
+  120 fps vHIT avanzado  presupuesto  8.33 ms  uso  24.8 %  OK
+  220 fps lujo           presupuesto  4.55 ms  uso  45.4 %  OK
+
+=== vuelta 2 ===
+## sin IA
+decodificar MJPEG :  0.539 ms/cuadro
+pipeline (+lectura):  0.875 ms/cuadro
+total             :  1.414 ms/cuadro  -> maximo sostenible ~495 fps
+   60 fps clinico        presupuesto 16.67 ms  uso   8.5 %  OK
+   90 fps vHIT basico    presupuesto 11.11 ms  uso  12.7 %  OK
+  120 fps vHIT avanzado  presupuesto  8.33 ms  uso  17.0 %  OK
+  220 fps lujo           presupuesto  4.55 ms  uso  31.1 %  OK
+
+## IA recorte 64x64
+decodificar MJPEG :  0.536 ms/cuadro
+pipeline (+lectura):  1.659 ms/cuadro
+total             :  2.195 ms/cuadro  -> maximo sostenible ~319 fps
+   60 fps clinico        presupuesto 16.67 ms  uso  13.2 %  OK
+   90 fps vHIT basico    presupuesto 11.11 ms  uso  19.8 %  OK
+  120 fps vHIT avanzado  presupuesto  8.33 ms  uso  26.3 %  OK
+  220 fps lujo           presupuesto  4.55 ms  uso  48.3 %  OK
+
+## IA recorte 64x64, forzando ruta sin AVX2
+decodificar MJPEG :  0.489 ms/cuadro
+pipeline (+lectura):  2.090 ms/cuadro
+total             :  2.578 ms/cuadro  -> maximo sostenible ~272 fps
+   60 fps clinico        presupuesto 16.67 ms  uso  15.5 %  OK
+   90 fps vHIT basico    presupuesto 11.11 ms  uso  23.2 %  OK
+  120 fps vHIT avanzado  presupuesto  8.33 ms  uso  30.9 %  OK
+  220 fps lujo           presupuesto  4.55 ms  uso  56.7 %  OK
+
+## IA recorte cada 3 cuadros
+decodificar MJPEG :  0.477 ms/cuadro
+pipeline (+lectura):  0.998 ms/cuadro
+total             :  1.475 ms/cuadro  -> maximo sostenible ~475 fps
+   60 fps clinico        presupuesto 16.67 ms  uso   8.9 %  OK
+   90 fps vHIT basico    presupuesto 11.11 ms  uso  13.3 %  OK
+  120 fps vHIT avanzado  presupuesto  8.33 ms  uso  17.7 %  OK
+  220 fps lujo           presupuesto  4.55 ms  uso  32.5 %  OK
+
+=== resumen (mejor de 2 vueltas) ===
+sin IA                                      1.414 ms  ~ 495 fps | 60:OK 90:OK 120:OK 220:OK
+IA recorte 64x64                            2.195 ms  ~ 319 fps | 60:OK 90:OK 120:OK 220:OK
+IA recorte 64x64, forzando ruta sin AVX2    2.578 ms  ~ 272 fps | 60:OK 90:OK 120:OK 220:OK
+IA recorte cada 3 cuadros                   1.475 ms  ~ 475 fps | 60:OK 90:OK 120:OK 220:OK

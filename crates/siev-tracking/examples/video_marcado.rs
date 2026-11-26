@@ -3,10 +3,14 @@
 //! y el numero de cuadro, para ubicar errores.
 //!
 //!   cargo run --release -p siev-tracking --example video_marcado -- \
-//!       <carpeta_pgm> <salida.mp4> [fps_salida=60]
+//!       <carpeta_pgm> <salida.mp4> [fps_salida=60] [tiempo_real]
+//!
+//! `tiempo_real`: escribe solo los cuadros que tocan para que el video dure lo
+//! mismo que la grabacion (si no, se escriben todos: camara lenta).
 //!
 //! Variables: SIEV_YOLO=<modelo.onnx> (IA), SIEV_JUEZ=0 (desactiva la IA como
-//! juez de ojo cerrado).
+//! juez de ojo cerrado), SIEV_IA_CADA=<n> (IA cada n cuadros, defecto 10),
+//! SIEV_OJO_UMBRAL=<0..1> (confianza minima del modelo siev_ojo, defecto 0,7).
 //!
 //! Marcas: caja verde = zona de la IA, amarilla = zona manual, magenta = la IA
 //! da el ojo por cerrado. Cruz roja/azul = pupila OD/OI. Cruz verde fina =
@@ -33,6 +37,9 @@ fn main() {
         std::process::exit(2);
     };
     let fps_salida: u32 = a.get(2).and_then(|v| v.parse().ok()).unwrap_or(60);
+    let tiempo_real = a.get(3).is_some_and(|v| v == "tiempo_real");
+    // Cuadros de camara por cuadro de video.
+    let paso = if tiempo_real { FPS_GRABACION / fps_salida as f64 } else { 1.0 };
 
     let seq = PgmSequence::open(&PathBuf::from(dir), FPS_GRABACION).expect("secuencia PGM ilegible");
     let n = seq.len();
@@ -48,6 +55,9 @@ fn main() {
     nv.set_detector_options(OpcionesDetector { quitar_reflejos: true, umbral_valle: false, umbral_semilla: true });
     nv.set_ia_closed_eye_judge(std::env::var("SIEV_JUEZ").map(|v| v != "0").unwrap_or(true));
     nv.set_preview_every_frame(true);
+    if let Some(cada) = std::env::var("SIEV_IA_CADA").ok().and_then(|v| v.parse().ok()) {
+        nv.set_yolo_frequency(cada);
+    }
     let modelo = std::env::var("SIEV_YOLO").ok();
     nv.set_use_yolo(modelo.is_some());
     let modelo = modelo.unwrap_or_else(|| "/nonexistent/no-yolo.onnx".into());
@@ -67,7 +77,7 @@ fn main() {
     let (w, h) = primero.dimensions();
     let texto = format!(
         "drawtext=fontfile=/usr/share/fonts/TTF/DejaVuSansMono.ttf:fontsize=22:fontcolor=white:x=10:y=6:\
-         text='cuadro %{{frame_num}}   t=%{{eif\\:n/{FPS_GRABACION}\\:d}}.%{{eif\\:mod(n*1000/{FPS_GRABACION}\\,1000)\\:d\\:3}} s'"
+         text='cuadro %{{eif\\:n*{paso}\\:d}}   t=%{{eif\\:n*{paso}/{FPS_GRABACION}\\:d}}.%{{eif\\:mod(n*{paso}*1000/{FPS_GRABACION}\\,1000)\\:d\\:3}} s'"
     );
     let filtro = format!("scale={}:{}:flags=lanczos,pad=iw:ih+36:0:36:color=0x2b3440,{texto}", w * 2, h * 2);
     let mut ff = Command::new("ffmpeg")
@@ -81,13 +91,19 @@ fn main() {
     let mut entrada = ff.stdin.take().unwrap();
 
     let mut escritos = 0usize;
+    let (mut leidos, mut siguiente) = (1usize, paso);
     entrada.write_all(primero.as_raw()).expect("ffmpeg cerro la entrada");
     escritos += 1;
     while let Ok(f) = rx.frames.recv() {
+        leidos += 1;
         if f.dimensions() != (w, h) {
-            eprintln!("cuadro {escritos} con otro tamaño, omitido");
+            eprintln!("cuadro {leidos} con otro tamaño, omitido");
             continue;
         }
+        if ((leidos - 1) as f64) < siguiente {
+            continue;
+        }
+        siguiente += paso;
         entrada.write_all(f.as_raw()).expect("ffmpeg cerro la entrada");
         escritos += 1;
         if escritos.is_multiple_of(2000) {

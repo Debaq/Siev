@@ -30,6 +30,9 @@ use image::GrayImage;
 /// diferencia de ENTRADA que luego se confundiria con diferencia de algoritmo.
 pub struct PgmSequence {
     files: Vec<PathBuf>,
+    /// Clip MJPEG: cuadros JPEG tal como los entrega la camara (se decodifican
+    /// en el pipeline igual que en vivo). Vacio = secuencia PGM.
+    jpegs: Vec<Vec<u8>>,
     index: usize,
     dt: f64,
     t0: f64,
@@ -55,6 +58,7 @@ impl PgmSequence {
 
         Ok(Self {
             files,
+            jpegs: Vec::new(),
             index: 0,
             dt: 1.0 / fps,
             t0: 1_700_000_000.0, // epoch fijo: la traza no debe depender del reloj
@@ -63,8 +67,53 @@ impl PgmSequence {
         })
     }
 
+    /// Clip `.mjpeg` (JPEG concatenados, p. ej. `ffmpeg -i crudo.mkv -c:v copy
+    /// -f mjpeg clip.mjpeg`). Se usa para medir el equipo con la decodificacion
+    /// incluida, como con la camara real.
+    pub fn open_mjpeg(path: &Path, fps: f64) -> Result<Self, String> {
+        let datos = fs::read(path).map_err(|e| format!("No se pudo leer {}: {}", path.display(), e))?;
+        let mut jpegs = Vec::new();
+        let mut i = 0;
+        while i + 1 < datos.len() {
+            if datos[i] == 0xFF && datos[i + 1] == 0xD8 {
+                // fin del cuadro: el primer EOI (FF D9); en MJPEG de camara no hay miniaturas
+                let fin = datos[i + 2..].windows(2).position(|w| w == [0xFF, 0xD9]).map(|p| i + 2 + p + 2);
+                let Some(fin) = fin else { break };
+                jpegs.push(datos[i..fin].to_vec());
+                i = fin;
+            } else {
+                i += 1;
+            }
+        }
+        let primero = jpegs.first().ok_or_else(|| format!("Sin cuadros JPEG en {}", path.display()))?;
+        let mut dec = zune_jpeg::JpegDecoder::new(primero.as_slice());
+        dec.decode_headers().map_err(|e| format!("JPEG ilegible: {e:?}"))?;
+        let (w, h) = dec.dimensions().ok_or("JPEG sin dimensiones")?;
+        Ok(Self {
+            files: Vec::new(),
+            jpegs,
+            index: 0,
+            dt: 1.0 / fps,
+            t0: 1_700_000_000.0,
+            width: w as u32,
+            height: h as u32,
+        })
+    }
+
     pub fn len(&self) -> usize {
-        self.files.len()
+        self.files.len().max(self.jpegs.len())
+    }
+
+    pub fn es_jpeg(&self) -> bool {
+        !self.jpegs.is_empty()
+    }
+
+    /// Siguiente cuadro JPEG del clip y su timestamp sintetico.
+    pub fn next_jpeg(&mut self) -> Option<(Vec<u8>, f64)> {
+        let b = self.jpegs.get(self.index)?.clone();
+        let t = self.t0 + self.index as f64 * self.dt;
+        self.index += 1;
+        Some((b, t))
     }
 
     /// Devuelve el siguiente cuadro y su timestamp sintetico, o `None` al agotarse.

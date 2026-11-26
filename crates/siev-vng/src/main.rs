@@ -23,6 +23,7 @@ use siev_tracking::bus::{BusReceiver, EventBus, TrackEvent};
 use siev_tracking::math::processor::EyeProcessor;
 use siev_tracking::storage::SessionRecorder;
 use siev_tracking::vng::camara_hw::{self, ControlHw};
+use siev_tracking::vng::equipo::{self, ResultadoEquipo, FPS_MINIMO};
 use siev_tracking::vng::live::{Eje, LiveNystagmus, Ojo, Resumen};
 use siev_tracking::vng::native_video::{self, CameraFormatInfo, CameraInfo, NativeVideoManager};
 use siev_tracking::vng::trace::PgmSequence;
@@ -104,6 +105,11 @@ struct VngApp {
     /// Cero del paciente al iniciar una prueba.
     cero: Option<TomaCero>,
 
+    /// Prueba del equipo en curso (resultado por canal).
+    prueba_equipo: Option<std::sync::mpsc::Receiver<Result<ResultadoEquipo, String>>>,
+    /// El aviso de equipo no compatible ya se cerro en esta sesion.
+    aviso_equipo_cerrado: bool,
+
     /// Desarrollo: `SIEV_CAPTURA=ruta.png` guarda una captura de la ventana a
     /// los 5 s y cierra la app. Evita capturar el escritorio completo.
     captura: Option<(std::path::PathBuf, Instant, bool)>,
@@ -164,7 +170,13 @@ impl VngApp {
             toma: None,
             resultado: None,
             cero: None,
+            prueba_equipo: None,
+            aviso_equipo_cerrado: false,
         };
+        // Probar el equipo la primera vez, o si cambio la CPU.
+        if app.cfg.equipo.as_ref().is_none_or(|r| r.cpu != equipo::cpu_actual()) {
+            app.lanzar_prueba_equipo();
+        }
         app.refrescar_camaras();
         app.usar_escala_por_defecto();
         app
@@ -232,7 +244,7 @@ impl VngApp {
 
     /// Conexion automatica: al abrir la app y si la camara se cae.
     fn mantener_camara(&mut self) {
-        if self.manager.is_running() || self.reproduciendo.load(Ordering::SeqCst) {
+        if self.manager.is_running() || self.reproduciendo.load(Ordering::SeqCst) || self.prueba_equipo.is_some() {
             return;
         }
         if self.ultimo_intento.is_some_and(|t| t.elapsed() < REINTENTO_CAMARA) {
@@ -529,6 +541,13 @@ impl VngApp {
             if corriendo && self.fps > 0.0 {
                 ui.label(RichText::new(format!("{:.0} Hz", self.fps)).color(TEXTO_SUAVE));
             }
+            if self.prueba_equipo.is_some() {
+                chip(ui, "Probando el equipo…", AMBAR);
+            } else if self.equipo_compatible() == Some(false) {
+                chip(ui, "PC no compatible", ROJO);
+            } else if corriendo && self.manager.rendimiento().sobrecargado {
+                chip(ui, "El equipo no da abasto: bajar los fps de la camara", ROJO);
+            }
             if !self.mensaje.is_empty() {
                 ui.add_space(8.0);
                 ui.label(RichText::new(&self.mensaje).color(AMBAR));
@@ -569,7 +588,9 @@ impl VngApp {
                     let b = egui::Button::new(RichText::new("▶  Iniciar prueba").strong().color(Color32::WHITE))
                         .fill(ACENTO)
                         .min_size(egui::vec2(170.0, 38.0));
-                    if ui.add_enabled(corriendo, b).on_disabled_hover_text("Esperando la camara").clicked() {
+                    let compatible = self.equipo_compatible() != Some(false);
+                    let motivo = if compatible { "Esperando la camara" } else { "Este PC no es compatible: no alcanza 60 fps" };
+                    if ui.add_enabled(corriendo && compatible, b).on_disabled_hover_text(motivo).clicked() {
                         self.iniciar_prueba();
                     }
                 }
@@ -813,6 +834,7 @@ impl VngApp {
         let mut refrescar = false;
         let mut reconectar = false;
         let ocupado = self.reproduciendo.load(Ordering::SeqCst);
+        let mut probar_equipo = false;
 
         egui::Window::new(RichText::new("Configuracion").size(18.0).strong())
             .open(&mut abierta)
@@ -970,8 +992,9 @@ impl VngApp {
                         egui::ComboBox::from_label("Formato").selected_text(actual).show_ui(ui, |ui| {
                             for f in &self.formatos {
                                 let sel = f.width == c.ancho && f.height == c.alto && f.fps == c.fps;
-                                let txt = format!("{}x{} @ {} fps {}", f.width, f.height, f.fps, f.format);
-                                if ui.selectable_label(sel, txt).clicked() {
+                                let alcanza = self.cfg.equipo.as_ref().is_none_or(|r| r.alcanza(f.width, f.height, f.fps, self.cfg.ia.usar));
+                                let txt = format!("{}x{} @ {} fps {}{}", f.width, f.height, f.fps, f.format, if alcanza { "" } else { "  (este PC no alcanza)" });
+                                if ui.add_enabled(alcanza, egui::Button::selectable(sel, txt)).clicked() {
                                     (c.ancho, c.alto, c.fps) = (f.width, f.height, f.fps);
                                     reconectar = true;
                                     cambio = true;
@@ -980,6 +1003,32 @@ impl VngApp {
                         });
                         if ui.button("Buscar camaras").clicked() {
                             refrescar = true;
+                        }
+                        ui.add_space(6.0);
+                        match (&self.cfg.equipo, self.prueba_equipo.is_some()) {
+                            (_, true) => {
+                                ui.label(RichText::new("Probando el equipo…").color(AMBAR));
+                            }
+                            (Some(r), false) => {
+                                let (c, ia) = (&self.cfg.camara, self.cfg.ia.usar);
+                                let nivel = r.nivel(c.ancho, c.alto, ia).map(|(f, n)| format!("{n} ({f} fps)")).unwrap_or_else(|| "ninguno".into());
+                                ui.label(
+                                    RichText::new(format!(
+                                        "Equipo: ~{:.0} fps a {}x{}. Nivel maximo: {nivel}.",
+                                        r.fps_max(c.ancho, c.alto, ia),
+                                        c.ancho,
+                                        c.alto
+                                    ))
+                                    .small()
+                                    .color(TEXTO_SUAVE),
+                                );
+                            }
+                            (None, false) => {
+                                ui.label(RichText::new("Equipo sin probar.").small().color(AMBAR));
+                            }
+                        }
+                        if ui.add_enabled(self.prueba_equipo.is_none() && !ocupado, egui::Button::new("Probar el equipo")).clicked() {
+                            probar_equipo = true;
                         }
                     });
 
@@ -1056,6 +1105,9 @@ impl VngApp {
         if cambio {
             self.marcar_config_cambiada();
         }
+        if probar_equipo {
+            self.lanzar_prueba_equipo();
+        }
     }
 }
 
@@ -1064,6 +1116,7 @@ impl eframe::App for VngApp {
         let ctx = ui.ctx().clone();
         self.drenar_bus(&ctx);
         self.en_grados = self.procesador.lock().map(|p| p.has_degree_mapping()).unwrap_or(false);
+        self.revisar_prueba_equipo();
         self.mantener_camara();
         self.avanzar_cero();
         self.avanzar_calibracion();
@@ -1108,6 +1161,7 @@ impl eframe::App for VngApp {
             });
 
         self.ventana_config(&ctx);
+        self.ventana_equipo(&ctx);
         self.ventana_calibracion(&ctx);
         self.pantalla_estimulos(&ctx);
         self.captura_desarrollo(&ctx);
@@ -1121,6 +1175,108 @@ impl eframe::App for VngApp {
 }
 
 impl VngApp {
+    // ---------------------------------------------------------------
+    // Prueba del equipo: niveles que soporta este PC
+    // ---------------------------------------------------------------
+
+    fn lanzar_prueba_equipo(&mut self) {
+        let Some(clip) = config::buscar_clip_equipo() else {
+            self.mensaje = "Falta el clip de prueba del equipo (clip_equipo.mjpeg).".into();
+            return;
+        };
+        // la camara compite por la CPU: se suelta durante la prueba
+        if self.manager.is_running() {
+            self.manager.stop_capture();
+        }
+        let cfg = self.cfg.clone();
+        let modelo = (cfg.ia.usar && !cfg.ia.modelo.is_empty()).then(|| cfg.ia.modelo.clone());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(equipo::medir(clip.as_ref(), modelo.as_deref(), |nv| cfg.aplicar(nv)));
+        });
+        self.prueba_equipo = Some(rx);
+        self.aviso_equipo_cerrado = false;
+    }
+
+    fn revisar_prueba_equipo(&mut self) {
+        let Some(rx) = &self.prueba_equipo else { return };
+        match rx.try_recv() {
+            Ok(Ok(r)) => {
+                self.cfg.equipo = Some(r);
+                self.cfg_sucia = Some(Instant::now());
+                self.prueba_equipo = None;
+                self.ultimo_intento = None;
+            }
+            Ok(Err(e)) => {
+                self.mensaje = format!("No se pudo probar el equipo: {e}");
+                self.prueba_equipo = None;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.prueba_equipo = None,
+        }
+    }
+
+    /// Some(false) = el PC no alcanza 60 fps ni en el formato mas liviano de
+    /// la camara; None = sin probar.
+    fn equipo_compatible(&self) -> Option<bool> {
+        let r = self.cfg.equipo.as_ref()?;
+        let (w, h) = self
+            .formatos
+            .iter()
+            .filter(|f| f.fps >= FPS_MINIMO)
+            .map(|f| (f.width, f.height))
+            .min_by_key(|(w, h)| w * h)
+            .unwrap_or((640, 360));
+        Some(r.alcanza(w, h, FPS_MINIMO, self.cfg.ia.usar))
+    }
+
+    /// Aviso modal durante la prueba y, si el PC no es compatible, al terminar.
+    fn ventana_equipo(&mut self, ctx: &egui::Context) {
+        if self.prueba_equipo.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(200));
+            egui::Window::new(RichText::new("Probando este equipo").size(18.0).strong())
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label("Midiendo cuantos cuadros por segundo puede procesar este PC (unos segundos)…");
+                    });
+                });
+            return;
+        }
+        if self.equipo_compatible() != Some(false) || self.aviso_equipo_cerrado {
+            return;
+        }
+        let r = self.cfg.equipo.clone();
+        let mut cerrar = false;
+        let mut repetir = false;
+        egui::Window::new(RichText::new("Este PC no es compatible").size(18.0).strong().color(ROJO))
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                if let Some(r) = &r {
+                    ui.label(format!(
+                        "Este equipo procesa ~{:.0} cuadros por segundo; el minimo para un examen clinico es {FPS_MINIMO}.",
+                        r.fps_max(640, 360, self.cfg.ia.usar)
+                    ));
+                }
+                ui.label("Se puede ver la camara, pero no iniciar examenes. Cierre otros programas y vuelva a probar, o use un PC mas potente.");
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    repetir = ui.button("Volver a probar").clicked();
+                    cerrar = ui.button("Entendido").clicked();
+                });
+            });
+        if repetir {
+            self.lanzar_prueba_equipo();
+        } else if cerrar {
+            self.aviso_equipo_cerrado = true;
+        }
+    }
+
     fn captura_desarrollo(&mut self, ctx: &egui::Context) {
         let Some((ruta, inicio, pedida)) = &mut self.captura else { return };
         if *pedida || inicio.elapsed() < Duration::from_secs(5) {
