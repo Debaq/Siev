@@ -20,3 +20,4 @@ target/
 
 # Secuencias de referencia: se reconstruyen con fixtures/README.md
 fixtures/*/
+__pycache__/
